@@ -1,133 +1,122 @@
-    <div class="grid">
-    <ul id="hexGrid">
-      <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image:url(https://images.unsplash.com/photo-1417436026361-a033044d901f?ixlib=rb-0.3.5&amp;q=80&amp;fm=jpg&amp;crop=entropy&amp;w=1080&amp;fit=max&amp;s=faa4e192f33e0d6b7ce0e54f15140e42);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
+<section class="profile-page">
+  <div class="page-heading">
+    <h1>Profile</h1>
+    <p>Manage your personal information and account settings</p>
+  </div>
+
+  <div class="profile-grid">
+    <article class="profile-card personal-card">
+      <header class="card-title">
+        <span class="material-symbols-outlined">person</span>
+        <h2>Personal Information</h2>
+      </header>
+
+      <div class="identity-row">
+        <div class="avatar">{{ initial }}</div>
+        <div class="identity-copy">
+          <h3>{{ displayName }}</h3>
+          <p>{{ currentUser?.login_id || 'Not available' }}</p>
+          <p>{{ currentUser?.role_name || 'Role not assigned' }}</p>
         </div>
-      </li>
-        
-      <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-                <div class='img' style='background-image: url(https://images.unsplash.com/44/MIbCzcvxQdahamZSNQ26_12082014-IMG_3526.jpg?ixlib=rb-0.3.5&amp;q=80&amp;fm=jpg&amp;crop=entropy&amp;w=1080&amp;fit=max&amp;s=49dab7a5e4b2e28b5707bc2db974c94b);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-      <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image: url(https://images.unsplash.com/photo-1425668273332-3a46ab26b161?ixlib=rb-0.3.5&amp;q=80&amp;fm=jpg&amp;crop=entropy&amp;w=1080&amp;fit=max&amp;s=d453ab3dec298c43415526458b360fa6);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-      <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image: url(https://images.unsplash.com/photo-1423145369430-a9ea0de096cd?crop=entropy&amp;fit=crop&amp;fm=jpg&amp;h=1375&amp;ixjsv=2.1.0&amp;ixlib=rb-0.3.5&amp;q=80&amp;w=1725);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-      <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image: url(https://images.unsplash.com/photo-1432887382605-0abf9cc49e8f?crop=entropy&amp;fit=crop&amp;fm=jpg&amp;h=1375&amp;ixjsv=2.1.0&amp;ixlib=rb-0.3.5&amp;q=80&amp;w=1725);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-      <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-         <div class='img' style='background-image: url(https://images.unsplash.com/uploads/14122811862445bc266cf/931448f2?crop=entropy&amp;fit=crop&amp;fm=jpg&amp;h=1375&amp;ixjsv=2.1.0&amp;ixlib=rb-0.3.5&amp;q=80&amp;w=1725);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-      <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image: url(https://images.unsplash.com/photo-1417026846249-f31f7e43fc35?crop=entropy&amp;fit=crop&amp;fm=jpg&amp;h=1375&amp;ixjsv=2.1.0&amp;ixlib=rb-0.3.5&amp;q=80&amp;w=1725);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-      <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image: url(https://images.unsplash.com/uploads/14122811862445bc266cf/931448f2?crop=entropy&amp;fit=crop&amp;fm=jpg&amp;h=1375&amp;ixjsv=2.1.0&amp;ixlib=rb-0.3.5&amp;q=80&amp;w=1725);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-      <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image: url(https://images.unsplash.com/photo-1423145369430-a9ea0de096cd?crop=entropy&amp;fit=crop&amp;fm=jpg&amp;h=1375&amp;ixjsv=2.1.0&amp;ixlib=rb-0.3.5&amp;q=80&amp;w=1725);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-      
-     <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image:url(https://images.unsplash.com/photo-1417436026361-a033044d901f?ixlib=rb-0.3.5&amp;q=80&amp;fm=jpg&amp;crop=entropy&amp;w=1080&amp;fit=max&amp;s=faa4e192f33e0d6b7ce0e54f15140e42);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-        <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image: url(https://images.unsplash.com/photo-1425668273332-3a46ab26b161?ixlib=rb-0.3.5&amp;q=80&amp;fm=jpg&amp;crop=entropy&amp;w=1080&amp;fit=max&amp;s=d453ab3dec298c43415526458b360fa6);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-          <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-                <div class='img' style='background-image: url(https://images.unsplash.com/44/MIbCzcvxQdahamZSNQ26_12082014-IMG_3526.jpg?ixlib=rb-0.3.5&amp;q=80&amp;fm=jpg&amp;crop=entropy&amp;w=1080&amp;fit=max&amp;s=49dab7a5e4b2e28b5707bc2db974c94b);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-        <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image: url(https://images.unsplash.com/photo-1432887382605-0abf9cc49e8f?crop=entropy&amp;fit=crop&amp;fm=jpg&amp;h=1375&amp;ixjsv=2.1.0&amp;ixlib=rb-0.3.5&amp;q=80&amp;w=1725);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-        <li class="hex">
-        <div class="hexIn">
-          <a class="hexLink" href="#">
-            <div class='img' style='background-image: url(https://images.unsplash.com/photo-1417026846249-f31f7e43fc35?crop=entropy&amp;fit=crop&amp;fm=jpg&amp;h=1375&amp;ixjsv=2.1.0&amp;ixlib=rb-0.3.5&amp;q=80&amp;w=1725);'></div>
-            <h1 id="demo1">This is a title</h1>
-            <p id="demo2">Some sample text about the article this hexagon leads to</p>
-          </a>
-        </div>
-      </li>
-    </ul>
       </div>
 
+      <div class="divider"></div>
+
+      <div class="info-list">
+        <h3>Account Information</h3>
+        <div>
+          <span>Account Created</span>
+          <strong>{{ createdDate }}</strong>
+        </div>
+        <div>
+          <span>Last Activity</span>
+          <strong>Current session</strong>
+        </div>
+        <div>
+          <span>Status</span>
+          <strong>{{ currentUser?.is_active ? 'Active' : 'Inactive' }}</strong>
+        </div>
+      </div>
+    </article>
+
+    <article class="profile-card security-card">
+      <header class="card-title">
+        <span class="material-symbols-outlined">shield</span>
+        <h2>Security</h2>
+      </header>
+
+      <div class="security-summary">
+        <span class="material-symbols-outlined">key</span>
+        <div>
+          <h3>Change Password</h3>
+          <p>Update your account password for improved security</p>
+        </div>
+        <button type="button" class="outline-button" (click)="togglePasswordForm()">
+          {{ showPasswordForm ? 'Cancel' : 'Change' }}
+        </button>
+      </div>
+
+      <form *ngIf="showPasswordForm" class="password-form" [formGroup]="passwordForm" (ngSubmit)="changePassword()">
+        <label>
+          <span>Current Password</span>
+          <input type="password" formControlName="currentPassword" autocomplete="current-password" />
+          <small *ngIf="isFieldInvalid('currentPassword')">Current password is required.</small>
+        </label>
+
+        <label>
+          <span>New Password</span>
+          <input type="password" formControlName="newPassword" autocomplete="new-password" />
+          <small *ngIf="isFieldInvalid('newPassword')">Use at least 6 characters.</small>
+        </label>
+
+        <label>
+          <span>Confirm Password</span>
+          <input type="password" formControlName="confirmPassword" autocomplete="new-password" />
+          <small *ngIf="passwordForm.hasError('passwordMismatch') && passwordForm.get('confirmPassword')?.touched">
+            Passwords do not match.
+          </small>
+        </label>
+
+        <div class="form-actions">
+          <button type="submit" [disabled]="isChangingPassword">
+            {{ isChangingPassword ? 'Updating...' : 'Update Password' }}
+          </button>
+        </div>
+      </form>
+
+      <p class="message success" *ngIf="successMessage">{{ successMessage }}</p>
+      <p class="message error" *ngIf="errorMessage">{{ errorMessage }}</p>
+    </article>
+  </div>
+
+  <article class="profile-card permissions-card">
+    <header class="card-title">
+      <span class="material-symbols-outlined">admin_panel_settings</span>
+      <h2>Role & Permissions</h2>
+    </header>
+
+    <div class="divider"></div>
+
+    <div class="role-section">
+      <span>Current Role</span>
+      <div class="role-row">
+        <strong class="role-pill">
+          <span class="material-symbols-outlined">lock</span>
+          {{ currentUser?.role_name || 'Role not assigned' }}
+        </strong>
+        <span>at K9MES</span>
+      </div>
+      <p>{{ permissions.includes('*') ? 'Full access to all plant operations and user management' : 'Limited access based on assigned permissions' }}</p>
+    </div>
+
+    <div class="permission-section">
+      <h3>Permissions</h3>
+      <p>You have {{ permissions.includes('*') ? 'all' : permissions.length }} permissions:</p>
+      <div class="permission-list">
+        <span *ngFor="let permission of visiblePermissions" class="permission-chip">{{ permission }}</span>
+        <span *ngIf="permissions.includes('*')" class="permission-chip access-all">All modules</span>
+        <span *ngIf="hiddenPermissionCount > 0" class="permission-chip">+{{ hiddenPermissionCount }} more</span>
+      </div>
+    </div>
+  </article>
+</section>
