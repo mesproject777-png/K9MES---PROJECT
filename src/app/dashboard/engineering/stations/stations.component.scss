@@ -1,0 +1,197 @@
+.stations-page {
+  padding: 16px;
+}
+
+.card {
+  border: 1px solid #dbe5f1;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.message-row {
+  min-height: 20px;
+}
+
+.table-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #e4ebf3;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.left-tools,
+.right-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+input,
+select {
+  padding: 8px 10px;
+  border: 1px solid #c8d2de;
+  border-radius: 8px;
+}
+
+.table-wrapper {
+  border: 1px solid #e4ebf3;
+  border-radius: 10px;
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+thead th {
+  background: #f3f7fd;
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #e4ebf3;
+  font-weight: 600;
+}
+
+tbody td {
+  padding: 10px;
+  border-bottom: 1px solid #eef3f9;
+}
+
+.actions-cell {
+  width: 160px;
+}
+
+button {
+  border: 1px solid #c8d2de;
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+button.primary {
+  background: #1b6ef3;
+  border-color: #1b6ef3;
+  color: #fff;
+}
+
+button.secondary {
+  background: #f5f7fa;
+}
+
+button.danger {
+  background: #ffeceb;
+  border-color: #f1c0bd;
+  color: #a12d2d;
+}
+
+button.mini {
+  padding: 6px 10px;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.message {
+  margin: 6px 0;
+}
+
+.message.success {
+  color: #1b7f2a;
+}
+
+.message.error {
+  color: #b81f1f;
+}
+
+.empty {
+  text-align: center;
+  padding: 16px;
+  color: #65758b;
+}
+
+.pager {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pager-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pager-btn {
+  min-width: 34px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+
+.modal-card {
+  width: min(560px, 98vw);
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #eaf3ff;
+  border-bottom: 1px solid #dbe7f7;
+}
+
+.modal-form {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.form-row {
+  display: grid;
+  gap: 6px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px 16px;
+}

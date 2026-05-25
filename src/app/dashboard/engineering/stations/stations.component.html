@@ -1,0 +1,116 @@
+<div class="stations-page">
+  <div class="card">
+    <div class="header-row">
+      <h2>Stations</h2>
+      <button type="button" class="primary" (click)="openCreateModal()">Add New</button>
+    </div>
+
+    <div class="message-row">
+      <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+      <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+    </div>
+
+    <div class="table-toolbar">
+      <div class="left-tools">
+        <button type="button" class="secondary mini" (click)="copyVisibleRows()">Copy</button>
+        <button type="button" class="secondary mini" (click)="downloadCsv()">Excel</button>
+        <label>
+          <select [ngModel]="limit" (ngModelChange)="onLimitChange($event)">
+            <option [ngValue]="25">25</option>
+            <option [ngValue]="50">50</option>
+            <option [ngValue]="100">100</option>
+            <option [ngValue]="'all'">All</option>
+          </select>
+          entries per page
+        </label>
+      </div>
+
+      <div class="right-tools">
+        <label>
+          Search:
+          <input
+            type="text"
+            placeholder="Station code or description"
+            [value]="searchText"
+            (input)="onSearchChange($any($event.target).value)"
+          />
+        </label>
+      </div>
+    </div>
+
+    <p *ngIf="isLoading" class="message">Loading stations...</p>
+
+    <div class="table-wrapper" *ngIf="!isLoading">
+      <table>
+        <thead>
+          <tr>
+            <th>station_code</th>
+            <th>station_desc</th>
+            <th>status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let station of stations">
+            <td>{{ station.station_code }}</td>
+            <td>{{ station.station_desc }}</td>
+            <td>{{ station.status }}</td>
+            <td class="actions-cell">
+              <button type="button" class="secondary mini" (click)="openEditModal(station)">Edit</button>
+              <button type="button" class="danger mini" (click)="deleteStation(station)">Delete</button>
+            </td>
+          </tr>
+          <tr *ngIf="stations.length === 0">
+            <td colspan="4" class="empty">No stations found.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pager" *ngIf="totalStations > 0">
+      <div class="pager-left">
+        Showing
+        {{ ((page - 1) * (limit === 'all' ? totalStations : limit)) + (stations.length ? 1 : 0) }}
+        to
+        {{ ((page - 1) * (limit === 'all' ? totalStations : limit)) + stations.length }}
+        of
+        {{ totalStations }}
+        entries
+      </div>
+      <div class="pager-right" *ngIf="limit !== 'all'">
+        <button type="button" class="pager-btn" (click)="changePage(1)" [disabled]="page === 1">&laquo;</button>
+        <button type="button" class="pager-btn" (click)="changePage(page - 1)" [disabled]="page === 1">&lsaquo;</button>
+        <span class="pager-info">{{ page }} / {{ totalPages }}</span>
+        <button type="button" class="pager-btn" (click)="changePage(page + 1)" [disabled]="page >= totalPages">&rsaquo;</button>
+        <button type="button" class="pager-btn" (click)="changePage(totalPages)" [disabled]="page >= totalPages">&raquo;</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div *ngIf="isModalOpen" class="modal-backdrop" (click)="closeModal()">
+  <div class="modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{ isEditMode ? 'Edit Station' : 'Add New Station' }}</h3>
+      <button type="button" class="secondary" (click)="closeModal()">Close</button>
+    </div>
+
+    <form [formGroup]="stationForm" class="modal-form">
+      <div class="form-row">
+        <label>Station Code</label>
+        <input type="text" formControlName="station_code" />
+      </div>
+
+      <div class="form-row">
+        <label>Station Description</label>
+        <input type="text" formControlName="station_desc" />
+      </div>
+    </form>
+
+    <div class="modal-actions">
+      <button type="button" class="primary" (click)="saveStation()" [disabled]="isSaving">
+        {{ isSaving ? 'Saving...' : (isEditMode ? 'Update' : 'Save') }}
+      </button>
+    </div>
+  </div>
+</div>

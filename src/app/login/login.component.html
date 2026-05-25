@@ -1,0 +1,38 @@
+<form [formGroup]="loginForm" novalidate>
+      <!-- Left section of the form -->
+      <div class="left">
+        <div>
+          <p>K9</p>
+        </div>
+
+      </div>
+
+      <!-- Right section of the form -->
+      <div class="right">
+        <div>
+          <!-- Login heading -->
+          <h1>Login</h1>
+
+          <!-- Username input field -->
+          <input type="text" formControlName="loginId" placeholder="Username" />
+         
+
+          <!-- Password input field -->
+          <input type="password" formControlName="password" placeholder="Password" />
+          
+
+          <!-- Forgot password link -->
+          <a href="" (click)="$event.preventDefault()">Forgot Password?</a>
+
+          <p *ngIf="validationMessage" class="login-error">{{ validationMessage }}</p>
+          <p *ngIf="errorMessage" class="login-error">{{ errorMessage }}</p>
+
+          <!-- Login button -->
+          <button type="button" [disabled]="isSubmitting" (click)="onSubmit()">
+            {{ isSubmitting ? 'Logging in...' : 'Login' }}
+          </button>
+
+        </div>
+      </div>
+
+</form>

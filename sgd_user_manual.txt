@@ -1,0 +1,111 @@
+SGD PO                                          user manual
+
+About
+
+SGD PO managed in V4 and is a way to attach a group of WOs to an SGD PO
+and make sure that the entire quantity does not exceed the SGD quantity.
+
+Main Features SGD PO.
+
+     Define new SGD PO
+     Edit SGD PO
+     Watch SGD PO status in the system
+
+MS3 Ltd. Proprietary and confidential  Rev 1.3  July 9, 2025
+Manager > List SGD PO
+
+General
+
+PO (purchase order) is documented in ERP system that can be not connected
+to the V4 system. When it is not connected it's difficult to follow and control
+the production quantity.
+The SGD feature allows the user to track after the PO quantity when it is
+divided into different WO and make sure that the production quantity not
+exceeds from the wanted quantity.
+It is also a way to attach PO information to its WOs.
+
+Details
+
+When opening the SGD PO list
+from the menu, an SGD POs
+selection screen is displayed.
+The list contains all SGD POs
+that are defined in the system.
+
+     PO - purchase order id
+         number. Unique.
+
+     Status - the PO status can be open, cancel or complete.
+     Sw_version - the item's software version.
+
+MS3 Ltd. Proprietary and confidential  Rev 1.3                July 9, 2025
+Manager > List SGD PO
+
+     Hw_version - the item's hardware version.
+     Item - the PN of the PO.
+     PO Qty - the item's total quantity by the PO.
+     WO Qty - the item's total production quantity by WOs.
+
+         For example: If there are two WOs connected to a specific SGD PO,
+         the WO Qty will be presented as the sum of the quantities from both
+         WOs.
+You can search for a specific PO in the search field. The search can be
+performed using any of the fields.
+To select one SGD PO, click the specific relevant row. A details screen will
+appear and there you can edit the SGD PO details.
+
+MS3 Ltd. Proprietary and confidential  Rev 1.3  July 9, 2025
+Manager > List SGD PO
+
+Open new SGD PO
+
+To add a new SGD PO please follow the following steps:
+
+    Define item as SGD
+
+         Under Engineering > Item management > Item data, enter the PN
+         number and press TAB. By clicking on the wanted PN's row a window
+         with all the item's
+         details will open. To
+         define the item as SGD
+         you need to write YES
+         in SGD control row and
+         press save.
+         See attached picture.
+
+ Open a new SGD PO
+
+    On the SGD POs screen by pressing on the 'New SGD PO' button.
+    In the window opens, fill the details on the PO and save. The PO will
+    be shown on the main screen.
+
+MS3 Ltd. Proprietary and confidential  Rev 1.3  July 9, 2025
+Manager > List SGD PO
+
+    Connect WO to SGD PO
+
+         To open new WO, go to Manager > List WOs > new WO. The relevant
+         PO number needs to be filled in the LOT field for the WO and PO to be
+         connected.
+
+MS3 Ltd. Proprietary and confidential  Rev 1.3  July 9, 2025
+Manager > List SGD PO
+
+Important Notes
+
+     SGD PO can manage PN that are not Motorola related.
+     The item must be defined as SGD as explained above.
+     The PO number must be filled in the WO details in the LOT field. WO
+
+         with no LOT define will not be connected to any SGD PO.
+     A quantity check will be performed whenever a user attempts to assign
+
+         a WO to an open SGD PO. If the total quantity across all WOs linked to
+         that specific SGD PO exceeds the total quantity defined in the PO, the
+         new WO will not be allowed to connect to it.
+     SNs management in SGD POs is identical to that of regular POs. The
+         system does not impose any restrictions on transferring SNs between
+         POs, regardless of whether they are SGD-managed or not.
+
+MS3 Ltd. Proprietary and confidential  Rev 1.3  July 9, 2025
+

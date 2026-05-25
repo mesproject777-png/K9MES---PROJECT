@@ -1,0 +1,20 @@
+
+<div class="action-grid" role="list">
+  <a
+    *ngFor="let card of cards"
+    class="action-card"
+    role="listitem"
+    [id]="card.id"
+    [routerLink]="card.route"
+    [attr.aria-label]="card.title"
+  >
+    <div class="action-card__icon" aria-hidden="true">
+      <span class="material-symbols-outlined">{{ card.icon }}</span>
+    </div>
+
+    <div class="action-card__content">
+      <div class="action-card__title">{{ card.title }}</div>
+      <div class="action-card__desc">{{ card.description }}</div>
+    </div>
+  </a>
+</div>

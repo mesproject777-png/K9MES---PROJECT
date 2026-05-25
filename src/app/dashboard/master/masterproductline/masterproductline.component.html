@@ -1,0 +1,111 @@
+<div class="productline-page">
+  <div class="card">
+    <h2>Product Line</h2>
+
+    <form [formGroup]="productLineForm" (ngSubmit)="onSubmit()" class="productline-form">
+      <div class="field">
+        <label for="code">Code</label>
+        <input id="code" type="text" formControlName="code" />
+      </div>
+
+      <div class="field">
+        <label for="description">Description</label>
+        <input id="description" type="text" formControlName="description" />
+      </div>
+
+      <div class="field">
+        <label for="status">Status</label>
+        <select id="status" formControlName="status">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </div>
+
+      <div class="actions">
+        <button type="submit" [disabled]="isSubmitting">
+          {{ isSubmitting ? 'Saving...' : 'Add' }}
+        </button>
+      </div>
+    </form>
+
+    <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+    <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+  </div>
+
+  <div class="card">
+    <h3>Product Line List</h3>
+
+    <div class="search-box">
+      <input
+        type="text"
+        placeholder="Search by code, description, or status..."
+        (input)="onSearchChange($any($event.target).value)"
+      />
+    </div>
+
+    <p *ngIf="isLoading" class="message">Loading product lines...</p>
+
+    <table *ngIf="!isLoading">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Code</th>
+          <th>Description</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let item of filteredProductLines">
+          <td>{{ item.id }}</td>
+          <td>{{ item.code }}</td>
+          <td>{{ item.description }}</td>
+          <td>{{ item.status }}</td>
+          <td class="row-actions">
+            <button type="button" class="small-button" (click)="startEdit(item)">Edit</button>
+            <button type="button" class="small-button secondary" (click)="deleteItem(item.id)">Delete</button>
+          </td>
+        </tr>
+        <tr *ngIf="filteredProductLines.length === 0">
+          <td colspan="5" class="empty-state">No product lines found.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div *ngIf="isEditModalOpen" class="modal-backdrop" (click)="cancelEdit()">
+    <div class="modal-card" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Edit Product Line</h3>
+        <button type="button" class="secondary" (click)="cancelEdit()">Close</button>
+      </div>
+
+      <form [formGroup]="editForm" class="productline-form modal-form">
+        <div class="field">
+          <label for="editCode">Code</label>
+          <input id="editCode" type="text" formControlName="code" />
+        </div>
+
+        <div class="field">
+          <label for="editDescription">Description</label>
+          <input id="editDescription" type="text" formControlName="description" />
+        </div>
+
+        <div class="field">
+          <label for="editStatus">Status</label>
+          <select id="editStatus" formControlName="status">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+        </div>
+      </form>
+
+      <div class="modal-actions">
+        <button type="button" [disabled]="isEditSubmitting" (click)="saveEdit()">
+          {{ isEditSubmitting ? 'Saving...' : 'Update' }}
+        </button>
+        <button type="button" class="secondary" (click)="cancelEdit()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,80 @@
+<div class="pnwo-page">
+  <section class="transfer-shell">
+    <header class="transfer-header">
+      <p class="kicker">Manager Module</p>
+      <h2>Transfer Units From WO To WO</h2>
+      <p class="subline">Move all New units or a single unit between work orders with full validation.</p>
+    </header>
+
+    <div class="transfer-content">
+      <div class="form-card">
+        <div class="field-row">
+          <label for="source-wo">Source WO</label>
+          <input id="source-wo" type="text" [(ngModel)]="sourceWo" name="sourceWo" placeholder="Enter source WO" />
+        </div>
+
+        <div class="field-row">
+          <label for="target-wo">Target WO</label>
+          <input id="target-wo" type="text" [(ngModel)]="targetWo" name="targetWo" placeholder="Enter target WO" />
+        </div>
+
+        <div class="field-row">
+          <label for="sn">SN (optional)</label>
+          <input id="sn" type="text" [(ngModel)]="serialNumber" name="serialNumber" placeholder="Enter SN for single transfer" />
+        </div>
+
+        <div class="actions-row">
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="transferAllNew()"
+            [disabled]="loadingAll || loadingSingle || !isWoPairValid"
+          >
+            {{ loadingAll ? 'Transferring...' : 'Transfer all New SNs' }}
+          </button>
+
+          <button
+            type="button"
+            class="btn btn-secondary"
+            (click)="transferSingleSn()"
+            [disabled]="loadingAll || loadingSingle || !isWoPairValid || !serialNumber.trim()"
+          >
+            {{ loadingSingle ? 'Transferring...' : 'Transfer single SN' }}
+          </button>
+
+          <button type="button" class="btn btn-ghost" (click)="clearForm()" [disabled]="loadingAll || loadingSingle">
+            Clear
+          </button>
+        </div>
+
+        <div *ngIf="message" class="message" [ngClass]="{ success: success, error: !success }">
+          {{ message }}
+        </div>
+      </div>
+
+      <aside class="status-card">
+        <h3>Transfer Preview</h3>
+        <p class="status-help">Results are shown after a successful transfer.</p>
+
+        <div *ngIf="lastTransfer; else emptyState" class="result-grid">
+          <div class="result-item">
+            <span>Source WO</span>
+            <strong>{{ lastTransfer.source_wo }}</strong>
+          </div>
+          <div class="result-item">
+            <span>Target WO</span>
+            <strong>{{ lastTransfer.target_wo }}</strong>
+          </div>
+          <div class="result-item">
+            <span>Transferred</span>
+            <strong>{{ lastTransfer.transferred_count }}</strong>
+          </div>
+        </div>
+
+        <ng-template #emptyState>
+          <div class="empty-state">No transfer executed yet.</div>
+        </ng-template>
+      </aside>
+    </div>
+  </section>
+</div>

@@ -1,0 +1,175 @@
+<div class="trace-page">
+  <section class="trace-card hero-card">
+    <div class="hero-head">
+      <h2>Live Serial Route Tracker</h2>
+      <span class="hero-tag">SN / RSN Search</span>
+    </div>
+
+    <p class="hero-copy">
+      Search only by SN or RSN to see complete routing details and the current live station of the device.
+    </p>
+
+    <div class="search-box">
+      <label for="snSearch">Search SN / RSN</label>
+      <div class="search-row">
+        <input
+          id="snSearch"
+          type="text"
+          [(ngModel)]="query"
+          (keyup.enter)="onSearch()"
+          placeholder="Enter SN or RSN"
+          autocomplete="off"
+        />
+        <button type="button" class="primary" (click)="onSearch()" [disabled]="loading">
+          {{ loading ? 'Searching...' : 'Track Device' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="live-indicator" *ngIf="searchResult">
+      <span class="live-dot" [class.off]="!autoRefresh"></span>
+      <span>{{ autoRefresh ? 'Live refresh every 10 sec' : 'Live refresh paused' }}</span>
+      <button type="button" class="chip-btn" (click)="toggleAutoRefresh()">
+        {{ autoRefresh ? 'Pause Live' : 'Resume Live' }}
+      </button>
+      <span class="last-time" *ngIf="lastRefreshAt">Updated: {{ lastRefreshAt | date: 'HH:mm:ss' }}</span>
+    </div>
+
+    <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+  </section>
+
+  <section class="trace-card details-card" *ngIf="searchResult">
+    <div class="details-head">
+      <h3>Device Snapshot</h3>
+      <span class="match-chip">Matched by {{ searchResult.matched_by }}</span>
+    </div>
+
+    <div class="kv-grid">
+      <div class="kv-item"><span>Serial Number (SN)</span><strong>{{ searchResult.serial.sn }}</strong></div>
+      <div class="kv-item"><span>Routing Serial Number (RSN)</span><strong>{{ searchResult.serial.rsn }}</strong></div>
+      <div class="kv-item"><span>Part Number</span><strong>{{ searchResult.device.pn }}</strong></div>
+      <div class="kv-item"><span>Work Order</span><strong>{{ searchResult.device.work_order }}</strong></div>
+      <div class="kv-item"><span>Status</span><strong>{{ searchResult.serial.status }}</strong></div>
+      <div class="kv-item"><span>Product Line</span><strong>{{ searchResult.device.product_line }}</strong></div>
+      <div class="kv-item"><span>Date Created</span><strong>{{ searchResult.serial.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</strong></div>
+      <div class="kv-item"><span>Current Site</span><strong>{{ searchResult.device.site }}</strong></div>
+      <div class="kv-item"><span>Condition</span><strong>{{ searchResult.serial.condition }}</strong></div>
+      <div class="kv-item"><span>Current Station</span><strong>{{ currentStepLabel }}</strong></div>
+      <div class="kv-item"><span>Revision</span><strong>{{ searchResult.device.revision }}</strong></div>
+      <div class="kv-item full"><span>Description</span><strong>{{ searchResult.device.description }}</strong></div>
+    </div>
+
+  </section>
+
+  <section class="trace-card route-card" *ngIf="searchResult">
+    <div class="route-head">
+      <h3>Live Route Position</h3>
+      <p>Device is currently at: <strong>{{ currentStepLabel }}</strong></p>
+    </div>
+
+    <div class="route-scroll" (wheel)="onRouteWheel($event)" *ngIf="searchResult.routing.length > 0; else noRouteTemplate">
+      <div class="route-track">
+        <div
+          class="station-step"
+          *ngFor="let step of searchResult.routing; trackBy: trackByStation"
+          [class.completed]="step.state === 'completed'"
+          [class.current]="step.state === 'current'"
+          [class.pending]="step.state === 'pending'"
+        >
+          <div class="order-chip">#{{ step.station_order }}</div>
+          <h4>{{ step.station_code }}</h4>
+          <p>{{ step.station_name }}</p>
+
+          <div class="step-meta">
+            <span>{{ step.sample_mode }}</span>
+            <span>{{ step.report_mode }}</span>
+          </div>
+
+          <div
+            class="state-chip"
+            *ngIf="step.state !== 'completed'"
+            [class.current]="step.state === 'current'"
+            [class.pending]="step.state === 'pending'"
+          >
+            {{ formatStateLabel(step.state) }}
+          </div>
+          <div class="you-are-here" *ngIf="step.is_current">Device is here</div>
+        </div>
+      </div>
+    </div>
+
+    <ng-template #noRouteTemplate>
+      <p class="message">No routing configured for this part number.</p>
+    </ng-template>
+  </section>
+
+  <section class="trace-card history-card" *ngIf="searchResult">
+    <div class="history-head">
+      <h3>RSN History</h3>
+      <span class="history-count">Rows: {{ searchResult.history.length || 0 }}</span>
+    </div>
+
+    <div class="history-scroll" *ngIf="(searchResult.history.length || 0) > 0; else noHistoryTemplate">
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>Id</th>
+            <th>User</th>
+            <th>Date Time</th>
+            <th>Station</th>
+            <th>Length</th>
+            <th>PC</th>
+            <th>Result</th>
+            <th>Additional Info</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let history of searchResult.history; trackBy: trackByHistory">
+            <td>{{ history.id }}</td>
+            <td>{{ history.user_name || '-' }}</td>
+            <td>{{ history.date_time | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
+            <td>{{ history.station || '-' }}</td>
+            <td>{{ history.length || '-' }}</td>
+            <td>{{ history.pc_name || '-' }}</td>
+            <td>
+              <span
+                class="result-chip"
+                [class.pass]="formatHistoryResult(history.result) === 'PASS'"
+                [class.fail]="formatHistoryResult(history.result) === 'FAIL'"
+              >
+                {{ formatHistoryResult(history.result) }}
+              </span>
+            </td>
+            <td>
+              <ng-container *ngIf="history.child_sn; else maybeParentInfo">
+                <span>Child:</span>
+                <button type="button" class="link-btn" (click)="openRouting(history.child_sn)">
+                  {{ history.child_sn }}
+                </button>
+                <span *ngIf="history.child_pn">({{ history.child_pn }}{{ history.child_revision ? ' / ' + history.child_revision : '' }})</span>
+              </ng-container>
+
+              <ng-template #maybeParentInfo>
+                <ng-container *ngIf="history.parent_sn; else defaultHistoryInfo">
+                  <span>Parent:</span>
+                  <button type="button" class="link-btn" (click)="openRouting(history.parent_sn)">
+                    {{ history.parent_sn }}
+                  </button>
+                  <span *ngIf="history.parent_pn">({{ history.parent_pn }}{{ history.parent_revision ? ' / ' + history.parent_revision : '' }})</span>
+                </ng-container>
+              </ng-template>
+
+              <ng-template #defaultHistoryInfo>
+                {{ history.additional_info || '-' }}
+              </ng-template>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ng-template #noHistoryTemplate>
+      <p class="message">No pass/fail history available for this serial yet.</p>
+    </ng-template>
+  </section>
+</div>

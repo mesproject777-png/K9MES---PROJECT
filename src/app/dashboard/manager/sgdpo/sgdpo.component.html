@@ -1,0 +1,122 @@
+<div class="sgdpo-page">
+  <div class="toolbar">
+    <h2>SGD PO List</h2>
+    <div class="toolbar-actions">
+      <button type="button" class="primary" (click)="openCreateModal()">New SGD PO</button>
+    </div>
+  </div>
+
+  <div class="filters">
+    <label>
+      Search
+      <input
+        type="text"
+        placeholder="Search PO / Status / SW / HW / PN"
+        [value]="searchText"
+        (input)="onSearchChange($any($event.target).value)"
+      />
+    </label>
+    <button type="button" class="secondary" (click)="loadSgdPos()">Refresh</button>
+  </div>
+
+  <div class="messages">
+    <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+    <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+    <p *ngIf="isLoading" class="message">Loading SGD POs...</p>
+  </div>
+
+  <div class="table-wrapper" *ngIf="!isLoading">
+    <table>
+      <thead>
+        <tr>
+          <th>PO</th>
+          <th>Status</th>
+          <th>Sw_version</th>
+          <th>Hw_version</th>
+          <th>Item (PN)</th>
+          <th>PO Qty</th>
+          <th>WO Qty</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let row of rows">
+          <td>{{ row.po }}</td>
+          <td>{{ row.status }}</td>
+          <td>{{ row.sw_version }}</td>
+          <td>{{ row.hw_version }}</td>
+          <td>{{ row.item }}</td>
+          <td>{{ row.po_qty }}</td>
+          <td>{{ row.wo_qty }}</td>
+          <td>
+            <button type="button" class="secondary action-btn" (click)="openEditModal(row)">Edit</button>
+          </td>
+        </tr>
+        <tr *ngIf="rows.length === 0">
+          <td colspan="8" class="empty-state">No SGD POs found.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div *ngIf="isModalOpen" class="modal-backdrop" (click)="closeModal()">
+  <div class="modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{ isEditMode ? 'Edit SGD PO' : 'New SGD PO' }}</h3>
+      <button type="button" class="secondary" (click)="closeModal()">Close</button>
+    </div>
+
+    <div class="modal-body">
+      <div class="modal-messages" *ngIf="errorMessage || successMessage">
+        <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+        <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+      </div>
+
+      <form [formGroup]="poForm" class="modal-form">
+        <div class="form-row">
+          <label>PO</label>
+          <input type="text" formControlName="po" [readonly]="isEditMode" />
+        </div>
+
+        <div class="form-row">
+          <label>Item (PN)</label>
+          <input type="text" formControlName="pn" [readonly]="isEditMode" placeholder="Enter item PN" />
+        </div>
+
+        <div class="form-row" *ngIf="isEditMode">
+          <label>WO Qty</label>
+          <input type="number" [value]="editingWoQty ?? 0" readonly />
+        </div>
+
+        <div class="form-row">
+          <label>Status</label>
+          <select formControlName="status">
+            <option *ngFor="let s of statusOptions" [value]="s.value">{{ s.label }}</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label>Sw_version</label>
+          <input type="text" formControlName="sw_version" />
+        </div>
+
+        <div class="form-row">
+          <label>Hw_version</label>
+          <input type="text" formControlName="hw_version" />
+        </div>
+
+        <div class="form-row">
+          <label>PO Qty</label>
+          <input type="number" min="1" formControlName="po_qty" />
+        </div>
+      </form>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="primary" (click)="save()" [disabled]="isSaving">
+        {{ isSaving ? (isEditMode ? 'Updating...' : 'Saving...') : (isEditMode ? 'Update' : 'Save') }}
+      </button>
+    </div>
+  </div>
+</div>

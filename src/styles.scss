@@ -1,0 +1,162 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,200..700,0..1,-50..200');
+
+:root {
+	--bg-app: #eef3f7;
+	--bg-panel: #ffffff;
+	--bg-panel-soft: #f7fbff;
+	--bg-accent: #0b66d0;
+	--bg-accent-strong: #054ca3;
+	--bg-secondary: #e7eef7;
+	--text-primary: #112133;
+	--text-secondary: #55677a;
+	--text-muted: #75889c;
+	--border-soft: #d7e2ee;
+	--border-strong: #bfd0e3;
+	--success-bg: #def8e9;
+	--success-text: #0d6b36;
+	--error-bg: #ffe3e3;
+	--error-text: #a12222;
+	--warning-bg: #fff3da;
+	--warning-text: #8a5b00;
+	--shadow-soft: 0 10px 30px rgba(14, 41, 72, 0.08);
+	--shadow-elevated: 0 18px 40px rgba(9, 37, 64, 0.14);
+	--radius-sm: 8px;
+	--radius-md: 12px;
+	--radius-lg: 18px;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	min-height: 100%;
+}
+
+body {
+	margin: 0;
+	font-family: 'Manrope', 'Segoe UI', Tahoma, sans-serif;
+	color: var(--text-primary);
+	background:
+		radial-gradient(circle at 8% -12%, rgba(67, 154, 237, 0.2), transparent 40%),
+		radial-gradient(circle at 88% 5%, rgba(32, 197, 188, 0.16), transparent 44%),
+		var(--bg-app);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	margin: 0;
+	font-family: 'Space Grotesk', 'Manrope', sans-serif;
+	letter-spacing: 0.01em;
+	color: var(--text-primary);
+}
+
+p,
+small,
+label,
+span,
+td,
+th,
+li,
+input,
+button,
+select,
+textarea {
+	font-family: inherit;
+}
+
+input,
+select,
+textarea {
+	border: 1px solid var(--border-soft);
+	border-radius: var(--radius-sm);
+	background: #fff;
+	color: var(--text-primary);
+	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+	outline: none;
+	border-color: var(--bg-accent);
+	box-shadow: 0 0 0 4px rgba(11, 102, 208, 0.12);
+}
+
+button {
+	border-radius: var(--radius-sm);
+	transition: transform 0.15s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+	transform: translateY(-1px);
+	box-shadow: 0 8px 20px rgba(11, 64, 120, 0.16);
+}
+
+button:active:not(:disabled) {
+	transform: translateY(0);
+}
+
+button:disabled {
+	opacity: 0.65;
+	cursor: not-allowed;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+thead th {
+	color: #22405e;
+}
+
+.card,
+.panel,
+.surface {
+	background: linear-gradient(180deg, #ffffff 0%, var(--bg-panel-soft) 100%);
+	border: 1px solid var(--border-soft);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-soft);
+}
+
+.message {
+	border-radius: var(--radius-sm);
+	border: 1px solid transparent;
+	padding: 10px 12px;
+}
+
+.message.success {
+	background: var(--success-bg);
+	color: var(--success-text);
+	border-color: #afe4c9;
+}
+
+.message.error {
+	background: var(--error-bg);
+	color: var(--error-text);
+	border-color: #f6b7b7;
+}
+
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+::-webkit-scrollbar-track {
+	background: #dfe7f0;
+}
+
+::-webkit-scrollbar-thumb {
+	background: #8ea5bb;
+	border-radius: 100px;
+	border: 2px solid #dfe7f0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: #6f879f;
+}

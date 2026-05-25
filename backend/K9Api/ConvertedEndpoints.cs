@@ -1,0 +1,3691 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Npgsql;
+using NpgsqlTypes;
+
+public static class ConvertedEndpoints
+{
+    private static readonly HashSet<string> AllowedItemTypes = new(StringComparer.Ordinal)
+    {
+        "Manufactured",
+        "Purchased"
+    };
+
+    public static void MapConvertedEndpoints(this WebApplication app)
+    {
+        app.MapGet("/", () => Results.Json(new
+        {
+            message = "MES API is running",
+            endpoints = new[]
+            {
+                "/api/users",
+                "/api/sn-types",
+                "/api/items",
+                "/api/item-revisions",
+                "/api/routing",
+                "/api/stations",
+                "/api/work-orders",
+                "/api/sites",
+                "/api/traceability",
+                "/api/sgd-pos"
+            }
+        }));
+
+        MapSites(app);
+        MapUserLogin(app);
+        MapStations(app);
+        MapItems(app);
+        MapItemRevisions(app);
+        MapEpvTypes(app);
+        MapSnTypes(app);
+        MapSgdPos(app);
+        MapBom(app);
+        MapRouting(app);
+        MapWorkOrders(app);
+        MapGenerateSn(app);
+        MapTraceability(app);
+        MapPacking(app);
+        MapAssembly(app);
+    }
+
+    private static void MapSites(WebApplication app)
+    {
+        app.MapGet("/api/sites", async () =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            return Results.Json(await QueryRowsAsync(connection, "SELECT id, name, created_at FROM sites ORDER BY name ASC"));
+        });
+
+        app.MapPost("/api/sites", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var name = ReadString(payload, "name")?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return JsonError("name is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            try
+            {
+                var rows = await QueryRowsAsync(
+                    connection,
+                    "INSERT INTO sites (name) VALUES (@name) RETURNING id, name, created_at",
+                    ("name", name));
+                return Results.Json(rows[0], statusCode: 201);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                return JsonError("Site already exists", 409);
+            }
+        });
+
+        app.MapPut("/api/sites/{id:int}", async (int id, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var name = ReadString(payload, "name")?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return JsonError("name is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            try
+            {
+                var rows = await QueryRowsAsync(
+                    connection,
+                    "UPDATE sites SET name = @name WHERE id = @id RETURNING id, name, created_at",
+                    ("name", name),
+                    ("id", id));
+                return rows.Count == 0 ? JsonError("Site not found", 404) : Results.Json(rows[0]);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                return JsonError("Site already exists", 409);
+            }
+        });
+
+        app.MapDelete("/api/sites/{id:int}", async (int id) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            try
+            {
+                var rows = await QueryRowsAsync(connection, "DELETE FROM sites WHERE id = @id RETURNING id", ("id", id));
+                return rows.Count == 0 ? JsonError("Site not found", 404) : Results.Json(new { message = "Site deleted successfully" });
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23503")
+            {
+                return JsonError("Site is in use by work orders", 409);
+            }
+        });
+    }
+
+    private static void MapUserLogin(WebApplication app)
+    {
+        app.MapPost("/api/users/login", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var loginId = ReadString(payload, "loginId")?.Trim();
+            var password = ReadString(payload, "password");
+            if (string.IsNullOrWhiteSpace(loginId) || string.IsNullOrWhiteSpace(password))
+            {
+                return JsonError("loginId and password are required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT u.id, u.login_id, u.user_name, u.password, u.is_active, u.created_at,
+                       r.id AS role_id, r.role_name, COALESCE(r.page_access, '{}') AS page_access
+                FROM users u
+                LEFT JOIN roles r ON r.id = u.role_id
+                WHERE u.login_id = @loginId
+                LIMIT 1
+                """,
+                ("loginId", loginId));
+            if (rows.Count == 0)
+            {
+                return JsonError("Invalid login ID or password", 401);
+            }
+
+            var user = rows[0];
+            if (user["password"] is not string storedPassword || !string.Equals(storedPassword, password, StringComparison.Ordinal))
+            {
+                return JsonError("Invalid login ID or password", 401);
+            }
+
+            if (user["is_active"] is bool active && !active)
+            {
+                return JsonError("User is inactive and cannot log in", 403);
+            }
+
+            user.Remove("password");
+            return Results.Json(user);
+        });
+    }
+
+    private static void MapStations(WebApplication app)
+    {
+        app.MapGet("/api/stations", async (HttpRequest request) =>
+        {
+            var page = ParsePositiveInt(request.Query["page"], 1);
+            var limitRaw = request.Query["limit"].ToString().Trim().ToLowerInvariant();
+            var search = request.Query["search"].ToString().Trim();
+            var parameters = new List<(string Name, object? Value)>();
+            var whereSql = string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                whereSql = "WHERE ms.masterstation_code ILIKE @search OR ms.masterstation_name ILIKE @search OR ms.masterstation_description ILIKE @search";
+                parameters.Add(("search", $"%{search}%"));
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            if (limitRaw == "all")
+            {
+                var allRows = await QueryRowsAsync(
+                    connection,
+                    $"""
+                    SELECT
+                      ms.masterstation_id AS id,
+                      ms.masterstation_code AS station_code,
+                      ms.masterstation_name AS station_desc,
+                      ms.masterstation_description,
+                      COUNT(*) OVER () AS total_count
+                    FROM masterstation ms
+                    {whereSql}
+                    ORDER BY ms.masterstation_code ASC
+                    """,
+                    parameters.ToArray());
+                var totalAll = allRows.Count > 0 ? Convert.ToInt32(allRows[0]["total_count"] ?? 0) : 0;
+                return Results.Json(new { data = MapStations(allRows), total = totalAll, page = 1, limit = totalAll == 0 ? 1 : totalAll });
+            }
+
+            var limit = Math.Min(ParsePositiveInt(limitRaw, 25), 500);
+            var offset = (page - 1) * limit;
+            parameters.Add(("limit", limit));
+            parameters.Add(("offset", offset));
+
+            var rows = await QueryRowsAsync(
+                connection,
+                $"""
+                SELECT
+                  ms.masterstation_id AS id,
+                  ms.masterstation_code AS station_code,
+                  ms.masterstation_name AS station_desc,
+                  ms.masterstation_description,
+                  COUNT(*) OVER () AS total_count
+                FROM masterstation ms
+                {whereSql}
+                ORDER BY ms.masterstation_code ASC
+                LIMIT @limit OFFSET @offset
+                """,
+                parameters.ToArray());
+            var total = rows.Count > 0 ? Convert.ToInt32(rows[0]["total_count"] ?? 0) : 0;
+            return Results.Json(new { data = MapStations(rows), total, page, limit });
+        });
+
+        app.MapPost("/api/stations", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var code = ReadString(payload, "station_code")?.Trim();
+            var desc = ReadString(payload, "station_desc")?.Trim();
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(desc))
+            {
+                return JsonMessage("station_code and station_desc are required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            try
+            {
+                var rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    INSERT INTO masterstation (masterstation_code, masterstation_name, masterstation_description)
+                    VALUES (@code, @desc, @desc)
+                    RETURNING masterstation_id AS id, masterstation_code AS station_code, masterstation_name AS station_desc
+                    """,
+                    ("code", code),
+                    ("desc", desc));
+                rows[0]["status"] = "Active";
+                return Results.Json(rows[0], statusCode: 201);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                return JsonMessage("Station code already exists", 409);
+            }
+        });
+
+        app.MapPut("/api/stations/{id:int}", async (int id, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var code = ReadString(payload, "station_code")?.Trim();
+            var desc = ReadString(payload, "station_desc")?.Trim();
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(desc))
+            {
+                return JsonMessage("station_code and station_desc are required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            try
+            {
+                var rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    UPDATE masterstation
+                    SET masterstation_code = @code,
+                        masterstation_name = @desc,
+                        masterstation_description = @desc
+                    WHERE masterstation_id = @id
+                    RETURNING masterstation_id AS id, masterstation_code AS station_code, masterstation_name AS station_desc
+                    """,
+                    ("code", code),
+                    ("desc", desc),
+                    ("id", id));
+                if (rows.Count == 0)
+                {
+                    return JsonMessage("Station not found", 404);
+                }
+
+                rows[0]["status"] = "Active";
+                return Results.Json(rows[0]);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                return JsonMessage("Station code already exists", 409);
+            }
+        });
+
+        app.MapDelete("/api/stations/{id:int}", async (int id) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(connection, "DELETE FROM masterstation WHERE masterstation_id = @id RETURNING masterstation_id", ("id", id));
+            return rows.Count == 0 ? JsonMessage("Station not found", 404) : Results.Json(new { message = "Station deleted successfully" });
+        });
+
+        app.MapPost("/api/stations/import", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var sourceRows = payload switch
+            {
+                JsonArray array => array.OfType<JsonNode>().ToArray(),
+                null => Array.Empty<JsonNode>(),
+                _ => new[] { payload }
+            };
+
+            var byCode = new Dictionary<string, (string Code, string Desc)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in sourceRows)
+            {
+                var code = ReadString(row, "station_code")?.Trim();
+                if (string.IsNullOrWhiteSpace(code))
+                {
+                    continue;
+                }
+
+                var desc = ReadString(row, "station_desc")?.Trim();
+                byCode[code] = (code, string.IsNullOrWhiteSpace(desc) ? code : desc);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            var inserted = 0;
+            var updated = 0;
+            var skipped = 0;
+
+            try
+            {
+                foreach (var station in byCode.Values)
+                {
+                    var existing = await QueryRowsAsync(
+                        connection,
+                        """
+                        SELECT masterstation_id, masterstation_name, masterstation_description
+                        FROM masterstation
+                        WHERE UPPER(masterstation_code) = UPPER(@code)
+                        LIMIT 1
+                        """,
+                        ("code", station.Code));
+
+                    if (existing.Count == 0)
+                    {
+                        await ExecuteAsync(
+                            connection,
+                            """
+                            INSERT INTO masterstation (masterstation_code, masterstation_name, masterstation_description)
+                            VALUES (@code, @name, @description)
+                            """,
+                            ("code", station.Code),
+                            ("name", station.Desc),
+                            ("description", station.Desc));
+                        inserted++;
+                        continue;
+                    }
+
+                    var sameName = string.Equals(existing[0]["masterstation_name"]?.ToString(), station.Desc, StringComparison.Ordinal);
+                    var sameDesc = string.Equals(existing[0]["masterstation_description"]?.ToString(), station.Desc, StringComparison.Ordinal);
+                    if (sameName && sameDesc)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    await ExecuteAsync(
+                        connection,
+                        """
+                        UPDATE masterstation
+                        SET masterstation_name = @name,
+                            masterstation_description = @description
+                        WHERE masterstation_id = @id
+                        """,
+                        ("name", station.Desc),
+                        ("description", station.Desc),
+                        ("id", existing[0]["masterstation_id"]));
+                    updated++;
+                }
+
+                await transaction.CommitAsync();
+                var total = await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM masterstation");
+                return Results.Json(new
+                {
+                    sourceRows = sourceRows.Length,
+                    uniqueCodes = byCode.Count,
+                    inserted,
+                    updated,
+                    skipped,
+                    totalInDb = total
+                });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+    }
+
+    private static void MapItems(WebApplication app)
+    {
+        app.MapGet("/api/items", async (HttpRequest request) =>
+        {
+            var page = ParsePositiveInt(request.Query["page"], 1);
+            var limit = Math.Min(ParsePositiveInt(request.Query["limit"], 15), 500);
+            var search = request.Query["search"].ToString().Trim();
+            var offset = (page - 1) * limit;
+            var parameters = new List<(string Name, object? Value)>();
+            var whereSql = string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                whereSql = "WHERE i.pn ILIKE @search OR i.description ILIKE @search";
+                parameters.Add(("search", $"%{search}%"));
+            }
+
+            parameters.Add(("limit", limit));
+            parameters.Add(("offset", offset));
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                $"""
+                SELECT
+                  i.id,
+                  i.pn,
+                  i.description,
+                  i.marketing_desc,
+                  i.phantom,
+                  i.sgd_control,
+                  i.item_type,
+                  i.created_at,
+                  i.updated_at,
+                  pl.id AS product_line_id,
+                  pl.code AS product_line_code,
+                  pl.description AS product_line_description,
+                  st.id AS sn_type_id,
+                  st.sn_type_name AS sn_type_name,
+                  pt.id AS pn_type_id,
+                  pt.code AS pn_type_code,
+                  pt.type AS pn_type_name,
+                  COUNT(*) OVER () AS total_count
+                FROM items i
+                LEFT JOIN product_lines pl ON pl.id = i.product_line_id
+                LEFT JOIN sn_types st ON st.id = i.sn_type_id
+                LEFT JOIN pn_types pt ON pt.id = i.pn_type_id
+                {whereSql}
+                ORDER BY i.created_at DESC, i.id DESC
+                LIMIT @limit OFFSET @offset
+                """,
+                parameters.ToArray());
+            var total = rows.Count > 0 ? Convert.ToInt32(rows[0]["total_count"] ?? 0) : 0;
+            foreach (var row in rows)
+            {
+                row.Remove("total_count");
+            }
+
+            return Results.Json(new { data = rows, total, page, limit });
+        });
+
+        app.MapPost("/api/items", async (HttpContext context) => await SaveItemAsync(context, null));
+        app.MapPut("/api/items/{id:int}", async (HttpContext context, int id) => await SaveItemAsync(context, id));
+    }
+
+    private static void MapItemRevisions(WebApplication app)
+    {
+        app.MapGet("/api/item-revisions/lookup", async (HttpRequest request) =>
+        {
+            var search = request.Query["search"].ToString().Trim();
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT id, pn, description
+                FROM items
+                WHERE @search = '' OR pn ILIKE @pattern OR description ILIKE @pattern
+                ORDER BY pn ASC
+                LIMIT 25
+                """,
+                ("search", search),
+                ("pattern", $"%{search}%"));
+            return Results.Json(rows);
+        });
+
+        app.MapGet("/api/item-revisions/by-pn", async (HttpRequest request) =>
+        {
+            var pn = request.Query["pn"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(pn))
+            {
+                return JsonMessage("pn is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(connection, "SELECT id, pn, description FROM items WHERE pn = @pn", ("pn", pn));
+            return rows.Count == 0 ? JsonMessage("Item not found", 404) : Results.Json(rows[0]);
+        });
+
+        app.MapGet("/api/item-revisions/{itemId:int}/revisions", async (int itemId) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var itemRows = await QueryRowsAsync(connection, "SELECT id, pn, description FROM items WHERE id = @id", ("id", itemId));
+            if (itemRows.Count == 0)
+            {
+                return JsonMessage("Item not found", 404);
+            }
+
+            var revisionRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT id, item_id, revision, in_date, expire_date, version, description, created_at, updated_at
+                FROM item_revisions
+                WHERE item_id = @itemId
+                ORDER BY in_date DESC, revision DESC
+                """,
+                ("itemId", itemId));
+            return Results.Json(new { item = itemRows[0], revisions = revisionRows });
+        });
+
+        app.MapPost("/api/item-revisions/{itemId:int}/revisions", async (int itemId, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var revision = ReadString(payload, "revision")?.Trim();
+            var inDate = ReadString(payload, "in_date")?.Trim();
+            var expireDate = ReadString(payload, "expire_date")?.Trim();
+            var version = ReadString(payload, "version")?.Trim();
+            var description = ReadString(payload, "description")?.Trim();
+            var changedBy = ReadString(payload, "changed_by") ?? "system";
+
+            if (string.IsNullOrWhiteSpace(revision) || string.IsNullOrWhiteSpace(inDate))
+            {
+                return JsonMessage("revision and in_date are required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                var itemRows = await QueryRowsAsync(connection, "SELECT id FROM items WHERE id = @id", ("id", itemId));
+                if (itemRows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Item not found", 404);
+                }
+
+                var inserted = await QueryRowsAsync(
+                    connection,
+                    """
+                    INSERT INTO item_revisions (item_id, revision, in_date, expire_date, version, description)
+                    VALUES (@itemId, @revision, @inDate::date, NULLIF(@expireDate, '')::date, @version, @description)
+                    RETURNING *
+                    """,
+                    ("itemId", itemId),
+                    ("revision", revision),
+                    ("inDate", inDate),
+                    ("expireDate", expireDate ?? string.Empty),
+                    ("version", ToDbNullable(version)),
+                    ("description", ToDbNullable(description)));
+
+                await InsertJsonHistoryAsync(connection, "item_revision_history", "item_revision_id", inserted[0]["id"]!, "CREATE", inserted[0], changedBy);
+                await transaction.CommitAsync();
+                return Results.Json(inserted[0], statusCode: 201);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("Revision already exists for this item and in date", 409);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+    }
+
+    private static void MapEpvTypes(WebApplication app)
+    {
+        app.MapGet("/api/epv-types", async () =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var types = await QueryRowsAsync(
+                connection,
+                """
+                SELECT
+                  t.id,
+                  t.type_name,
+                  t.regex_rule,
+                  t.created_at,
+                  t.updated_at,
+                  COALESCE(
+                    json_agg(
+                      json_build_object(
+                        'id', st.id,
+                        'sub_type_name', st.sub_type_name,
+                        'regex_rule', st.regex_rule,
+                        'created_at', st.created_at,
+                        'updated_at', st.updated_at
+                      )
+                      ORDER BY st.sub_type_name ASC
+                    ) FILTER (WHERE st.id IS NOT NULL),
+                    '[]'
+                  ) AS sub_types
+                FROM epv_types t
+                LEFT JOIN epv_sub_types st ON st.epv_type_id = t.id
+                GROUP BY t.id
+                ORDER BY t.type_name ASC
+                """);
+            return Results.Json(types);
+        });
+
+        app.MapGet("/api/epv-types/regex-master", () => Results.Json(new[]
+        {
+            new { label = "Any text", value = ".*" },
+            new { label = "Digits only", value = "^[0-9]+$" },
+            new { label = "Letters only", value = "^[A-Za-z]+$" },
+            new { label = "Alphanumeric", value = "^[A-Za-z0-9]+$" }
+        }));
+
+        app.MapPost("/api/epv-types", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var typeName = ReadString(payload, "type_name")?.Trim();
+            var regexRule = ReadString(payload, "regex_rule")?.Trim();
+            if (string.IsNullOrWhiteSpace(typeName) || string.IsNullOrWhiteSpace(regexRule))
+            {
+                return JsonMessage("type_name and regex_rule are required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            try
+            {
+                var rows = await QueryRowsAsync(
+                    connection,
+                    "INSERT INTO epv_types (type_name, regex_rule) VALUES (@typeName, @regexRule) RETURNING *",
+                    ("typeName", typeName),
+                    ("regexRule", regexRule));
+                return Results.Json(rows[0], statusCode: 201);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                return JsonMessage("EPV type already exists", 409);
+            }
+        });
+
+        app.MapDelete("/api/epv-types/{typeId:int}", async (int typeId) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var used = await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM sn_type_fields WHERE epv_type_id = @id", ("id", typeId));
+            if (used > 0)
+            {
+                return JsonMessage("EPV type is in use and cannot be deleted", 409);
+            }
+
+            var rows = await QueryRowsAsync(connection, "DELETE FROM epv_types WHERE id = @id RETURNING id", ("id", typeId));
+            return rows.Count == 0 ? JsonMessage("EPV type not found", 404) : Results.Json(new { message = "EPV type deleted successfully" });
+        });
+
+        app.MapGet("/api/epv-types/{typeId:int}/sub-types", async (int typeId) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                "SELECT id, epv_type_id, sub_type_name, regex_rule, created_at, updated_at FROM epv_sub_types WHERE epv_type_id = @id ORDER BY sub_type_name ASC",
+                ("id", typeId));
+            return Results.Json(rows);
+        });
+
+        app.MapPost("/api/epv-types/{typeId:int}/sub-types", async (int typeId, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var subTypeName = ReadString(payload, "sub_type_name")?.Trim();
+            var regexRule = ReadString(payload, "regex_rule")?.Trim();
+            if (string.IsNullOrWhiteSpace(subTypeName) || string.IsNullOrWhiteSpace(regexRule))
+            {
+                return JsonMessage("sub_type_name and regex_rule are required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            try
+            {
+                var rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    INSERT INTO epv_sub_types (epv_type_id, sub_type_name, regex_rule)
+                    VALUES (@typeId, @subTypeName, @regexRule)
+                    RETURNING *
+                    """,
+                    ("typeId", typeId),
+                    ("subTypeName", subTypeName),
+                    ("regexRule", regexRule));
+                return Results.Json(rows[0], statusCode: 201);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                return JsonMessage("EPV sub type already exists", 409);
+            }
+        });
+
+        app.MapDelete("/api/epv-types/sub-types/{subTypeId:int}", async (int subTypeId) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var used = await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM sn_type_fields WHERE epv_sub_type_id = @id", ("id", subTypeId));
+            if (used > 0)
+            {
+                return JsonMessage("EPV sub type is in use and cannot be deleted", 409);
+            }
+
+            var rows = await QueryRowsAsync(connection, "DELETE FROM epv_sub_types WHERE id = @id RETURNING id", ("id", subTypeId));
+            return rows.Count == 0 ? JsonMessage("EPV sub type not found", 404) : Results.Json(new { message = "EPV sub type deleted successfully" });
+        });
+    }
+
+    private static void MapSnTypes(WebApplication app)
+    {
+        app.MapGet("/api/sn-types", async () =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT
+                  st.id,
+                  st.sn_type_name,
+                  st.remark,
+                  st.created_at,
+                  st.updated_at,
+                  COUNT(f.id)::int AS field_count
+                FROM sn_types st
+                LEFT JOIN sn_type_fields f ON f.sn_type_id = st.id
+                GROUP BY st.id
+                ORDER BY st.sn_type_name ASC
+                """);
+            return Results.Json(rows);
+        });
+
+        app.MapGet("/api/sn-types/reference/field-types", () => Results.Json(new[]
+        {
+            "Fixed Text",
+            "Variable Text",
+            "Date",
+            "Sequence Counter",
+            "EPV"
+        }));
+
+        app.MapGet("/api/sn-types/{id:int}", async (int id) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var typeRows = await QueryRowsAsync(connection, "SELECT * FROM sn_types WHERE id = @id", ("id", id));
+            if (typeRows.Count == 0)
+            {
+                return JsonMessage("SN type not found", 404);
+            }
+
+            typeRows[0]["fields"] = await GetSnTypeFieldsAsync(connection, id);
+            return Results.Json(typeRows[0]);
+        });
+
+        app.MapPost("/api/sn-types", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var name = ReadString(payload, "sn_type_name")?.Trim();
+            var remark = ReadString(payload, "remark")?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return JsonMessage("sn_type_name is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                "INSERT INTO sn_types (sn_type_name, remark) VALUES (@name, @remark) RETURNING *",
+                ("name", name),
+                ("remark", ToDbNullable(remark)));
+            return Results.Json(rows[0], statusCode: 201);
+        });
+
+        app.MapPut("/api/sn-types/{id:int}", async (int id, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var name = ReadString(payload, "sn_type_name")?.Trim();
+            var remark = ReadString(payload, "remark")?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return JsonMessage("sn_type_name is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                "UPDATE sn_types SET sn_type_name = @name, remark = @remark, updated_at = NOW() WHERE id = @id RETURNING *",
+                ("name", name),
+                ("remark", ToDbNullable(remark)),
+                ("id", id));
+            return rows.Count == 0 ? JsonMessage("SN type not found", 404) : Results.Json(rows[0]);
+        });
+
+        app.MapDelete("/api/sn-types/{id:int}", async (int id) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            try
+            {
+                var rows = await QueryRowsAsync(connection, "DELETE FROM sn_types WHERE id = @id RETURNING id", ("id", id));
+                return rows.Count == 0 ? JsonMessage("SN type not found", 404) : Results.Json(new { message = "SN type deleted successfully" });
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23503")
+            {
+                return JsonMessage("SN type is in use and cannot be deleted", 409);
+            }
+        });
+
+        app.MapPost("/api/sn-types/{snTypeId:int}/fields", async (int snTypeId, HttpContext context) => await SaveSnTypeFieldAsync(context, snTypeId, null));
+        app.MapPut("/api/sn-types/fields/{fieldId:int}", async (int fieldId, HttpContext context) => await SaveSnTypeFieldAsync(context, null, fieldId));
+        app.MapDelete("/api/sn-types/fields/{fieldId:int}", async (int fieldId) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(connection, "DELETE FROM sn_type_fields WHERE id = @id RETURNING id", ("id", fieldId));
+            return rows.Count == 0 ? JsonMessage("SN type field not found", 404) : Results.Json(new { message = "SN type field deleted successfully" });
+        });
+
+        app.MapGet("/api/sn-types/{id:int}/epv-uploads", async (int id) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT u.id, u.sn_type_id, u.file_name, u.mime_type, u.source_kind, u.record_count,
+                       u.epv_type_id, et.type_name AS epv_type_name,
+                       u.epv_sub_type_id, est.sub_type_name AS epv_sub_type_name,
+                       u.extracted_values, u.created_at
+                FROM sn_type_epv_uploads u
+                LEFT JOIN epv_types et ON et.id = u.epv_type_id
+                LEFT JOIN epv_sub_types est ON est.id = u.epv_sub_type_id
+                WHERE u.sn_type_id = @id
+                ORDER BY u.created_at DESC, u.id DESC
+                """,
+                ("id", id));
+            return Results.Json(rows);
+        });
+
+        app.MapPost("/api/sn-types/{id:int}/epv-upload", async (int id, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var fileName = ReadString(payload, "file_name")?.Trim();
+            var mimeType = ReadString(payload, "mime_type")?.Trim();
+            var contentBase64 = ReadString(payload, "file_content_base64");
+            var epvTypeId = ReadInt(payload, "epv_type_id");
+            var epvSubTypeId = ReadInt(payload, "epv_sub_type_id");
+
+            if (string.IsNullOrWhiteSpace(fileName) || string.IsNullOrWhiteSpace(contentBase64))
+            {
+                return JsonMessage("file_name and file_content_base64 are required", 400);
+            }
+
+            if (epvTypeId is null || epvSubTypeId is null)
+            {
+                return JsonMessage("epv_type_id and epv_sub_type_id are required", 400);
+            }
+
+            var bytes = Convert.FromBase64String(contentBase64);
+            var text = System.Text.Encoding.UTF8.GetString(bytes);
+            var values = text
+                .Split(new[] { '\r', '\n', ',', '\t', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (values.Length == 0)
+            {
+                return JsonMessage("No EPV values found in upload", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                if (await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM sn_types WHERE id = @id", ("id", id)) == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("SN type not found", 404);
+                }
+
+                var uploadRows = await QueryRowsAsync(
+                    connection,
+                    """
+                    INSERT INTO sn_type_epv_uploads
+                      (sn_type_id, file_name, mime_type, source_kind, record_count, epv_type_id, epv_sub_type_id, extracted_values)
+                    VALUES
+                      (@snTypeId, @fileName, @mimeType, 'text', @recordCount, @epvTypeId, @epvSubTypeId, @values::jsonb)
+                    RETURNING id, sn_type_id, file_name, mime_type, source_kind, record_count, epv_type_id, epv_sub_type_id, created_at
+                    """,
+                    ("snTypeId", id),
+                    ("fileName", fileName),
+                    ("mimeType", ToDbNullable(mimeType)),
+                    ("recordCount", values.Length),
+                    ("epvTypeId", epvTypeId.Value),
+                    ("epvSubTypeId", epvSubTypeId.Value),
+                    ("values", JsonSerializer.Serialize(values)));
+
+                for (var index = 0; index < values.Length; index++)
+                {
+                    await ExecuteAsync(
+                        connection,
+                        """
+                        INSERT INTO sn_type_epv_values
+                          (upload_id, sn_type_id, epv_type_id, epv_sub_type_id, value_order, epv_value)
+                        VALUES
+                          (@uploadId, @snTypeId, @epvTypeId, @epvSubTypeId, @valueOrder, @value)
+                        ON CONFLICT (epv_type_id, epv_sub_type_id, value_order) DO NOTHING
+                        """,
+                        ("uploadId", uploadRows[0]["id"]),
+                        ("snTypeId", id),
+                        ("epvTypeId", epvTypeId.Value),
+                        ("epvSubTypeId", epvSubTypeId.Value),
+                        ("valueOrder", index + 1),
+                        ("value", values[index]));
+                }
+
+                await transaction.CommitAsync();
+                return Results.Json(new
+                {
+                    message = "EPV upload processed successfully",
+                    upload = uploadRows[0],
+                    values_preview = values.Take(10).ToArray(),
+                    values_total = values.Length
+                }, statusCode: 201);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+    }
+
+    private static void MapSgdPos(WebApplication app)
+    {
+        app.MapGet("/api/sgd-pos", async (HttpRequest request) =>
+        {
+            var search = request.Query["search"].ToString().Trim();
+            var status = request.Query["status"].ToString().Trim();
+            var parameters = new List<(string Name, object? Value)>();
+            var where = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                where.Add("(sp.po ILIKE @search OR i.pn ILIKE @search)");
+                parameters.Add(("search", $"%{search}%"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                where.Add("sp.status = @status");
+                parameters.Add(("status", status));
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                $"""
+                SELECT sp.id, sp.po, sp.status, sp.sw_version, sp.hw_version, sp.item_id, i.pn, i.description AS item_description,
+                       sp.po_qty, sp.created_at, sp.updated_at
+                FROM sgd_pos sp
+                JOIN items i ON i.id = sp.item_id
+                {(where.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", where))}
+                ORDER BY sp.created_at DESC, sp.id DESC
+                """,
+                parameters.ToArray());
+            return Results.Json(rows);
+        });
+
+        app.MapPost("/api/sgd-pos", async (HttpContext context) => await SaveSgdPoAsync(context, null));
+        app.MapPut("/api/sgd-pos/{id:int}", async (int id, HttpContext context) => await SaveSgdPoAsync(context, id));
+    }
+
+    private static void MapBom(WebApplication app)
+    {
+        app.MapGet("/api/bom/lookup", async (HttpRequest request) =>
+        {
+            var query = request.Query["query"].ToString().Trim();
+            var limit = Math.Min(ParsePositiveInt(request.Query["limit"], 20), 100);
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Results.Json(new { data = Array.Empty<object>() });
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT id, pn, description
+                FROM items
+                WHERE pn ILIKE @pattern OR description ILIKE @pattern
+                ORDER BY pn ASC
+                LIMIT @limit
+                """,
+                ("pattern", $"%{query}%"),
+                ("limit", limit));
+            return Results.Json(new { data = rows });
+        });
+
+        app.MapGet("/api/bom/by-pn", async (HttpRequest request) =>
+        {
+            var pn = request.Query["pn"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(pn))
+            {
+                return JsonMessage("pn is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(connection, "SELECT id, pn, description FROM items WHERE pn = @pn LIMIT 1", ("pn", pn));
+            return rows.Count == 0 ? JsonMessage("Part number not found", 404) : Results.Json(rows[0]);
+        });
+
+        app.MapGet("/api/bom/{itemId:int}/revisions", async (int itemId) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var itemRows = await QueryRowsAsync(connection, "SELECT id, pn, description FROM items WHERE id = @id", ("id", itemId));
+            if (itemRows.Count == 0)
+            {
+                return JsonMessage("Part number not found", 404);
+            }
+
+            var revisions = await QueryRowsAsync(
+                connection,
+                """
+                SELECT id, item_id, revision, in_date, expire_date
+                FROM item_revisions
+                WHERE item_id = @itemId
+                ORDER BY in_date DESC, id DESC
+                """,
+                ("itemId", itemId));
+            return Results.Json(new { item = itemRows[0], data = revisions, total = revisions.Count });
+        });
+
+        app.MapGet("/api/bom/view/search", async (HttpRequest request) =>
+        {
+            var pn = request.Query["pn"].ToString().Trim();
+            var revision = request.Query["revision"].ToString().Trim();
+            var includeHistory = string.Equals(request.Query["includeHistory"], "true", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(pn))
+            {
+                return JsonMessage("pn is required", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(revision))
+            {
+                return JsonMessage("revision is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var payload = await GetBomPayloadAsync(connection, pn, revision, includeHistory);
+            if (payload is null)
+            {
+                return JsonMessage("Part number not found", 404);
+            }
+
+            if (payload.Revision is null)
+            {
+                return JsonMessage("Revision not found for this PN", 404);
+            }
+
+            return Results.Json(new
+            {
+                item = payload.Item,
+                revision = payload.Revision,
+                data = payload.Data,
+                history = payload.History,
+                total = payload.Data.Count
+            });
+        });
+
+        app.MapPost("/api/bom/lines", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var mainPn = ReadString(payload, "main_pn")?.Trim();
+            var mainRevisionText = ReadString(payload, "main_revision")?.Trim();
+            var sonPn = ReadString(payload, "son_pn")?.Trim();
+            var sonRevisionText = ReadString(payload, "son_rev")?.Trim();
+            var sonQty = ReadInt(payload, "son_qty");
+            var referenceDesignators = ReadString(payload, "reference_designators")?.Trim();
+            var changedBy = ReadString(payload, "changed_by") ?? "system";
+
+            if (string.IsNullOrWhiteSpace(mainPn))
+            {
+                return JsonMessage("main_pn is required", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(mainRevisionText))
+            {
+                return JsonMessage("main_revision is required", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(sonPn))
+            {
+                return JsonMessage("son_pn is required", 400);
+            }
+
+            if (sonQty is null or <= 0)
+            {
+                return JsonMessage("son_qty must be a positive number", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                var mainItem = await FindItemByPnAsync(connection, mainPn);
+                if (mainItem is null)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Main PN not found", 404);
+                }
+
+                var mainRevision = await FindItemRevisionAsync(connection, Convert.ToInt32(mainItem["id"]), mainRevisionText);
+                if (mainRevision is null)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Main revision not found for PN", 404);
+                }
+
+                var sonItem = await FindItemByPnAsync(connection, sonPn);
+                if (sonItem is null)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Son PN not found", 404);
+                }
+
+                int? sonRevisionId = null;
+                if (!string.IsNullOrWhiteSpace(sonRevisionText))
+                {
+                    var sonRevision = await FindItemRevisionAsync(connection, Convert.ToInt32(sonItem["id"]), sonRevisionText);
+                    if (sonRevision is null)
+                    {
+                        await transaction.RollbackAsync();
+                        return JsonMessage("Son revision not found for PN", 404);
+                    }
+
+                    sonRevisionId = Convert.ToInt32(sonRevision["id"]);
+                }
+
+                var duplicate = await QueryRowsAsync(
+                    connection,
+                    """
+                    SELECT id
+                    FROM item_bom_lines
+                    WHERE main_item_revision_id = @mainRevisionId
+                      AND son_item_id = @sonItemId
+                      AND COALESCE(son_item_revision_id, 0) = COALESCE(@sonRevisionId, 0)
+                      AND COALESCE(reference_designators, '') = COALESCE(@referenceDesignators, '')
+                    LIMIT 1
+                    """,
+                    ("mainRevisionId", mainRevision["id"]),
+                    ("sonItemId", sonItem["id"]),
+                    ("sonRevisionId", ToDbNullable(sonRevisionId)),
+                    ("referenceDesignators", ToDbNullable(referenceDesignators)));
+                if (duplicate.Count > 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("BOM line already exists for this combination", 409);
+                }
+
+                var rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    INSERT INTO item_bom_lines
+                      (main_item_id, main_item_revision_id, son_item_id, son_item_revision_id, qty, reference_designators)
+                    VALUES
+                      (@mainItemId, @mainRevisionId, @sonItemId, @sonRevisionId, @qty, @referenceDesignators)
+                    RETURNING *
+                    """,
+                    ("mainItemId", mainItem["id"]),
+                    ("mainRevisionId", mainRevision["id"]),
+                    ("sonItemId", sonItem["id"]),
+                    ("sonRevisionId", ToDbNullable(sonRevisionId)),
+                    ("qty", sonQty.Value),
+                    ("referenceDesignators", ToDbNullable(referenceDesignators)));
+
+                await InsertBomHistoryAsync(connection, mainItem["id"]!, mainRevision["id"]!, rows[0]["id"], "INSERT", "BOM line insert", rows[0], changedBy);
+                await transaction.CommitAsync();
+                return Results.Json(rows[0], statusCode: 201);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+
+        app.MapDelete("/api/bom/lines/{lineId:int}", async (int lineId, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var changedBy = ReadString(payload, "changed_by") ?? "system";
+            await using var connection = await OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                var rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    SELECT bl.*, main_item.pn AS main_pn, main_rev.revision AS main_rev, son_item.pn AS son_pn, COALESCE(son_rev.revision, '') AS son_rev
+                    FROM item_bom_lines bl
+                    JOIN items main_item ON main_item.id = bl.main_item_id
+                    JOIN item_revisions main_rev ON main_rev.id = bl.main_item_revision_id
+                    JOIN items son_item ON son_item.id = bl.son_item_id
+                    LEFT JOIN item_revisions son_rev ON son_rev.id = bl.son_item_revision_id
+                    WHERE bl.id = @id
+                    LIMIT 1
+                    """,
+                    ("id", lineId));
+                if (rows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("BOM line not found", 404);
+                }
+
+                await ExecuteAsync(connection, "DELETE FROM item_bom_lines WHERE id = @id", ("id", lineId));
+                await InsertBomHistoryAsync(connection, rows[0]["main_item_id"]!, rows[0]["main_item_revision_id"]!, null, "DELETE", "BOM line deleted", rows[0], changedBy);
+                await transaction.CommitAsync();
+                return Results.Json(new { message = "BOM line deleted successfully" });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+    }
+
+    private static void MapRouting(WebApplication app)
+    {
+        app.MapGet("/api/routing/lookup", async (HttpRequest request) =>
+        {
+            var query = request.Query["query"].ToString().Trim();
+            var limit = Math.Min(ParsePositiveInt(request.Query["limit"], 20), 100);
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Results.Json(new { data = Array.Empty<object>() });
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                "SELECT id, pn, description FROM items WHERE pn ILIKE @pattern OR description ILIKE @pattern ORDER BY pn ASC LIMIT @limit",
+                ("pattern", $"%{query}%"),
+                ("limit", limit));
+            return Results.Json(new { data = rows });
+        });
+
+        app.MapGet("/api/routing/by-pn", async (HttpRequest request) =>
+        {
+            var pn = request.Query["pn"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(pn))
+            {
+                return JsonMessage("pn is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(connection, "SELECT id, pn, description FROM items WHERE pn = @pn", ("pn", pn));
+            return rows.Count == 0 ? JsonMessage("Part number not found", 404) : Results.Json(rows[0]);
+        });
+
+        app.MapGet("/api/routing/{itemId:int}/steps", async (int itemId, HttpRequest request) =>
+        {
+            var includeHistory = string.Equals(request.Query["includeHistory"], "true", StringComparison.OrdinalIgnoreCase);
+            await using var connection = await OpenConnectionAsync();
+            var payload = await GetRoutingPayloadAsync(connection, itemId, includeHistory);
+            return payload is null
+                ? JsonMessage("Part number not found", 404)
+                : Results.Json(new { item = payload.Item, data = payload.Data, history = payload.History, total = payload.Data.Count });
+        });
+
+        app.MapPost("/api/routing/{itemId:int}/steps", async (int itemId, HttpContext context) => await SaveRoutingStepAsync(context, itemId, null));
+        app.MapPut("/api/routing/steps/{stepId:int}", async (int stepId, HttpContext context) => await SaveRoutingStepAsync(context, null, stepId));
+
+        app.MapPut("/api/routing/steps/{stepId:int}/move", async (int stepId, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var direction = ReadString(payload, "direction")?.Trim();
+            var changedBy = ReadString(payload, "changed_by") ?? "system";
+            if (direction is not ("up" or "down"))
+            {
+                return JsonMessage("direction must be up or down", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                var currentRows = await QueryRowsAsync(connection, "SELECT * FROM item_routing_steps WHERE id = @id", ("id", stepId));
+                if (currentRows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Routing step not found", 404);
+                }
+
+                var current = currentRows[0];
+                var targetRows = await QueryRowsAsync(
+                    connection,
+                    $"""
+                    SELECT *
+                    FROM item_routing_steps
+                    WHERE item_id = @itemId
+                      AND station_order {(direction == "up" ? "<" : ">")} @stationOrder
+                    ORDER BY station_order {(direction == "up" ? "DESC" : "ASC")}
+                    LIMIT 1
+                    """,
+                    ("itemId", current["item_id"]),
+                    ("stationOrder", current["station_order"]));
+                if (targetRows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage($"Cannot move {direction}", 400);
+                }
+
+                var target = targetRows[0];
+                var tempOrder = -DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                await ExecuteAsync(connection, "UPDATE item_routing_steps SET station_order = @order WHERE id = @id", ("order", tempOrder), ("id", current["id"]));
+                await ExecuteAsync(connection, "UPDATE item_routing_steps SET station_order = @order WHERE id = @id", ("order", current["station_order"]), ("id", target["id"]));
+                await ExecuteAsync(connection, "UPDATE item_routing_steps SET station_order = @order WHERE id = @id", ("order", target["station_order"]), ("id", current["id"]));
+                await InsertRoutingHistoryAsync(connection, current["item_id"]!, current["id"], "REORDER", $"Position change for station {current["station_code"]}", "station_order", current["station_order"]?.ToString(), target["station_order"]?.ToString(), changedBy);
+                await InsertRoutingHistoryAsync(connection, target["item_id"]!, target["id"], "REORDER", $"Position change for station {target["station_code"]}", "station_order", target["station_order"]?.ToString(), current["station_order"]?.ToString(), changedBy);
+                await transaction.CommitAsync();
+                return Results.Json(new { message = "Station order updated successfully" });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+
+        app.MapDelete("/api/routing/steps/{stepId:int}", async (int stepId, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var changedBy = ReadString(payload, "changed_by") ?? "system";
+            await using var connection = await OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                var rows = await QueryRowsAsync(connection, "SELECT * FROM item_routing_steps WHERE id = @id", ("id", stepId));
+                if (rows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Routing step not found", 404);
+                }
+
+                await ExecuteAsync(connection, "DELETE FROM item_routing_steps WHERE id = @id", ("id", stepId));
+                await InsertRoutingHistoryAsync(connection, rows[0]["item_id"]!, null, "DELETE", $"Deleted station {rows[0]["station_code"]}", "station_code", rows[0]["station_code"]?.ToString(), null, changedBy);
+                await transaction.CommitAsync();
+                return Results.Json(new { message = "Routing step deleted successfully" });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+    }
+
+    private static void MapWorkOrders(WebApplication app)
+    {
+        app.MapGet("/api/work-orders/sites", async () =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            return Results.Json(await QueryRowsAsync(connection, "SELECT id, name FROM sites ORDER BY name ASC"));
+        });
+
+        app.MapGet("/api/work-orders", async (HttpRequest request) =>
+        {
+            var page = ParsePositiveInt(request.Query["page"], 1);
+            var limit = Math.Min(ParsePositiveInt(request.Query["limit"], 15), 500);
+            var wo = request.Query["wo"].ToString().Trim();
+            var pn = request.Query["pn"].ToString().Trim();
+            var offset = (page - 1) * limit;
+            var where = new List<string>();
+            var parameters = new List<(string Name, object? Value)>();
+            if (!string.IsNullOrWhiteSpace(wo))
+            {
+                where.Add("w.wo ILIKE @wo");
+                parameters.Add(("wo", $"%{wo}%"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(pn))
+            {
+                where.Add("i.pn ILIKE @pn");
+                parameters.Add(("pn", $"%{pn}%"));
+            }
+
+            parameters.Add(("limit", limit));
+            parameters.Add(("offset", offset));
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                $"""
+                SELECT w.id, w.wo, s.name AS site_name, pl.description AS pl_desc, w.due_date, w.qty, w.status,
+                       i.pn, ir.revision, w.balance, w.lot, COUNT(*) OVER () AS total_count
+                FROM work_orders w
+                JOIN sites s ON s.id = w.site_id
+                JOIN items i ON i.id = w.item_id
+                JOIN item_revisions ir ON ir.id = w.item_revision_id
+                LEFT JOIN product_lines pl ON pl.id = i.product_line_id
+                {(where.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", where))}
+                ORDER BY w.created_at DESC, w.id DESC
+                LIMIT @limit OFFSET @offset
+                """,
+                parameters.ToArray());
+            var total = rows.Count > 0 ? Convert.ToInt32(rows[0]["total_count"] ?? 0) : 0;
+            foreach (var row in rows)
+            {
+                row.Remove("total_count");
+            }
+
+            return Results.Json(new { data = rows, total, page, limit });
+        });
+
+        app.MapPost("/api/work-orders", async (HttpContext context) => await SaveWorkOrderAsync(context, null));
+        app.MapPut("/api/work-orders/{id:int}", async (int id, HttpContext context) => await SaveWorkOrderAsync(context, id));
+        app.MapPost("/api/work-orders/transfer", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var sourceWo = ReadString(payload, "source_wo")?.Trim();
+            var targetWo = ReadString(payload, "target_wo")?.Trim();
+            var mode = ReadString(payload, "mode")?.Trim().ToLowerInvariant();
+            var serialInput = ReadString(payload, "sn")?.Trim();
+            var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
+
+            if (string.IsNullOrWhiteSpace(sourceWo) || string.IsNullOrWhiteSpace(targetWo))
+            {
+                return JsonMessage("source_wo and target_wo are required", 400);
+            }
+
+            if (sourceWo == targetWo)
+            {
+                return JsonMessage("Source and target WO cannot be same", 400);
+            }
+
+            if (mode is not ("all-new" or "single"))
+            {
+                return JsonMessage("mode must be all-new or single", 400);
+            }
+
+            if (mode == "single" && string.IsNullOrWhiteSpace(serialInput))
+            {
+                return JsonMessage("sn is required for single transfer", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                var sourceRows = await QueryRowsAsync(connection, "SELECT * FROM work_orders WHERE wo = @wo FOR UPDATE", ("wo", sourceWo));
+                var targetRows = await QueryRowsAsync(connection, "SELECT * FROM work_orders WHERE wo = @wo FOR UPDATE", ("wo", targetWo));
+                if (sourceRows.Count == 0 || targetRows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage(sourceRows.Count == 0 ? "Source WO not found" : "Target WO not found", 404);
+                }
+
+                var targetBalance = Convert.ToInt32(targetRows[0]["balance"] ?? 0);
+                if (targetBalance <= 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Target WO has no available balance", 400);
+                }
+
+                var serials = mode == "single"
+                    ? await QueryRowsAsync(
+                        connection,
+                        """
+                        SELECT id, sn, rsn
+                        FROM serial_numbers
+                        WHERE work_order_id = @workOrderId
+                          AND UPPER(status) = 'NEW'
+                          AND (UPPER(sn) = UPPER(@serial) OR UPPER(rsn) = UPPER(@serial))
+                        ORDER BY id ASC
+                        LIMIT 1
+                        FOR UPDATE
+                        """,
+                        ("workOrderId", sourceRows[0]["id"]),
+                        ("serial", serialInput))
+                    : await QueryRowsAsync(
+                        connection,
+                        """
+                        SELECT id, sn, rsn
+                        FROM serial_numbers
+                        WHERE work_order_id = @workOrderId
+                          AND UPPER(status) = 'NEW'
+                        ORDER BY id ASC
+                        LIMIT @limit
+                        FOR UPDATE
+                        """,
+                        ("workOrderId", sourceRows[0]["id"]),
+                        ("limit", targetBalance));
+                if (serials.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage(mode == "single" ? "SN not found in source WO or status is not New" : "No New SNs available in source WO for transfer", 400);
+                }
+
+                var serialIds = serials.Select(row => Convert.ToInt64(row["id"])).ToArray();
+                await using (var updateSerialCommand = new NpgsqlCommand(
+                    """
+                    UPDATE serial_numbers
+                    SET work_order_id = @targetId,
+                        item_id = @itemId,
+                        item_revision_id = @revisionId,
+                        site_id = @siteId,
+                        updated_at = NOW()
+                    WHERE id = ANY(@serialIds)
+                    """,
+                    connection))
+                {
+                    updateSerialCommand.Parameters.AddWithValue("targetId", targetRows[0]["id"]!);
+                    updateSerialCommand.Parameters.AddWithValue("itemId", targetRows[0]["item_id"]!);
+                    updateSerialCommand.Parameters.AddWithValue("revisionId", targetRows[0]["item_revision_id"]!);
+                    updateSerialCommand.Parameters.AddWithValue("siteId", targetRows[0]["site_id"]!);
+                    updateSerialCommand.Parameters.AddWithValue("serialIds", serialIds);
+                    await updateSerialCommand.ExecuteNonQueryAsync();
+                }
+
+                var count = serials.Count;
+                await ExecuteAsync(connection, "UPDATE work_orders SET balance = balance + @count, updated_at = NOW() WHERE id = @id", ("count", count), ("id", sourceRows[0]["id"]));
+                await ExecuteAsync(connection, "UPDATE work_orders SET balance = balance - @count, updated_at = NOW() WHERE id = @id", ("count", count), ("id", targetRows[0]["id"]));
+                await transaction.CommitAsync();
+                return Results.Json(new
+                {
+                    success = true,
+                    source_wo = sourceWo,
+                    target_wo = targetWo,
+                    transferred_count = count,
+                    serials = serials.Select(row => row["sn"]).ToArray()
+                });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+    }
+
+    private static void MapGenerateSn(WebApplication app)
+    {
+        app.MapGet("/api/generate-sn/work-orders", async (HttpRequest request) =>
+        {
+            var wo = request.Query["wo"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(wo))
+            {
+                return JsonMessage("WO search required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT w.id, w.wo, w.qty, w.balance, i.pn, i.sn_type_id, st.sn_type_name, s.name AS site_name
+                FROM work_orders w
+                JOIN items i ON i.id = w.item_id
+                LEFT JOIN sn_types st ON st.id = i.sn_type_id
+                JOIN sites s ON s.id = w.site_id
+                WHERE w.wo ILIKE @wo AND w.balance > 0
+                ORDER BY w.created_at DESC
+                """,
+                ("wo", $"%{wo}%"));
+            return Results.Json(new { data = rows });
+        });
+
+        app.MapPost("/api/generate-sn/generate", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var wo = ReadString(payload, "wo")?.Trim();
+            var qty = ReadInt(payload, "qty");
+            if (string.IsNullOrWhiteSpace(wo) || qty is null or <= 0)
+            {
+                return JsonMessage("WO and valid positive qty required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                var workOrders = await QueryRowsAsync(
+                    connection,
+                    "SELECT id, qty, balance, item_id, item_revision_id, site_id FROM work_orders WHERE wo = @wo FOR UPDATE",
+                    ("wo", wo));
+                if (workOrders.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("WO not found", 404);
+                }
+
+                var workOrder = workOrders[0];
+                var balance = Convert.ToInt32(workOrder["balance"] ?? 0);
+                if (qty.Value > balance)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage($"WO does not have enough space to generate SN (available: {balance})", 400);
+                }
+
+                var snTypeId = await ScalarAsync<int?>(connection, "SELECT sn_type_id FROM items WHERE id = @id", ("id", workOrder["item_id"]));
+                if (snTypeId is null)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Item has no SN type defined", 400);
+                }
+
+                var fields = await QueryRowsAsync(
+                    connection,
+                    "SELECT field_type, field_string, field_size FROM sn_type_fields WHERE sn_type_id = @id ORDER BY sort_order ASC",
+                    ("id", snTypeId.Value));
+                var firstRoute = await QueryRowsAsync(
+                    connection,
+                    "SELECT station_order, station_code FROM item_routing_steps WHERE item_id = @itemId ORDER BY station_order ASC, id ASC LIMIT 1",
+                    ("itemId", workOrder["item_id"]));
+
+                var snList = new List<string>();
+                var serials = new List<Dictionary<string, object?>>();
+                for (var index = 0; index < qty.Value; index++)
+                {
+                    var serial = BuildSerialNumber(fields, wo, index);
+                    var inserted = await QueryRowsAsync(
+                        connection,
+                        """
+                        INSERT INTO serial_numbers
+                          (sn, work_order_id, item_id, item_revision_id, site_id, status, condition, current_station_code, current_station_order, last_moved_at)
+                        VALUES
+                          (@sn, @workOrderId, @itemId, @revisionId, @siteId, 'New', 'Good', @stationCode, @stationOrder, @lastMovedAt)
+                        RETURNING id, sn, rsn, current_station_code, current_station_order, created_at
+                        """,
+                        ("sn", serial),
+                        ("workOrderId", workOrder["id"]),
+                        ("itemId", workOrder["item_id"]),
+                        ("revisionId", workOrder["item_revision_id"]),
+                        ("siteId", workOrder["site_id"]),
+                        ("stationCode", firstRoute.Count > 0 ? firstRoute[0]["station_code"] : null),
+                        ("stationOrder", firstRoute.Count > 0 ? firstRoute[0]["station_order"] : null),
+                        ("lastMovedAt", firstRoute.Count > 0 ? DateTime.Now : null));
+                    snList.Add(serial);
+                    serials.Add(inserted[0]);
+                }
+
+                var updatedBalance = balance - qty.Value;
+                var updatedWo = await QueryRowsAsync(
+                    connection,
+                    "UPDATE work_orders SET balance = @balance, updated_at = NOW() WHERE id = @id RETURNING *",
+                    ("balance", updatedBalance),
+                    ("id", workOrder["id"]));
+                await InsertJsonHistoryAsync(connection, "work_order_history", "work_order_id", workOrder["id"]!, "SN_GENERATE", updatedWo[0], "system");
+                await transaction.CommitAsync();
+                return Results.Json(new { success = true, wo, qty = qty.Value, sn_type_id = snTypeId.Value, sns = snList, serials });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+    }
+
+    private static void MapTraceability(WebApplication app)
+    {
+        app.MapGet("/api/traceability/schema/verify", async () =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            var hasSerialNumbers = await ScalarAsync<bool>(
+                connection,
+                """
+                SELECT EXISTS (
+                  SELECT 1
+                  FROM information_schema.tables
+                  WHERE table_schema = 'public'
+                    AND table_name = 'serial_numbers'
+                )
+                """);
+            return Results.Json(new { serial_numbers_exists = hasSerialNumbers });
+        });
+
+        app.MapGet("/api/traceability/search", async (HttpRequest request) =>
+        {
+            var query = request.Query["query"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return JsonMessage("Search query is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            var serial = await GetSerialByQueryAsync(connection, query);
+            if (serial is null)
+            {
+                return JsonMessage("SN/RSN not found", 404);
+            }
+
+            return Results.Json(await BuildTracePayloadAsync(connection, query, serial));
+        });
+
+        app.MapPost("/api/traceability/pass-fail", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var query = ReadString(payload, "query")?.Trim();
+            var stationCode = ReadString(payload, "station_code")?.Trim();
+            var result = ReadString(payload, "result")?.Trim().ToUpperInvariant();
+            var remark = ReadString(payload, "remark")?.Trim();
+            var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
+            var stationLength = ReadString(payload, "station_length")?.Trim();
+            var pcName = ReadString(payload, "pc_name")?.Trim() ?? "WEB-CLIENT";
+            var additionalInfo = ReadString(payload, "additional_info")?.Trim() ?? (result == "PASS" ? "Auto Pass Result" : "Auto Fail Result");
+
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return JsonMessage("SN or RSN is required", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(stationCode))
+            {
+                return JsonMessage("Station code is required", 400);
+            }
+
+            if (result is not ("PASS" or "FAIL"))
+            {
+                return JsonMessage("result must be PASS or FAIL", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                var serial = await GetSerialByQueryAsync(connection, query);
+                if (serial is null)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("SN/RSN not found", 404);
+                }
+
+                var routeRows = await GetRouteRowsForItemAsync(connection, Convert.ToInt32(serial["item_id"]));
+                if (routeRows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("No route configured for this part number", 400);
+                }
+
+                var selected = routeRows.FirstOrDefault(step => string.Equals(step["station_code"]?.ToString(), stationCode, StringComparison.OrdinalIgnoreCase));
+                if (selected is null)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Selected station is not in this part route", 400);
+                }
+
+                var currentOrder = ResolveCurrentOrder(serial, routeRows);
+                var current = routeRows.FirstOrDefault(step => Convert.ToInt32(step["station_order"]) == currentOrder) ?? routeRows[0];
+                if (Convert.ToInt32(selected["station_order"]) != Convert.ToInt32(current["station_order"]))
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage($"Current station is {current["station_code"]}. Please select current station first.", 409);
+                }
+
+                var nextStep = result == "PASS"
+                    ? routeRows.FirstOrDefault(step => Convert.ToInt32(step["station_order"]) > Convert.ToInt32(current["station_order"]))
+                    : current;
+                var nextStatus = result == "PASS" ? (nextStep is null ? "Completed" : "In Process") : "Failed";
+                var nextCondition = result == "PASS" ? "Good" : "NG";
+                var nextStationCode = result == "PASS" ? nextStep?["station_code"] : current["station_code"];
+                var nextStationOrder = result == "PASS" ? nextStep?["station_order"] : current["station_order"];
+
+                await ExecuteAsync(
+                    connection,
+                    """
+                    UPDATE serial_numbers
+                    SET status = @status,
+                        condition = @condition,
+                        current_station_code = @stationCode,
+                        current_station_order = @stationOrder,
+                        last_moved_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = @id
+                    """,
+                    ("status", nextStatus),
+                    ("condition", nextCondition),
+                    ("stationCode", nextStationCode),
+                    ("stationOrder", nextStationOrder),
+                    ("id", serial["id"]));
+
+                await ExecuteAsync(
+                    connection,
+                    """
+                    INSERT INTO serial_station_logs
+                      (serial_id, item_id, work_order_id, station_code, station_name, action_result, remark, changed_by,
+                       before_station_code, before_station_order, after_station_code, after_station_order,
+                       station_length, pc_name, additional_info)
+                    VALUES
+                      (@serialId, @itemId, @workOrderId, @stationCode, @stationName, @result, @remark, @changedBy,
+                       @beforeCode, @beforeOrder, @afterCode, @afterOrder, @stationLength, @pcName, @additionalInfo)
+                    """,
+                    ("serialId", serial["id"]),
+                    ("itemId", serial["item_id"]),
+                    ("workOrderId", serial["work_order_id"]),
+                    ("stationCode", current["station_code"]),
+                    ("stationName", current["station_name"]),
+                    ("result", result),
+                    ("remark", ToDbNullable(remark)),
+                    ("changedBy", changedBy),
+                    ("beforeCode", serial["current_station_code"]),
+                    ("beforeOrder", serial["current_station_order"]),
+                    ("afterCode", nextStationCode),
+                    ("afterOrder", nextStationOrder),
+                    ("stationLength", ToDbNullable(stationLength)),
+                    ("pcName", pcName),
+                    ("additionalInfo", additionalInfo));
+
+                var refreshed = await GetSerialByQueryAsync(connection, serial["rsn"]!.ToString()!);
+                var trace = await BuildTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!);
+                await transaction.CommitAsync();
+                return Results.Json(new { message = result == "PASS" ? "PASS submitted successfully" : "FAIL submitted successfully", action = result, data = trace });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+    }
+
+    private static void MapPacking(WebApplication app)
+    {
+        app.MapGet("/api/packing/open", async () => await ListPackagesAsync("OPEN"));
+        app.MapGet("/api/packing/closed", async () => await ListPackagesAsync("CLOSED"));
+        app.MapGet("/api/packing/shipped", async () => await ListPackagesAsync("SHIPPED"));
+
+        app.MapPost("/api/packing/create", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var packageType = ReadString(payload, "package_type")?.Trim().ToUpperInvariant();
+            var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
+            if (packageType is not ("BOX" or "SHIPMENT"))
+            {
+                return JsonMessage("package_type must be BOX or SHIPMENT", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            var packageNo = $"{(packageType == "SHIPMENT" ? "SHP" : "BOX")}-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..5].ToUpperInvariant()}";
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                INSERT INTO packing_packages (package_no, package_type, status, created_by, updated_at)
+                VALUES (@packageNo, @packageType, 'OPEN', @changedBy, NOW())
+                RETURNING id, package_no, package_type, status, created_by, created_at
+                """,
+                ("packageNo", packageNo),
+                ("packageType", packageType),
+                ("changedBy", changedBy));
+            return Results.Json(new { data = rows[0] }, statusCode: 201);
+        });
+
+        app.MapGet("/api/packing/{packageId:long}", async (long packageId) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            var packages = await QueryRowsAsync(connection, "SELECT * FROM packing_packages WHERE id = @id LIMIT 1", ("id", packageId));
+            if (packages.Count == 0)
+            {
+                return JsonMessage("Package not found", 404);
+            }
+
+            var items = await QueryRowsAsync(
+                connection,
+                """
+                SELECT i.id, sn.sn, sn.rsn, sn.status AS serial_status, sn.condition, it.pn,
+                       COALESCE(ir.revision, '-') AS revision, i.added_by, i.added_at
+                FROM packing_package_items i
+                JOIN serial_numbers sn ON sn.id = i.serial_id
+                JOIN items it ON it.id = sn.item_id
+                LEFT JOIN item_revisions ir ON ir.id = sn.item_revision_id
+                WHERE i.package_id = @id
+                ORDER BY i.added_at DESC, i.id DESC
+                LIMIT 500
+                """,
+                ("id", packageId));
+            return Results.Json(new { package = packages[0], items });
+        });
+
+        app.MapPost("/api/packing/{packageId:long}/add", async (long packageId, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var query = ReadString(payload, "query")?.Trim();
+            var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return JsonMessage("SN or RSN is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            try
+            {
+                var packages = await QueryRowsAsync(connection, "SELECT * FROM packing_packages WHERE id = @id LIMIT 1", ("id", packageId));
+                if (packages.Count == 0)
+                {
+                    return JsonMessage("Package not found", 404);
+                }
+
+                if (!string.Equals(packages[0]["status"]?.ToString(), "OPEN", StringComparison.OrdinalIgnoreCase))
+                {
+                    return JsonMessage("Package is not OPEN", 409);
+                }
+
+                var serial = await GetSerialByQueryAsync(connection, query);
+                if (serial is null)
+                {
+                    return JsonMessage("SN/RSN not found", 404);
+                }
+
+                if (string.Equals(serial["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(serial["serial_status"]?.ToString(), "Failed", StringComparison.OrdinalIgnoreCase))
+                {
+                    return JsonMessage("SN is not eligible for packing", 409);
+                }
+
+                await ExecuteAsync(
+                    connection,
+                    "INSERT INTO packing_package_items (package_id, serial_id, added_by) VALUES (@packageId, @serialId, @changedBy)",
+                    ("packageId", packageId),
+                    ("serialId", serial["id"]),
+                    ("changedBy", changedBy));
+                await ExecuteAsync(connection, "UPDATE packing_packages SET updated_at = NOW() WHERE id = @id", ("id", packageId));
+                return Results.Json(new { message = "SN packed successfully" }, statusCode: 201);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                return JsonMessage("This SN is already packed in a package", 409);
+            }
+        });
+
+        app.MapPost("/api/packing/{packageId:long}/close", async (long packageId, HttpContext context) => await UpdatePackageStatusAsync(context, packageId, "OPEN", "CLOSED"));
+        app.MapPost("/api/packing/{packageId:long}/ship", async (long packageId, HttpContext context) => await UpdatePackageStatusAsync(context, packageId, "CLOSED", "SHIPPED"));
+    }
+
+    private static void MapAssembly(WebApplication app)
+    {
+        app.MapGet("/api/assembly/lookup", async (HttpRequest request) =>
+        {
+            var query = request.Query["query"].ToString().Trim();
+            var limit = Math.Min(ParsePositiveInt(request.Query["limit"], 20), 100);
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Results.Json(new { data = Array.Empty<object>() });
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(
+                connection,
+                "SELECT id, pn, description FROM items WHERE pn ILIKE @pattern OR description ILIKE @pattern ORDER BY pn ASC LIMIT @limit",
+                ("pattern", $"%{query}%"),
+                ("limit", limit));
+            return Results.Json(new { data = rows });
+        });
+
+        app.MapGet("/api/assembly/operations/status", async (HttpRequest request) =>
+        {
+            var query = request.Query["query"].ToString().Trim();
+            var stationCode = request.Query["station_code"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return JsonMessage("SN or RSN is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            var serial = await GetSerialByQueryAsync(connection, query);
+            if (serial is null)
+            {
+                return JsonMessage("SN/RSN not found", 404);
+            }
+
+            var required = await GetAssemblyLinesForStationAsync(connection, Convert.ToInt32(serial["item_id"]), serial["revision"]?.ToString(), stationCode);
+            var bound = await QueryRowsAsync(
+                connection,
+                """
+                SELECT l.id, l.station_code, child.sn AS child_sn, child.rsn AS child_rsn,
+                       i.pn AS child_pn, COALESCE(ir.revision, '') AS child_revision, l.created_by, l.created_at
+                FROM serial_assembly_links l
+                JOIN serial_numbers child ON child.id = l.child_serial_id
+                JOIN items i ON i.id = child.item_id
+                LEFT JOIN item_revisions ir ON ir.id = child.item_revision_id
+                WHERE l.parent_serial_id = @id
+                ORDER BY l.created_at DESC
+                """,
+                ("id", serial["id"]));
+            return Results.Json(new { parent = serial, required, bound });
+        });
+
+        app.MapPost("/api/assembly/operations/bind", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var parentQuery = ReadString(payload, "parent_query")?.Trim() ?? ReadString(payload, "parent_sn")?.Trim();
+            var childQuery = ReadString(payload, "child_query")?.Trim() ?? ReadString(payload, "child_sn")?.Trim();
+            var stationCode = ReadString(payload, "station_code")?.Trim();
+            var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
+            if (string.IsNullOrWhiteSpace(parentQuery) || string.IsNullOrWhiteSpace(childQuery) || string.IsNullOrWhiteSpace(stationCode))
+            {
+                return JsonMessage("parent, child, and station_code are required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            try
+            {
+                var parent = await GetSerialByQueryAsync(connection, parentQuery);
+                var child = await GetSerialByQueryAsync(connection, childQuery);
+                if (parent is null || child is null)
+                {
+                    return JsonMessage("Parent or child SN/RSN not found", 404);
+                }
+
+                if (Equals(parent["id"], child["id"]))
+                {
+                    return JsonMessage("Parent and child cannot be same", 400);
+                }
+
+                await ExecuteAsync(
+                    connection,
+                    """
+                    INSERT INTO serial_assembly_links (parent_serial_id, child_serial_id, station_code, created_by)
+                    VALUES (@parentId, @childId, @stationCode, @changedBy)
+                    """,
+                    ("parentId", parent["id"]),
+                    ("childId", child["id"]),
+                    ("stationCode", stationCode),
+                    ("changedBy", changedBy));
+                return Results.Json(new { message = "Child bound successfully" }, statusCode: 201);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                return JsonMessage("Child SN is already bound", 409);
+            }
+        });
+
+        app.MapGet("/api/assembly/{itemId:int}/revisions", async (int itemId) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            var itemRows = await QueryRowsAsync(connection, "SELECT id, pn, description FROM items WHERE id = @id", ("id", itemId));
+            if (itemRows.Count == 0)
+            {
+                return JsonMessage("Part number not found", 404);
+            }
+
+            var revisions = await QueryRowsAsync(
+                connection,
+                "SELECT id, item_id, revision, in_date, expire_date FROM item_revisions WHERE item_id = @itemId ORDER BY in_date DESC, id DESC",
+                ("itemId", itemId));
+            return Results.Json(new { item = itemRows[0], data = revisions, total = revisions.Count });
+        });
+
+        app.MapGet("/api/assembly/view/search", async (HttpRequest request) =>
+        {
+            var pn = request.Query["pn"].ToString().Trim();
+            var revision = request.Query["revision"].ToString().Trim();
+            var includeHistory = string.Equals(request.Query["includeHistory"], "true", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(pn))
+            {
+                return JsonMessage("pn is required", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(revision))
+            {
+                return JsonMessage("revision is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            var payload = await GetAssemblyPayloadAsync(connection, pn, revision, includeHistory);
+            if (payload is null)
+            {
+                return JsonMessage("Part number not found", 404);
+            }
+
+            if (payload.Revision is null)
+            {
+                return JsonMessage("Revision not found for this PN", 404);
+            }
+
+            return Results.Json(new { item = payload.Item, revision = payload.Revision, data = payload.Data, history = payload.History, total = payload.Data.Count });
+        });
+
+        app.MapPost("/api/assembly/lines", async (HttpContext context) => await SaveAssemblyLineAsync(context, null));
+        app.MapPut("/api/assembly/lines/{lineId:int}", async (int lineId, HttpContext context) => await SaveAssemblyLineAsync(context, lineId));
+        app.MapDelete("/api/assembly/lines/{lineId:int}", async (int lineId, HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
+            await using var connection = await OpenConnectionAsync();
+            var rows = await QueryRowsAsync(connection, "DELETE FROM item_assembly_lines WHERE id = @id RETURNING *", ("id", lineId));
+            if (rows.Count == 0)
+            {
+                return JsonMessage("Assembly line not found", 404);
+            }
+
+            await InsertAssemblyHistoryAsync(connection, rows[0]["main_item_id"]!, rows[0]["main_item_revision_id"]!, null, "DELETE", "Assembly line deleted", rows[0], changedBy);
+            return Results.Json(new { message = "Assembly line deleted successfully" });
+        });
+    }
+
+    private static async Task<IResult> SaveItemAsync(HttpContext context, int? itemId)
+    {
+        var payload = await ReadJsonBodyAsync(context.Request);
+        var pn = ReadString(payload, "pn")?.Trim();
+        var description = ReadString(payload, "description")?.Trim();
+        var marketingDesc = ReadString(payload, "marketing_desc")?.Trim();
+        var phantom = ReadBool(payload, "phantom");
+        var sgdControl = ReadBool(payload, "sgd_control");
+        var itemType = ReadString(payload, "item_type")?.Trim();
+        var productLineId = ReadInt(payload, "product_line_id");
+        var snTypeId = ReadInt(payload, "sn_type_id");
+        var snTypeName = ReadString(payload, "sn_type_name")?.Trim();
+        var pnTypeId = ReadInt(payload, "pn_type_id");
+        var changedBy = ReadString(payload, "changed_by") ?? "system";
+
+        if (string.IsNullOrWhiteSpace(pn))
+        {
+            return JsonMessage("Part number is required", 400);
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            return JsonMessage("Description is required", 400);
+        }
+
+        if (phantom is null)
+        {
+            return JsonMessage("Phantom selection is required", 400);
+        }
+
+        if (sgdControl is null)
+        {
+            return JsonMessage("SGD control must be true or false", 400);
+        }
+
+        if (string.IsNullOrWhiteSpace(itemType) || !AllowedItemTypes.Contains(itemType))
+        {
+            return JsonMessage("Invalid item type", 400);
+        }
+
+        if (productLineId is null)
+        {
+            return JsonMessage("Product line is required", 400);
+        }
+
+        if (pnTypeId is null)
+        {
+            return JsonMessage("PN type is required", 400);
+        }
+
+        await using var connection = await OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        try
+        {
+            if (await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM product_lines WHERE id = @id", ("id", productLineId.Value)) == 0)
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("Product line not found", 400);
+            }
+
+            if (await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM pn_types WHERE id = @id", ("id", pnTypeId.Value)) == 0)
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("PN type not found", 400);
+            }
+
+            int? resolvedSnTypeId = null;
+            if (snTypeId is not null)
+            {
+                if (await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM sn_types WHERE id = @id", ("id", snTypeId.Value)) == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("SN type not found", 400);
+                }
+
+                resolvedSnTypeId = snTypeId.Value;
+            }
+            else if (!string.IsNullOrWhiteSpace(snTypeName))
+            {
+                resolvedSnTypeId = await ScalarAsync<int?>(connection, "SELECT id FROM sn_types WHERE sn_type_name = @name", ("name", snTypeName));
+                if (resolvedSnTypeId is null)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("SN type not found", 400);
+                }
+            }
+
+            List<Dictionary<string, object?>> rows;
+            if (itemId is null)
+            {
+                rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    INSERT INTO items
+                      (pn, description, marketing_desc, phantom, sgd_control, item_type, product_line_id, sn_type_id, pn_type_id)
+                    VALUES
+                      (@pn, @description, @marketingDesc, @phantom, @sgdControl, @itemType, @productLineId, @snTypeId, @pnTypeId)
+                    RETURNING *
+                    """,
+                    ("pn", pn),
+                    ("description", description),
+                    ("marketingDesc", ToDbNullable(marketingDesc)),
+                    ("phantom", phantom.Value),
+                    ("sgdControl", sgdControl.Value),
+                    ("itemType", itemType),
+                    ("productLineId", productLineId.Value),
+                    ("snTypeId", ToDbNullable(resolvedSnTypeId)),
+                    ("pnTypeId", pnTypeId.Value));
+            }
+            else
+            {
+                if (await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM items WHERE id = @id", ("id", itemId.Value)) == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Part number not found", 404);
+                }
+
+                rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    UPDATE items
+                    SET pn = @pn,
+                        description = @description,
+                        marketing_desc = @marketingDesc,
+                        phantom = @phantom,
+                        sgd_control = @sgdControl,
+                        item_type = @itemType,
+                        product_line_id = @productLineId,
+                        sn_type_id = @snTypeId,
+                        pn_type_id = @pnTypeId,
+                        updated_at = NOW()
+                    WHERE id = @id
+                    RETURNING *
+                    """,
+                    ("pn", pn),
+                    ("description", description),
+                    ("marketingDesc", ToDbNullable(marketingDesc)),
+                    ("phantom", phantom.Value),
+                    ("sgdControl", sgdControl.Value),
+                    ("itemType", itemType),
+                    ("productLineId", productLineId.Value),
+                    ("snTypeId", ToDbNullable(resolvedSnTypeId)),
+                    ("pnTypeId", pnTypeId.Value),
+                    ("id", itemId.Value));
+            }
+
+            await InsertJsonHistoryAsync(connection, "item_history", "item_id", rows[0]["id"]!, itemId is null ? "CREATE" : "UPDATE", rows[0], changedBy);
+            await transaction.CommitAsync();
+            return Results.Json(rows[0], statusCode: itemId is null ? 201 : 200);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            await transaction.RollbackAsync();
+            return JsonMessage("Part number already exists", 409);
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static async Task<IResult> SaveRoutingStepAsync(HttpContext context, int? itemId, int? stepId)
+    {
+        var payload = await ReadJsonBodyAsync(context.Request);
+        var stationOrder = ReadInt(payload, "station_order");
+        var stationCode = ReadString(payload, "station_code")?.Trim();
+        var sampleMode = ReadString(payload, "sample_mode")?.Trim();
+        var reportMode = ReadString(payload, "report_mode")?.Trim();
+        var changedBy = ReadString(payload, "changed_by") ?? "system";
+
+        if (string.IsNullOrWhiteSpace(stationCode))
+        {
+            return JsonMessage("Station is required", 400);
+        }
+
+        if (sampleMode is not ("Full" or "Sample"))
+        {
+            return JsonMessage("Invalid sample mode", 400);
+        }
+
+        if (reportMode is not ("Regular" or "Auto Only"))
+        {
+            return JsonMessage("Invalid report mode", 400);
+        }
+
+        await using var connection = await OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            Dictionary<string, object?>? existing = null;
+            if (stepId is not null)
+            {
+                var existingRows = await QueryRowsAsync(connection, "SELECT * FROM item_routing_steps WHERE id = @id", ("id", stepId.Value));
+                if (existingRows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Routing step not found", 404);
+                }
+
+                existing = existingRows[0];
+                itemId = Convert.ToInt32(existing["item_id"]);
+            }
+
+            var item = await FindItemByIdAsync(connection, itemId!.Value);
+            if (item is null)
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("Part number not found", 404);
+            }
+
+            var stationRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT masterstation_code, masterstation_name
+                FROM masterstation
+                WHERE UPPER(masterstation_code) = UPPER(@stationCode)
+                LIMIT 1
+                """,
+                ("stationCode", stationCode));
+            if (stationRows.Count == 0)
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("Station not found in Stations master", 400);
+            }
+
+            if (stationOrder is null or <= 0)
+            {
+                stationOrder = await ScalarAsync<int>(connection, "SELECT COALESCE(MAX(station_order), 0) + 10 FROM item_routing_steps WHERE item_id = @itemId", ("itemId", itemId.Value));
+            }
+
+            try
+            {
+                List<Dictionary<string, object?>> rows;
+                if (stepId is null)
+                {
+                    rows = await QueryRowsAsync(
+                        connection,
+                        """
+                        INSERT INTO item_routing_steps (item_id, station_order, station_code, station_name, sample_mode, report_mode)
+                        VALUES (@itemId, @stationOrder, @stationCode, @stationName, @sampleMode, @reportMode)
+                        RETURNING *
+                        """,
+                        ("itemId", itemId.Value),
+                        ("stationOrder", stationOrder.Value),
+                        ("stationCode", stationRows[0]["masterstation_code"]),
+                        ("stationName", stationRows[0]["masterstation_name"]),
+                        ("sampleMode", sampleMode),
+                        ("reportMode", reportMode));
+                    await InsertRoutingHistoryAsync(connection, itemId.Value, rows[0]["id"], "CREATE", $"Added station {stationCode}", "station_code", null, stationCode, changedBy);
+                    await transaction.CommitAsync();
+                    return Results.Json(rows[0], statusCode: 201);
+                }
+
+                rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    UPDATE item_routing_steps
+                    SET station_order = @stationOrder,
+                        station_code = @stationCode,
+                        station_name = @stationName,
+                        sample_mode = @sampleMode,
+                        report_mode = @reportMode,
+                        updated_at = NOW()
+                    WHERE id = @stepId
+                    RETURNING *
+                    """,
+                    ("stationOrder", stationOrder.Value),
+                    ("stationCode", stationRows[0]["masterstation_code"]),
+                    ("stationName", stationRows[0]["masterstation_name"]),
+                    ("sampleMode", sampleMode),
+                    ("reportMode", reportMode),
+                    ("stepId", stepId.Value));
+                await InsertRoutingHistoryAsync(connection, itemId.Value, stepId.Value, "UPDATE", $"Updated station {stationCode}", null, JsonSerializer.Serialize(existing), JsonSerializer.Serialize(rows[0]), changedBy);
+                await transaction.CommitAsync();
+                return Results.Json(rows[0]);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("Station order already exists for this PN", 409);
+            }
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private sealed record AssemblyPayload(
+        Dictionary<string, object?> Item,
+        Dictionary<string, object?>? Revision,
+        List<Dictionary<string, object?>> Data,
+        List<Dictionary<string, object?>> History);
+
+    private static async Task<AssemblyPayload?> GetAssemblyPayloadAsync(NpgsqlConnection connection, string pn, string revision, bool includeHistory)
+    {
+        var mainItem = await FindItemByPnAsync(connection, pn);
+        if (mainItem is null)
+        {
+            return null;
+        }
+
+        var mainRevision = await FindItemRevisionAsync(connection, Convert.ToInt32(mainItem["id"]), revision);
+        if (mainRevision is null)
+        {
+            return new AssemblyPayload(mainItem, null, new List<Dictionary<string, object?>>(), new List<Dictionary<string, object?>>());
+        }
+
+        var data = await QueryRowsAsync(
+            connection,
+            """
+            SELECT al.id, al.main_item_id, al.main_item_revision_id, al.son_item_id, al.son_item_revision_id,
+                   son.pn AS son_pn, son.description AS son_description, COALESCE(sr.revision, '') AS son_rev,
+                   al.station_code, al.station_name, al.assemble_order, al.pattern_regex,
+                   al.part_to_validate, al.regex_value_to_match, al.transform_regex,
+                   al.created_at, al.updated_at
+            FROM item_assembly_lines al
+            JOIN items son ON son.id = al.son_item_id
+            LEFT JOIN item_revisions sr ON sr.id = al.son_item_revision_id
+            WHERE al.main_item_revision_id = @revisionId
+            ORDER BY al.station_code ASC, al.assemble_order ASC, al.id ASC
+            """,
+            ("revisionId", mainRevision["id"]));
+        var history = includeHistory
+            ? await QueryRowsAsync(
+                connection,
+                """
+                SELECT id, main_item_id, main_item_revision_id, assembly_line_id, action, description, change_data, changed_by, changed_at
+                FROM item_assembly_history
+                WHERE main_item_revision_id = @revisionId
+                ORDER BY changed_at DESC, id DESC
+                LIMIT 300
+                """,
+                ("revisionId", mainRevision["id"]))
+            : new List<Dictionary<string, object?>>();
+        return new AssemblyPayload(mainItem, mainRevision, data, history);
+    }
+
+    private static async Task<List<Dictionary<string, object?>>> GetAssemblyLinesForStationAsync(NpgsqlConnection connection, int itemId, string? revision, string? stationCode)
+    {
+        if (string.IsNullOrWhiteSpace(revision) || string.IsNullOrWhiteSpace(stationCode))
+        {
+            return new List<Dictionary<string, object?>>();
+        }
+
+        var revisionRow = await FindItemRevisionAsync(connection, itemId, revision);
+        if (revisionRow is null)
+        {
+            return new List<Dictionary<string, object?>>();
+        }
+
+        return await QueryRowsAsync(
+            connection,
+            """
+            SELECT al.id, al.station_code, al.station_name, al.assemble_order,
+                   son.pn AS son_pn, COALESCE(sr.revision, '') AS son_rev,
+                   al.pattern_regex, al.part_to_validate, al.regex_value_to_match, al.transform_regex
+            FROM item_assembly_lines al
+            JOIN items son ON son.id = al.son_item_id
+            LEFT JOIN item_revisions sr ON sr.id = al.son_item_revision_id
+            WHERE al.main_item_revision_id = @revisionId
+              AND UPPER(al.station_code) = UPPER(@stationCode)
+            ORDER BY al.assemble_order ASC, al.id ASC
+            """,
+            ("revisionId", revisionRow["id"]),
+            ("stationCode", stationCode));
+    }
+
+    private static async Task<IResult> SaveAssemblyLineAsync(HttpContext context, int? lineId)
+    {
+        var payload = await ReadJsonBodyAsync(context.Request);
+        var mainPn = ReadString(payload, "main_pn")?.Trim();
+        var mainRevisionText = ReadString(payload, "main_revision")?.Trim();
+        var sonPn = ReadString(payload, "son_pn")?.Trim();
+        var sonRevisionText = ReadString(payload, "son_rev")?.Trim();
+        var stationCode = ReadString(payload, "station_code")?.Trim();
+        var assembleOrder = ReadInt(payload, "assemble_order");
+        var patternRegex = ReadString(payload, "pattern_regex")?.Trim() ?? "Skip";
+        var partToValidate = ReadInt(payload, "part_to_validate");
+        var regexValueToMatch = ReadString(payload, "regex_value_to_match")?.Trim();
+        var transformRegex = ReadString(payload, "transform_regex")?.Trim();
+        var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
+
+        if (string.IsNullOrWhiteSpace(mainPn) || string.IsNullOrWhiteSpace(mainRevisionText) ||
+            string.IsNullOrWhiteSpace(sonPn) || string.IsNullOrWhiteSpace(stationCode))
+        {
+            return JsonMessage("main_pn, main_revision, son_pn, and station_code are required", 400);
+        }
+
+        if (assembleOrder is null or <= 0)
+        {
+            return JsonMessage("assemble_order must be a positive number", 400);
+        }
+
+        await using var connection = await OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            var mainItem = await FindItemByPnAsync(connection, mainPn);
+            var sonItem = await FindItemByPnAsync(connection, sonPn);
+            if (mainItem is null || sonItem is null)
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("Main or son PN not found", 404);
+            }
+
+            var mainRevision = await FindItemRevisionAsync(connection, Convert.ToInt32(mainItem["id"]), mainRevisionText);
+            if (mainRevision is null)
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("Main revision not found for PN", 404);
+            }
+
+            int? sonRevisionId = null;
+            if (!string.IsNullOrWhiteSpace(sonRevisionText))
+            {
+                var sonRevision = await FindItemRevisionAsync(connection, Convert.ToInt32(sonItem["id"]), sonRevisionText);
+                if (sonRevision is null)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Son revision not found for PN", 404);
+                }
+
+                sonRevisionId = Convert.ToInt32(sonRevision["id"]);
+            }
+
+            var stationRows = await QueryRowsAsync(
+                connection,
+                "SELECT masterstation_code, masterstation_name FROM masterstation WHERE UPPER(masterstation_code) = UPPER(@code) LIMIT 1",
+                ("code", stationCode));
+            var stationName = stationRows.Count > 0 ? stationRows[0]["masterstation_name"]?.ToString() : stationCode;
+
+            List<Dictionary<string, object?>> rows;
+            if (lineId is null)
+            {
+                rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    INSERT INTO item_assembly_lines
+                      (main_item_id, main_item_revision_id, son_item_id, son_item_revision_id, station_code, station_name,
+                       assemble_order, pattern_regex, part_to_validate, regex_value_to_match, transform_regex)
+                    VALUES
+                      (@mainItemId, @mainRevisionId, @sonItemId, @sonRevisionId, @stationCode, @stationName,
+                       @assembleOrder, @patternRegex, @partToValidate, @regexValueToMatch, @transformRegex)
+                    RETURNING *
+                    """,
+                    ("mainItemId", mainItem["id"]),
+                    ("mainRevisionId", mainRevision["id"]),
+                    ("sonItemId", sonItem["id"]),
+                    ("sonRevisionId", ToDbNullable(sonRevisionId)),
+                    ("stationCode", stationCode),
+                    ("stationName", stationName),
+                    ("assembleOrder", assembleOrder.Value),
+                    ("patternRegex", patternRegex),
+                    ("partToValidate", ToDbNullable(partToValidate)),
+                    ("regexValueToMatch", ToDbNullable(regexValueToMatch)),
+                    ("transformRegex", ToDbNullable(transformRegex)));
+            }
+            else
+            {
+                rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    UPDATE item_assembly_lines
+                    SET son_item_id = @sonItemId,
+                        son_item_revision_id = @sonRevisionId,
+                        station_code = @stationCode,
+                        station_name = @stationName,
+                        assemble_order = @assembleOrder,
+                        pattern_regex = @patternRegex,
+                        part_to_validate = @partToValidate,
+                        regex_value_to_match = @regexValueToMatch,
+                        transform_regex = @transformRegex,
+                        updated_at = NOW()
+                    WHERE id = @lineId
+                    RETURNING *
+                    """,
+                    ("sonItemId", sonItem["id"]),
+                    ("sonRevisionId", ToDbNullable(sonRevisionId)),
+                    ("stationCode", stationCode),
+                    ("stationName", stationName),
+                    ("assembleOrder", assembleOrder.Value),
+                    ("patternRegex", patternRegex),
+                    ("partToValidate", ToDbNullable(partToValidate)),
+                    ("regexValueToMatch", ToDbNullable(regexValueToMatch)),
+                    ("transformRegex", ToDbNullable(transformRegex)),
+                    ("lineId", lineId.Value));
+                if (rows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Assembly line not found", 404);
+                }
+            }
+
+            await InsertAssemblyHistoryAsync(connection, mainItem["id"]!, mainRevision["id"]!, rows[0]["id"], lineId is null ? "INSERT" : "UPDATE", lineId is null ? "Assembly line insert" : "Assembly line updated", rows[0], changedBy);
+            await transaction.CommitAsync();
+            return Results.Json(rows[0], statusCode: lineId is null ? 201 : 200);
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static async Task InsertAssemblyHistoryAsync(
+        NpgsqlConnection connection,
+        object mainItemId,
+        object mainRevisionId,
+        object? assemblyLineId,
+        string action,
+        string description,
+        object changeData,
+        string changedBy)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO item_assembly_history
+              (main_item_id, main_item_revision_id, assembly_line_id, action, description, change_data, changed_by)
+            VALUES
+              (@mainItemId, @mainRevisionId, @assemblyLineId, @action, @description, @changeData, @changedBy)
+            """,
+            connection);
+        command.Parameters.AddWithValue("mainItemId", mainItemId);
+        command.Parameters.AddWithValue("mainRevisionId", mainRevisionId);
+        command.Parameters.AddWithValue("assemblyLineId", assemblyLineId ?? DBNull.Value);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("description", description);
+        command.Parameters.Add("changeData", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(changeData);
+        command.Parameters.AddWithValue("changedBy", changedBy);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static string BuildSerialNumber(List<Dictionary<string, object?>> fields, string wo, int zeroBasedIndex)
+    {
+        var now = DateTime.Now;
+        var serial = string.Empty;
+        foreach (var field in fields)
+        {
+            var fieldType = field["field_type"]?.ToString() ?? string.Empty;
+            var fieldString = field["field_string"]?.ToString() ?? string.Empty;
+            var fieldSize = field["field_size"] is null ? 5 : Convert.ToInt32(field["field_size"]);
+            serial += fieldType switch
+            {
+                "Y" => now.Year.ToString()[^1..],
+                "YY" => now.Year.ToString()[^2..],
+                "YYY" => now.Year.ToString(),
+                "MM(dec)" => now.Month.ToString("00"),
+                "DD" => now.Day.ToString("00"),
+                "DDD" => now.DayOfYear.ToString("000"),
+                "WW" => System.Globalization.ISOWeek.GetWeekOfYear(now).ToString("00"),
+                "String" or "Specific by PN" or "MACgen" or "Lot" or "Programmable" or "RMA" => fieldString,
+                "WO" => wo,
+                "Sequence(dec)" or "Continuous sequence(dec)" => (zeroBasedIndex + 1).ToString().PadLeft(fieldSize, '0'),
+                "Sequence(hex)" or "Continuous sequence(hex)" => (zeroBasedIndex + 1).ToString("X").PadLeft(fieldSize, '0'),
+                "Sequence(alpha)" or "Continuous sequence(alpha)" => ToBase36(zeroBasedIndex + 1).PadLeft(fieldSize, '0'),
+                _ => fieldString
+            };
+        }
+
+        return serial;
+    }
+
+    private static string ToBase36(int value)
+    {
+        const string alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        if (value <= 0)
+        {
+            return "0";
+        }
+
+        var result = string.Empty;
+        while (value > 0)
+        {
+            result = alphabet[value % 36] + result;
+            value /= 36;
+        }
+
+        return result;
+    }
+
+    private static async Task<Dictionary<string, object?>?> GetSerialByQueryAsync(NpgsqlConnection connection, string query)
+    {
+        var rows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT snr.id, snr.sn, snr.rsn, snr.status AS serial_status, snr.condition,
+                   snr.current_station_code, snr.current_station_order, snr.last_moved_at,
+                   snr.created_at, snr.updated_at,
+                   wo.id AS work_order_id, wo.wo, wo.status AS wo_status, wo.qty AS wo_qty, wo.balance AS wo_balance,
+                   i.id AS item_id, i.pn, i.description AS item_description,
+                   ir.revision, s.name AS site_name,
+                   pl.code AS product_line_code, pl.description AS product_line_name
+            FROM serial_numbers snr
+            JOIN work_orders wo ON wo.id = snr.work_order_id
+            JOIN items i ON i.id = snr.item_id
+            LEFT JOIN item_revisions ir ON ir.id = snr.item_revision_id
+            LEFT JOIN sites s ON s.id = snr.site_id
+            LEFT JOIN product_lines pl ON pl.id = i.product_line_id
+            WHERE UPPER(snr.sn) = UPPER(@query)
+               OR UPPER(snr.rsn) = UPPER(@query)
+            ORDER BY snr.created_at DESC
+            LIMIT 1
+            """,
+            ("query", query));
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    private static async Task<List<Dictionary<string, object?>>> GetRouteRowsForItemAsync(NpgsqlConnection connection, int itemId)
+    {
+        return await QueryRowsAsync(
+            connection,
+            """
+            SELECT station_order, station_code, station_name, sample_mode, report_mode
+            FROM item_routing_steps
+            WHERE item_id = @itemId
+            ORDER BY station_order ASC, id ASC
+            """,
+            ("itemId", itemId));
+    }
+
+    private static int ResolveCurrentOrder(Dictionary<string, object?> serial, List<Dictionary<string, object?>> routeRows)
+    {
+        if (serial["current_station_order"] is not null)
+        {
+            return Convert.ToInt32(serial["current_station_order"]);
+        }
+
+        var currentCode = serial["current_station_code"]?.ToString();
+        var matched = routeRows.FirstOrDefault(row => string.Equals(row["station_code"]?.ToString(), currentCode, StringComparison.Ordinal));
+        return matched is not null ? Convert.ToInt32(matched["station_order"]) : Convert.ToInt32(routeRows[0]["station_order"]);
+    }
+
+    private static async Task<object> BuildTracePayloadAsync(NpgsqlConnection connection, string query, Dictionary<string, object?> serial)
+    {
+        var routeRows = await GetRouteRowsForItemAsync(connection, Convert.ToInt32(serial["item_id"]));
+        var currentOrder = routeRows.Count == 0 ? 0 : ResolveCurrentOrder(serial, routeRows);
+        var history = await QueryRowsAsync(
+            connection,
+            """
+            SELECT id, changed_by AS user_name, created_at AS date_time, station_code AS station,
+                   station_length AS length, pc_name, action_result AS result,
+                   COALESCE(additional_info, remark, '') AS additional_info
+            FROM serial_station_logs
+            WHERE serial_id = @serialId
+            ORDER BY created_at DESC, id DESC
+            LIMIT 300
+            """,
+            ("serialId", serial["id"]));
+
+        var routing = routeRows.Select(step =>
+        {
+            var order = Convert.ToInt32(step["station_order"]);
+            var state = currentOrder == 0 ? "pending" : order < currentOrder ? "completed" : order == currentOrder ? "current" : "pending";
+            return new Dictionary<string, object?>
+            {
+                ["station_order"] = order,
+                ["station_code"] = step["station_code"],
+                ["station_name"] = step["station_name"],
+                ["sample_mode"] = step["sample_mode"],
+                ["report_mode"] = step["report_mode"],
+                ["state"] = state,
+                ["is_current"] = state == "current"
+            };
+        }).ToList();
+
+        var completed = routing.Count(row => row["state"]?.ToString() == "completed");
+        var current = routing.FirstOrDefault(row => row["is_current"] is true);
+        var pending = Math.Max(routing.Count - completed - (current is null ? 0 : 1), 0);
+        var percent = routing.Count > 0 ? (int)Math.Round(((completed + (current is null ? 0 : 1)) / (double)routing.Count) * 100) : 0;
+
+        return new
+        {
+            query,
+            matched_by = string.Equals(serial["sn"]?.ToString(), query, StringComparison.OrdinalIgnoreCase) ? "SN" : "RSN",
+            serial = new
+            {
+                id = serial["id"],
+                sn = serial["sn"],
+                rsn = serial["rsn"],
+                status = serial["serial_status"],
+                condition = serial["condition"],
+                current_station_code = current?["station_code"] ?? serial["current_station_code"],
+                current_station_name = current?["station_name"],
+                current_station_order = current?["station_order"] ?? (currentOrder == 0 ? null : currentOrder),
+                created_at = serial["created_at"],
+                updated_at = serial["updated_at"],
+                last_moved_at = serial["last_moved_at"]
+            },
+            device = new
+            {
+                product_line = serial["product_line_name"] ?? serial["product_line_code"] ?? "-",
+                pn = serial["pn"],
+                revision = serial["revision"] ?? "-",
+                work_order = serial["wo"],
+                work_order_status = serial["wo_status"],
+                work_order_qty = serial["wo_qty"],
+                work_order_balance = serial["wo_balance"],
+                site = serial["site_name"] ?? "-",
+                description = serial["item_description"] ?? "-"
+            },
+            progress = new { total = routing.Count, completed, current = current is null ? 0 : 1, pending, percent },
+            routing,
+            history,
+            generated_at = DateTime.UtcNow
+        };
+    }
+
+    private static async Task<IResult> ListPackagesAsync(string status)
+    {
+        await using var connection = await OpenConnectionAsync();
+        await EnsureSerialTrackingSchemaAsync(connection);
+        var rows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT p.id, p.package_no, p.package_type, p.status, p.created_by, p.created_at,
+                   p.closed_by, p.closed_at, p.shipped_by, p.shipped_at,
+                   (SELECT COUNT(*) FROM packing_package_items i WHERE i.package_id = p.id)::int AS item_count
+            FROM packing_packages p
+            WHERE p.status = @status
+            ORDER BY p.created_at DESC, p.id DESC
+            LIMIT 200
+            """,
+            ("status", status));
+        return Results.Json(new { data = rows });
+    }
+
+    private static async Task<IResult> UpdatePackageStatusAsync(HttpContext context, long packageId, string expectedStatus, string nextStatus)
+    {
+        var payload = await ReadJsonBodyAsync(context.Request);
+        var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
+        await using var connection = await OpenConnectionAsync();
+        await EnsureSerialTrackingSchemaAsync(connection);
+        var packages = await QueryRowsAsync(connection, "SELECT * FROM packing_packages WHERE id = @id LIMIT 1", ("id", packageId));
+        if (packages.Count == 0)
+        {
+            return JsonMessage("Package not found", 404);
+        }
+
+        if (!string.Equals(packages[0]["status"]?.ToString(), expectedStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            return JsonMessage($"Only {expectedStatus} packages can be {(nextStatus == "CLOSED" ? "closed" : "shipped")}", 409);
+        }
+
+        if (nextStatus == "CLOSED")
+        {
+            var count = await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM packing_package_items WHERE package_id = @id", ("id", packageId));
+            if (count <= 0)
+            {
+                return JsonMessage("Cannot close an empty package", 409);
+            }
+        }
+
+        await ExecuteAsync(
+            connection,
+            nextStatus == "CLOSED"
+                ? "UPDATE packing_packages SET status = 'CLOSED', closed_by = @changedBy, closed_at = NOW(), updated_at = NOW() WHERE id = @id"
+                : "UPDATE packing_packages SET status = 'SHIPPED', shipped_by = @changedBy, shipped_at = NOW(), updated_at = NOW() WHERE id = @id",
+            ("changedBy", changedBy),
+            ("id", packageId));
+        return Results.Json(new { message = nextStatus == "CLOSED" ? "Package closed successfully" : "Package shipped successfully" });
+    }
+
+    private static async Task<IResult> SaveWorkOrderAsync(HttpContext context, int? workOrderId)
+    {
+        var payload = await ReadJsonBodyAsync(context.Request);
+        var wo = ReadString(payload, "wo")?.Trim();
+        var siteId = ReadInt(payload, "site_id");
+        var dueDate = ReadString(payload, "due_date")?.Trim();
+        var qty = ReadInt(payload, "qty");
+        var status = ReadString(payload, "status")?.Trim();
+        var pn = ReadString(payload, "pn")?.Trim();
+        var itemRevisionId = ReadInt(payload, "item_revision_id");
+        var revision = ReadString(payload, "revision")?.Trim();
+        var lot = ReadString(payload, "lot")?.Trim();
+        var changedBy = ReadString(payload, "changed_by") ?? "system";
+
+        if (string.IsNullOrWhiteSpace(wo))
+        {
+            return JsonMessage("WO is required", 400);
+        }
+
+        if (siteId is null)
+        {
+            return JsonMessage("Site is required", 400);
+        }
+
+        if (string.IsNullOrWhiteSpace(dueDate))
+        {
+            return JsonMessage("Due Date is required", 400);
+        }
+
+        if (qty is null or <= 0)
+        {
+            return JsonMessage("Quantity must be a positive number", 400);
+        }
+
+        if (status is not ("Allocated" or "Planned" or "Released" or "Cancelled" or "Closed"))
+        {
+            return JsonMessage("Invalid status", 400);
+        }
+
+        if (string.IsNullOrWhiteSpace(pn))
+        {
+            return JsonMessage("PN is required", 400);
+        }
+
+        await using var connection = await OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            Dictionary<string, object?>? existing = null;
+            if (workOrderId is not null)
+            {
+                var existingRows = await QueryRowsAsync(connection, "SELECT * FROM work_orders WHERE id = @id FOR UPDATE", ("id", workOrderId.Value));
+                if (existingRows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Work order not found", 404);
+                }
+
+                existing = existingRows[0];
+            }
+
+            if (await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM sites WHERE id = @id", ("id", siteId.Value)) == 0)
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("Site not found", 400);
+            }
+
+            var item = await FindItemByPnAsync(connection, pn);
+            if (item is null)
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("PN not found", 400);
+            }
+
+            if (itemRevisionId is null)
+            {
+                if (string.IsNullOrWhiteSpace(revision))
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Revision is required", 400);
+                }
+
+                var revisionRows = await QueryRowsAsync(
+                    connection,
+                    """
+                    SELECT id
+                    FROM item_revisions
+                    WHERE item_id = @itemId
+                      AND revision = @revision
+                      AND (expire_date IS NULL OR expire_date >= CURRENT_DATE)
+                    ORDER BY in_date DESC, id DESC
+                    LIMIT 1
+                    """,
+                    ("itemId", item["id"]),
+                    ("revision", revision));
+                if (revisionRows.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Revision not found for this PN", 400);
+                }
+
+                itemRevisionId = Convert.ToInt32(revisionRows[0]["id"]);
+            }
+            else if (await ScalarAsync<long>(
+                connection,
+                "SELECT COUNT(*) FROM item_revisions WHERE id = @revisionId AND item_id = @itemId",
+                ("revisionId", itemRevisionId.Value),
+                ("itemId", item["id"])) == 0)
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("Revision not found for this PN", 400);
+            }
+
+            var lotValue = string.IsNullOrWhiteSpace(lot) ? null : lot;
+            List<Dictionary<string, object?>> rows;
+            if (workOrderId is null)
+            {
+                rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    INSERT INTO work_orders (wo, site_id, due_date, qty, status, item_id, item_revision_id, lot, balance)
+                    VALUES (@wo, @siteId, @dueDate::date, @qty, @status, @itemId, @itemRevisionId, @lot, @qty)
+                    RETURNING *
+                    """,
+                    ("wo", wo),
+                    ("siteId", siteId.Value),
+                    ("dueDate", dueDate),
+                    ("qty", qty.Value),
+                    ("status", status),
+                    ("itemId", item["id"]),
+                    ("itemRevisionId", itemRevisionId.Value),
+                    ("lot", ToDbNullable(lotValue)));
+            }
+            else
+            {
+                var produced = Convert.ToInt32(existing!["qty"] ?? 0) - Convert.ToInt32(existing["balance"] ?? 0);
+                if (qty.Value < produced)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage($"Quantity cannot be less than already generated quantity ({produced})", 400);
+                }
+
+                rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    UPDATE work_orders
+                    SET wo = @wo,
+                        site_id = @siteId,
+                        due_date = @dueDate::date,
+                        qty = @qty,
+                        status = @status,
+                        item_id = @itemId,
+                        item_revision_id = @itemRevisionId,
+                        lot = @lot,
+                        balance = @balance,
+                        updated_at = NOW()
+                    WHERE id = @id
+                    RETURNING *
+                    """,
+                    ("wo", wo),
+                    ("siteId", siteId.Value),
+                    ("dueDate", dueDate),
+                    ("qty", qty.Value),
+                    ("status", status),
+                    ("itemId", item["id"]),
+                    ("itemRevisionId", itemRevisionId.Value),
+                    ("lot", ToDbNullable(lotValue)),
+                    ("balance", Math.Max(qty.Value - produced, 0)),
+                    ("id", workOrderId.Value));
+            }
+
+            await InsertJsonHistoryAsync(connection, "work_order_history", "work_order_id", rows[0]["id"]!, workOrderId is null ? "CREATE" : "UPDATE", rows[0], changedBy);
+            await transaction.CommitAsync();
+            return Results.Json(rows[0], statusCode: workOrderId is null ? 201 : 200);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            await transaction.RollbackAsync();
+            return JsonMessage("WO already exists", 409);
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static async Task<IResult> SaveSnTypeFieldAsync(HttpContext context, int? snTypeId, int? fieldId)
+    {
+        var payload = await ReadJsonBodyAsync(context.Request);
+        var sortOrder = ReadDecimal(payload, "sort_order");
+        var fieldType = ReadString(payload, "field_type")?.Trim();
+        var fieldString = ReadString(payload, "field_string")?.Trim();
+        var fieldSize = ReadInt(payload, "field_size");
+        var epvTypeId = ReadInt(payload, "epv_type_id");
+        var epvSubTypeId = ReadInt(payload, "epv_sub_type_id");
+
+        if (sortOrder is null || string.IsNullOrWhiteSpace(fieldType))
+        {
+            return JsonMessage("sort_order and field_type are required", 400);
+        }
+
+        await using var connection = await OpenConnectionAsync();
+        try
+        {
+            List<Dictionary<string, object?>> rows;
+            if (fieldId is null)
+            {
+                rows = await QueryRowsAsync(
+                    connection,
+                    """
+                    INSERT INTO sn_type_fields (sn_type_id, sort_order, field_type, field_string, field_size, epv_type_id, epv_sub_type_id)
+                    VALUES (@snTypeId, @sortOrder, @fieldType, @fieldString, @fieldSize, @epvTypeId, @epvSubTypeId)
+                    RETURNING *
+                    """,
+                    ("snTypeId", snTypeId!.Value),
+                    ("sortOrder", sortOrder.Value),
+                    ("fieldType", fieldType),
+                    ("fieldString", ToDbNullable(fieldString)),
+                    ("fieldSize", ToDbNullable(fieldSize)),
+                    ("epvTypeId", ToDbNullable(epvTypeId)),
+                    ("epvSubTypeId", ToDbNullable(epvSubTypeId)));
+                return Results.Json(rows[0], statusCode: 201);
+            }
+
+            rows = await QueryRowsAsync(
+                connection,
+                """
+                UPDATE sn_type_fields
+                SET sort_order = @sortOrder,
+                    field_type = @fieldType,
+                    field_string = @fieldString,
+                    field_size = @fieldSize,
+                    epv_type_id = @epvTypeId,
+                    epv_sub_type_id = @epvSubTypeId,
+                    updated_at = NOW()
+                WHERE id = @fieldId
+                RETURNING *
+                """,
+                ("sortOrder", sortOrder.Value),
+                ("fieldType", fieldType),
+                ("fieldString", ToDbNullable(fieldString)),
+                ("fieldSize", ToDbNullable(fieldSize)),
+                ("epvTypeId", ToDbNullable(epvTypeId)),
+                ("epvSubTypeId", ToDbNullable(epvSubTypeId)),
+                ("fieldId", fieldId.Value));
+            return rows.Count == 0 ? JsonMessage("SN type field not found", 404) : Results.Json(rows[0]);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return JsonMessage("Field sort order already exists", 409);
+        }
+    }
+
+    private static async Task<IResult> SaveSgdPoAsync(HttpContext context, int? id)
+    {
+        var payload = await ReadJsonBodyAsync(context.Request);
+        var po = ReadString(payload, "po")?.Trim();
+        var status = ReadString(payload, "status")?.Trim() ?? "open";
+        var swVersion = ReadString(payload, "sw_version")?.Trim();
+        var hwVersion = ReadString(payload, "hw_version")?.Trim();
+        var itemId = ReadInt(payload, "item_id");
+        var poQty = ReadInt(payload, "po_qty");
+
+        if (string.IsNullOrWhiteSpace(po) || itemId is null || poQty is null || poQty.Value <= 0)
+        {
+            return JsonMessage("po, item_id, and positive po_qty are required", 400);
+        }
+
+        await using var connection = await OpenConnectionAsync();
+        try
+        {
+            var rows = id is null
+                ? await QueryRowsAsync(
+                    connection,
+                    """
+                    INSERT INTO sgd_pos (po, status, sw_version, hw_version, item_id, po_qty)
+                    VALUES (@po, @status, @swVersion, @hwVersion, @itemId, @poQty)
+                    RETURNING *
+                    """,
+                    ("po", po),
+                    ("status", status),
+                    ("swVersion", ToDbNullable(swVersion)),
+                    ("hwVersion", ToDbNullable(hwVersion)),
+                    ("itemId", itemId.Value),
+                    ("poQty", poQty.Value))
+                : await QueryRowsAsync(
+                    connection,
+                    """
+                    UPDATE sgd_pos
+                    SET po = @po,
+                        status = @status,
+                        sw_version = @swVersion,
+                        hw_version = @hwVersion,
+                        item_id = @itemId,
+                        po_qty = @poQty,
+                        updated_at = NOW()
+                    WHERE id = @id
+                    RETURNING *
+                    """,
+                    ("po", po),
+                    ("status", status),
+                    ("swVersion", ToDbNullable(swVersion)),
+                    ("hwVersion", ToDbNullable(hwVersion)),
+                    ("itemId", itemId.Value),
+                    ("poQty", poQty.Value),
+                    ("id", id.Value));
+
+            return rows.Count == 0 ? JsonMessage("SGD PO not found", 404) : Results.Json(rows[0], statusCode: id is null ? 201 : 200);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return JsonMessage("SGD PO already exists", 409);
+        }
+    }
+
+    private sealed record BomPayload(
+        Dictionary<string, object?> Item,
+        Dictionary<string, object?>? Revision,
+        List<Dictionary<string, object?>> Data,
+        List<Dictionary<string, object?>> History);
+
+    private sealed record RoutingPayload(
+        Dictionary<string, object?> Item,
+        List<Dictionary<string, object?>> Data,
+        List<Dictionary<string, object?>> History);
+
+    private static async Task<BomPayload?> GetBomPayloadAsync(NpgsqlConnection connection, string pn, string revision, bool includeHistory)
+    {
+        var mainItem = await FindItemByPnAsync(connection, pn);
+        if (mainItem is null)
+        {
+            return null;
+        }
+
+        var mainRevision = await FindItemRevisionAsync(connection, Convert.ToInt32(mainItem["id"]), revision);
+        if (mainRevision is null)
+        {
+            return new BomPayload(mainItem, null, new List<Dictionary<string, object?>>(), new List<Dictionary<string, object?>>());
+        }
+
+        var data = await QueryRowsAsync(
+            connection,
+            """
+            SELECT bl.id, bl.main_item_id, bl.main_item_revision_id, bl.son_item_id, bl.son_item_revision_id,
+                   son.pn AS son_pn, son.description AS son_description, COALESCE(sr.revision, '') AS son_rev,
+                   son.item_type AS son_item_type, COALESCE(pt.code, '') AS son_pn_type,
+                   bl.qty AS son_qty, COALESCE(bl.reference_designators, '') AS reference_designators,
+                   bl.created_at, bl.updated_at
+            FROM item_bom_lines bl
+            JOIN items son ON son.id = bl.son_item_id
+            LEFT JOIN item_revisions sr ON sr.id = bl.son_item_revision_id
+            LEFT JOIN pn_types pt ON pt.id = son.pn_type_id
+            WHERE bl.main_item_revision_id = @revisionId
+            ORDER BY bl.id ASC
+            """,
+            ("revisionId", mainRevision["id"]));
+
+        var history = includeHistory
+            ? await QueryRowsAsync(
+                connection,
+                """
+                SELECT id, main_item_id, main_item_revision_id, bom_line_id, action, description, change_data, changed_by, changed_at
+                FROM item_bom_history
+                WHERE main_item_revision_id = @revisionId
+                ORDER BY changed_at DESC, id DESC
+                LIMIT 300
+                """,
+                ("revisionId", mainRevision["id"]))
+            : new List<Dictionary<string, object?>>();
+
+        return new BomPayload(mainItem, mainRevision, data, history);
+    }
+
+    private static async Task<RoutingPayload?> GetRoutingPayloadAsync(NpgsqlConnection connection, int itemId, bool includeHistory)
+    {
+        var item = await FindItemByIdAsync(connection, itemId);
+        if (item is null)
+        {
+            return null;
+        }
+
+        var data = await QueryRowsAsync(
+            connection,
+            """
+            SELECT id, item_id, station_order, station_code, station_name, sample_mode, report_mode, created_at, updated_at
+            FROM item_routing_steps
+            WHERE item_id = @itemId
+            ORDER BY station_order ASC, id ASC
+            """,
+            ("itemId", itemId));
+
+        var history = includeHistory
+            ? await QueryRowsAsync(
+                connection,
+                """
+                SELECT id, item_id, routing_step_id, action, description, change_field, old_value, new_value, changed_by, changed_at
+                FROM item_routing_history
+                WHERE item_id = @itemId
+                ORDER BY changed_at DESC, id DESC
+                LIMIT 300
+                """,
+                ("itemId", itemId))
+            : new List<Dictionary<string, object?>>();
+
+        return new RoutingPayload(item, data, history);
+    }
+
+    private static async Task<Dictionary<string, object?>?> FindItemByPnAsync(NpgsqlConnection connection, string pn)
+    {
+        var rows = await QueryRowsAsync(connection, "SELECT id, pn, description FROM items WHERE pn = @pn LIMIT 1", ("pn", pn));
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    private static async Task<Dictionary<string, object?>?> FindItemByIdAsync(NpgsqlConnection connection, int itemId)
+    {
+        var rows = await QueryRowsAsync(connection, "SELECT id, pn, description FROM items WHERE id = @id LIMIT 1", ("id", itemId));
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    private static async Task<Dictionary<string, object?>?> FindItemRevisionAsync(NpgsqlConnection connection, int itemId, string revision)
+    {
+        var rows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT id, item_id, revision, in_date, expire_date
+            FROM item_revisions
+            WHERE item_id = @itemId AND revision = @revision
+            ORDER BY in_date DESC, id DESC
+            LIMIT 1
+            """,
+            ("itemId", itemId),
+            ("revision", revision));
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    private static async Task InsertBomHistoryAsync(
+        NpgsqlConnection connection,
+        object mainItemId,
+        object mainRevisionId,
+        object? bomLineId,
+        string action,
+        string description,
+        object changeData,
+        string changedBy)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO item_bom_history
+              (main_item_id, main_item_revision_id, bom_line_id, action, description, change_data, changed_by)
+            VALUES
+              (@mainItemId, @mainRevisionId, @bomLineId, @action, @description, @changeData, @changedBy)
+            """,
+            connection);
+        command.Parameters.AddWithValue("mainItemId", mainItemId);
+        command.Parameters.AddWithValue("mainRevisionId", mainRevisionId);
+        command.Parameters.AddWithValue("bomLineId", bomLineId ?? DBNull.Value);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("description", description);
+        command.Parameters.Add("changeData", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(changeData);
+        command.Parameters.AddWithValue("changedBy", changedBy);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task InsertRoutingHistoryAsync(
+        NpgsqlConnection connection,
+        object itemId,
+        object? stepId,
+        string action,
+        string description,
+        string? changeField,
+        string? oldValue,
+        string? newValue,
+        string changedBy)
+    {
+        await ExecuteAsync(
+            connection,
+            """
+            INSERT INTO item_routing_history
+              (item_id, routing_step_id, action, description, change_field, old_value, new_value, changed_by)
+            VALUES
+              (@itemId, @stepId, @action, @description, @changeField, @oldValue, @newValue, @changedBy)
+            """,
+            ("itemId", itemId),
+            ("stepId", stepId),
+            ("action", action),
+            ("description", description),
+            ("changeField", changeField),
+            ("oldValue", oldValue),
+            ("newValue", newValue),
+            ("changedBy", changedBy));
+    }
+
+    private static async Task<List<Dictionary<string, object?>>> GetSnTypeFieldsAsync(NpgsqlConnection connection, int snTypeId)
+    {
+        return await QueryRowsAsync(
+            connection,
+            """
+            SELECT f.id, f.sn_type_id, f.sort_order, f.field_type, f.field_string, f.field_size,
+                   f.epv_type_id, et.type_name AS epv_type_name,
+                   f.epv_sub_type_id, est.sub_type_name AS epv_sub_type_name,
+                   f.created_at, f.updated_at
+            FROM sn_type_fields f
+            LEFT JOIN epv_types et ON et.id = f.epv_type_id
+            LEFT JOIN epv_sub_types est ON est.id = f.epv_sub_type_id
+            WHERE f.sn_type_id = @snTypeId
+            ORDER BY f.sort_order ASC, f.id ASC
+            """,
+            ("snTypeId", snTypeId));
+    }
+
+    private static List<Dictionary<string, object?>> MapStations(List<Dictionary<string, object?>> rows)
+    {
+        foreach (var row in rows)
+        {
+            row.Remove("total_count");
+            row["status"] = "Active";
+        }
+
+        return rows;
+    }
+
+    private static async Task InsertJsonHistoryAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        string idColumn,
+        object id,
+        string action,
+        Dictionary<string, object?> snapshot,
+        string changedBy)
+    {
+        await using var command = new NpgsqlCommand(
+            $"INSERT INTO {tableName} ({idColumn}, action, snapshot, changed_by) VALUES (@id, @action, @snapshot, @changedBy)",
+            connection);
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.Add("snapshot", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(snapshot);
+        command.Parameters.AddWithValue("changedBy", changedBy);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<NpgsqlConnection> OpenConnectionAsync()
+    {
+        var connection = new NpgsqlConnection(GetConnectionString());
+        await connection.OpenAsync();
+        return connection;
+    }
+
+    private static async Task EnsureSerialTrackingSchemaAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(connection, "CREATE SEQUENCE IF NOT EXISTS serial_rsn_seq START WITH 1");
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS serial_numbers (
+              id BIGSERIAL PRIMARY KEY,
+              sn VARCHAR(220) NOT NULL,
+              rsn VARCHAR(40) NOT NULL UNIQUE DEFAULT ('RSN' || LPAD(nextval('serial_rsn_seq')::text, 10, '0')),
+              work_order_id INTEGER NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+              item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+              item_revision_id INTEGER REFERENCES item_revisions(id) ON DELETE SET NULL,
+              site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
+              status VARCHAR(30) NOT NULL DEFAULT 'New',
+              condition VARCHAR(30) NOT NULL DEFAULT 'Good',
+              current_station_code VARCHAR(80),
+              current_station_order INTEGER,
+              last_moved_at TIMESTAMP,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """);
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_numbers_sn_upper ON serial_numbers (UPPER(sn))");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_numbers_wo ON serial_numbers (work_order_id)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_numbers_item ON serial_numbers (item_id)");
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS serial_station_logs (
+              id BIGSERIAL PRIMARY KEY,
+              serial_id BIGINT NOT NULL REFERENCES serial_numbers(id) ON DELETE CASCADE,
+              item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+              work_order_id INTEGER NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              station_name VARCHAR(220),
+              action_result VARCHAR(10) NOT NULL,
+              remark TEXT,
+              changed_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              before_station_code VARCHAR(80),
+              before_station_order INTEGER,
+              after_station_code VARCHAR(80),
+              after_station_order INTEGER,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            ALTER TABLE serial_station_logs
+            ADD COLUMN IF NOT EXISTS station_length VARCHAR(40),
+            ADD COLUMN IF NOT EXISTS pc_name VARCHAR(160),
+            ADD COLUMN IF NOT EXISTS additional_info TEXT
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS serial_assembly_links (
+              id BIGSERIAL PRIMARY KEY,
+              parent_serial_id BIGINT NOT NULL REFERENCES serial_numbers(id) ON DELETE CASCADE,
+              child_serial_id BIGINT NOT NULL REFERENCES serial_numbers(id) ON DELETE RESTRICT,
+              station_code VARCHAR(80) NOT NULL,
+              created_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_serial_assembly_child UNIQUE (child_serial_id),
+              CONSTRAINT uq_serial_assembly_parent_child_station UNIQUE (parent_serial_id, child_serial_id, station_code)
+            )
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS packing_packages (
+              id BIGSERIAL PRIMARY KEY,
+              package_no VARCHAR(60) NOT NULL,
+              package_type VARCHAR(20) NOT NULL CHECK (package_type IN ('BOX', 'SHIPMENT')),
+              status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED', 'SHIPPED')),
+              remark TEXT,
+              created_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              closed_by VARCHAR(100),
+              closed_at TIMESTAMP,
+              shipped_by VARCHAR(100),
+              shipped_at TIMESTAMP,
+              CONSTRAINT uq_packing_package_no UNIQUE (package_no)
+            )
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS packing_package_items (
+              id BIGSERIAL PRIMARY KEY,
+              package_id BIGINT NOT NULL REFERENCES packing_packages(id) ON DELETE CASCADE,
+              serial_id BIGINT NOT NULL REFERENCES serial_numbers(id) ON DELETE RESTRICT,
+              added_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              added_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_packing_pkg_serial UNIQUE (package_id, serial_id),
+              CONSTRAINT uq_packing_serial UNIQUE (serial_id)
+            )
+            """);
+    }
+
+    private static string GetConnectionString()
+    {
+        var configured = Environment.GetEnvironmentVariable("PGCONNECTIONSTRING");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        var host = Environment.GetEnvironmentVariable("PGHOST") ?? "localhost";
+        var user = Environment.GetEnvironmentVariable("PGUSER") ?? "postgres";
+        var database = Environment.GetEnvironmentVariable("PGDATABASE") ?? "MESDB";
+        var password = Environment.GetEnvironmentVariable("PGPASSWORD") ?? "";
+        var port = Environment.GetEnvironmentVariable("PGPORT") ?? "5432";
+
+        return $"Host={host};Username={user};Password={password};Database={database};Port={port};Include Error Detail=true";
+    }
+
+    private static async Task<JsonNode?> ReadJsonBodyAsync(HttpRequest request)
+    {
+        if (request.ContentLength is null or <= 0)
+        {
+            return null;
+        }
+
+        using var reader = new StreamReader(request.Body, leaveOpen: true);
+        var content = await reader.ReadToEndAsync();
+        return string.IsNullOrWhiteSpace(content) ? null : JsonNode.Parse(content);
+    }
+
+    private static async Task<List<Dictionary<string, object?>>> QueryRowsAsync(
+        NpgsqlConnection connection,
+        string sql,
+        params (string Name, object? Value)[] parameters)
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddParameters(command, parameters);
+        await using var reader = await command.ExecuteReaderAsync();
+        var rows = new List<Dictionary<string, object?>>();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(ReadRow(reader));
+        }
+
+        return rows;
+    }
+
+    private static async Task<int> ExecuteAsync(
+        NpgsqlConnection connection,
+        string sql,
+        params (string Name, object? Value)[] parameters)
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddParameters(command, parameters);
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<T?> ScalarAsync<T>(
+        NpgsqlConnection connection,
+        string sql,
+        params (string Name, object? Value)[] parameters)
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddParameters(command, parameters);
+        var value = await command.ExecuteScalarAsync();
+        if (value is null or DBNull)
+        {
+            return default;
+        }
+
+        return (T)Convert.ChangeType(value, Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T));
+    }
+
+    private static void AddParameters(NpgsqlCommand command, params (string Name, object? Value)[] parameters)
+    {
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        }
+    }
+
+    private static Dictionary<string, object?> ReadRow(NpgsqlDataReader reader)
+    {
+        var row = new Dictionary<string, object?>(StringComparer.Ordinal);
+        for (var index = 0; index < reader.FieldCount; index++)
+        {
+            var name = reader.GetName(index);
+            if (reader.IsDBNull(index))
+            {
+                row[name] = null;
+                continue;
+            }
+
+            var value = reader.GetValue(index);
+            row[name] = value switch
+            {
+                DateTime dateTime => dateTime,
+                string[] array => array,
+                Array array => array.Cast<object?>().ToArray(),
+                _ => value
+            };
+        }
+
+        return row;
+    }
+
+    private static IResult JsonError(string error, int statusCode)
+    {
+        return Results.Json(new { error }, statusCode: statusCode);
+    }
+
+    private static IResult JsonMessage(string message, int statusCode)
+    {
+        return Results.Json(new { message }, statusCode: statusCode);
+    }
+
+    private static string? ReadString(JsonNode? node, string key)
+    {
+        return node?[key]?.GetValue<string>();
+    }
+
+    private static int? ReadInt(JsonNode? node, string key)
+    {
+        var value = node?[key];
+        if (value is null)
+        {
+            return null;
+        }
+
+        return value.GetValue<int>();
+    }
+
+    private static bool? ReadBool(JsonNode? node, string key)
+    {
+        var value = node?[key];
+        if (value is null)
+        {
+            return null;
+        }
+
+        return value.GetValue<bool>();
+    }
+
+    private static decimal? ReadDecimal(JsonNode? node, string key)
+    {
+        var value = node?[key];
+        if (value is null)
+        {
+            return null;
+        }
+
+        return value.GetValue<decimal>();
+    }
+
+    private static int ParsePositiveInt(object? value, int fallback)
+    {
+        return int.TryParse(value?.ToString(), out var parsed) && parsed > 0 ? parsed : fallback;
+    }
+
+    private static object? ToDbNullable<T>(T? value)
+    {
+        return value is null ? DBNull.Value : value;
+    }
+}

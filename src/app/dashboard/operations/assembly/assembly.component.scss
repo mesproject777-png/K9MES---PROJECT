@@ -1,0 +1,104 @@
+.ops-assembly-page {
+  min-height: calc(100vh - 110px);
+  padding: 24px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.ops-assembly-card {
+  width: min(760px, 100%);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #d5e3f2;
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.ops-assembly-card h2 {
+  margin: 0 0 14px;
+  font-size: 1.35rem;
+  color: #0f2137;
+}
+
+.sn-row {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.sn-row label {
+  color: #1f3f5d;
+  font-weight: 600;
+}
+
+.sn-row input {
+  width: 100%;
+  border: 2px solid #1a1a1a;
+  border-radius: 3px;
+  padding: 10px 12px;
+  font-size: 1rem;
+  outline: none;
+  background: #fff;
+}
+
+.sn-row select {
+  width: 100%;
+  border: 2px solid #1a1a1a;
+  border-radius: 3px;
+  padding: 10px 12px;
+  font-size: 1rem;
+  outline: none;
+  background: #fff;
+}
+
+.sn-row input:disabled {
+  opacity: 0.7;
+}
+
+.hint {
+  margin: 10px 0 0;
+  color: #4a647f;
+  font-size: 0.9rem;
+}
+
+.status {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #d5e3f2;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.status-row {
+  display: flex;
+  gap: 8px;
+  margin: 2px 0;
+}
+
+.status-row .k {
+  min-width: 90px;
+  color: #1f3f5d;
+  font-weight: 700;
+}
+
+.status-row .v {
+  color: #0f2137;
+  font-weight: 600;
+}
+
+.message {
+  margin: 12px 0 0;
+  font-weight: 600;
+}
+
+.message.info {
+  color: #1d6a96;
+}
+
+.message.success {
+  color: #0f7d55;
+}
+
+.message.error {
+  color: #b62323;
+}

@@ -1,0 +1,6 @@
+CREATE TABLE MasterStation (
+  MasterStation_Id SERIAL PRIMARY KEY,
+  MasterStation_Code VARCHAR(50) NOT NULL,
+  MasterStation_Name VARCHAR(200) NOT NULL,
+  MasterStation_Description TEXT NOT NULL
+);

@@ -1,0 +1,68 @@
+<div class="generatesn-page">
+  <div class="card hero-card">
+    <h2>Generate Serial Numbers</h2>
+    <p class="hero-subtitle">Validate the WO first, then generate SNs in one click.</p>
+    
+    <form (ngSubmit)="generate()" #f="ngForm">
+      <div class="form-grid">
+        <div class="field">
+          <label>Work Order (from List WO)</label>
+          <input type="text" [(ngModel)]="wo" name="wo" placeholder="Enter WO e.g. WO001" required 
+                 (blur)="validateWo()" [class.loading]="validating" />
+          <small *ngIf="validating">Checking work order availability...</small>
+        </div>
+
+        <div class="field">
+          <label>Quantity</label>
+          <input type="number" [(ngModel)]="quantity" name="qty" min="1" required />
+          <small *ngIf="woDetails && quantity !== woDetails.balance">Must match {{woDetails.balance}}</small>
+        </div>
+      </div>
+
+      <div class="wo-details" *ngIf="woDetails">
+        <h4>WO Details</h4>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <span>PN</span>
+            <strong>{{woDetails.pn || woDetails.item?.pn}}</strong>
+          </div>
+          <div class="detail-item">
+            <span>Balance</span>
+            <strong>{{woDetails.balance}}</strong>
+          </div>
+          <div class="detail-item" *ngIf="woDetails.sn_type_name">
+            <span>SN Type</span>
+            <strong>{{woDetails.sn_type_name}}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit" [disabled]="!isValid || loading || validating">
+          {{loading ? 'Generating...' : 'Generate SNs'}}
+        </button>
+        <button type="button" class="secondary" (click)="woDetails = null; wo = ''; quantity = 0; message = ''">
+          Clear
+        </button>
+      </div>
+    </form>
+
+    <div *ngIf="message" class="message" [ngClass]="{'success': success, 'error': !success}">
+      {{message}}
+    </div>
+
+    <div *ngIf="sns.length" class="card generated-card">
+      <h3>Generated SNs ({{sns.length}})</h3>
+      <button class="secondary full-width track-main-btn" (click)="openTracker()">Open SN Tracker (First RSN/SN)</button>
+      <div class="sn-list">
+        <div *ngFor="let sn of sns; let i = index" class="sn-item">
+          <div class="sn-row-head">{{i+1}}. SN: {{sn}}</div>
+          <div class="sn-row-rsn" *ngIf="getRsnAt(i)">RSN: {{ getRsnAt(i) }}</div>
+          <button class="secondary track-inline-btn" (click)="openTracker(getTrackSearchValue(i, sn))">Track</button>
+        </div>
+      </div>
+      <button class="secondary full-width" (click)="copyAllSns()">Copy All to Clipboard</button>
+    </div>
+  </div>
+</div>
+

@@ -1,0 +1,88 @@
+<div class="page">
+  <div class="page__header">
+    <div>
+      <h2>Shipped Packages</h2>
+      <div class="muted">View shipped packages history.</div>
+    </div>
+
+    <div class="page__actions">
+      <button class="btn" (click)="refresh()" [disabled]="isLoading">Refresh</button>
+    </div>
+  </div>
+
+  <div *ngIf="errorMessage" class="alert alert--error">{{ errorMessage }}</div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card__title">Shipped Packages</div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Package No</th>
+              <th>Type</th>
+              <th>Items</th>
+              <th>Shipped</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let p of packages" (click)="selectPackage(p.id)" [class.selected]="p.id === selectedPackageId">
+              <td>{{ p.package_no }}</td>
+              <td>{{ p.package_type }}</td>
+              <td>{{ p.item_count }}</td>
+              <td>{{ p.shipped_at | date:'yyyy-MM-dd HH:mm' }}</td>
+            </tr>
+            <tr *ngIf="!packages?.length">
+              <td colspan="4" class="muted">No shipped packages</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__title">Selected Package</div>
+
+      <div *ngIf="!selectedPackageDetails" class="muted">Select a shipped package to view items.</div>
+
+      <ng-container *ngIf="selectedPackageDetails">
+        <div class="kv">
+          <div><span class="muted">No:</span> <strong>{{ selectedPackageDetails.package.package_no }}</strong></div>
+          <div><span class="muted">Type:</span> <strong>{{ selectedPackageDetails.package.package_type }}</strong></div>
+          <div><span class="muted">Items:</span> <strong>{{ selectedPackageDetails.items.length }}</strong></div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" (click)="clearSelection()" [disabled]="isLoading">Clear</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>SN</th>
+                <th>RSN</th>
+                <th>PN</th>
+                <th>Rev</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let i of selectedPackageDetails.items">
+                <td>{{ i.sn }}</td>
+                <td>{{ i.rsn }}</td>
+                <td>{{ i.pn }}</td>
+                <td>{{ i.revision }}</td>
+                <td>{{ i.serial_status }}</td>
+              </tr>
+              <tr *ngIf="!selectedPackageDetails.items?.length">
+                <td colspan="5" class="muted">No items</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </ng-container>
+    </div>
+  </div>
+</div>

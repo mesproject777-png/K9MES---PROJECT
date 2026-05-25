@@ -1,0 +1,46 @@
+<div class="ops-assembly-page">
+  <section class="ops-assembly-card">
+    <h2>Assembly</h2>
+
+    <div class="sn-row">
+      <label for="stageSelect">Stage:</label>
+      <select
+        id="stageSelect"
+        [(ngModel)]="selectedStage"
+        [disabled]="isLoading || !!parentContext"
+      >
+        <option value="">Select stage</option>
+        <option *ngFor="let stage of stageOptions" [value]="stage">{{ stage }}</option>
+      </select>
+    </div>
+
+    <div class="sn-row">
+      <label for="snInput">SN:</label>
+      <input
+        id="snInput"
+        type="text"
+        [(ngModel)]="query"
+        [disabled]="isLoading"
+        placeholder="Scan / enter SN and press Enter"
+        (keydown.enter)="onSubmit()"
+        autocomplete="off"
+      />
+    </div>
+
+    <div *ngIf="parentContext" class="status">
+      <div class="status-row"><span class="k">Parent:</span> <span class="v">{{ parentContext.sn }}</span></div>
+      <div class="status-row"><span class="k">Station:</span> <span class="v">{{ parentContext.station_code }}</span></div>
+      <div class="status-row"><span class="k">Required:</span> <span class="v">{{ requiredTotal }}</span></div>
+      <div class="status-row"><span class="k">Bound:</span> <span class="v">{{ boundTotal }}</span></div>
+      <div class="status-row"><span class="k">Remaining:</span> <span class="v">{{ remaining }}</span></div>
+    </div>
+
+    <p class="hint">
+      Scan parent SN first (ASM01–ASM15 or BOXING01). Then scan child SN(s). When all required parts are scanned, this stage will PASS automatically.
+    </p>
+
+    <p *ngIf="isLoading" class="message info">Checking...</p>
+    <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+    <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+  </section>
+</div>

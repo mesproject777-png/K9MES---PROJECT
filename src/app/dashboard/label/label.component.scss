@@ -1,0 +1,141 @@
+body {
+      display: flex;
+      justify-content: center;
+      margin-top: 50px;
+      font-family: Arial, sans-serif;
+      background: #f0f0f0;
+    }
+
+    .container-wrapper {
+      position: relative;
+      width: max-content;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: repeat(6, 120px);
+      gap: 40px;
+      position: relative;
+    }
+
+    .task {
+      background: white;
+      color: #333;
+      font-weight: bold;
+      border-radius: 8px;
+      font-size: 16px;
+      padding: 10px;
+      box-sizing: border-box;
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 120px;
+      width: 120px;
+      transition: transform 0.3s ease, background 0.3s ease;
+      border: 2px solid #ccc;
+      cursor: pointer;
+    }
+
+    .task p {
+      margin: 5px 0;
+      line-height: 1.2;
+    }
+
+    .diamond {
+      background: white !important;
+      transform: rotate(45deg) scale(0.85);
+      border-width: 3px !important;
+    }
+
+    .diamond p {
+      transform: rotate(-45deg);
+    }
+
+    .icon {
+      background: transparent;
+      color: #333;
+      font-weight: bold;
+      border-radius: 8px;
+      font-size: 16px;
+      padding: 10px;
+      box-sizing: border-box;
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 120px;
+      width: 120px;
+      transition: transform 0.3s ease, background 0.3s ease;
+      border: none;
+    }
+
+    .icon img {
+      width: 60px;
+      height: 60px;
+      object-fit: contain;
+    }
+
+    .highlighted {
+      animation: pulseHighlight 0.2s infinite;
+      border: 3px solid #007bff;
+      box-shadow: 0 0 15px rgba(0, 123, 255, 0.6);
+    }
+
+    /* Diamond-specific highlight animation */
+    .diamond.highlighted {
+      border-color: #007bff !important;
+      box-shadow: 0 0 15px rgba(0, 123, 255, 0.6);
+      animation: pulseDiamond 0.2s infinite;
+    }
+
+    @keyframes pulseHighlight {
+      0% {
+        transform: scale(1);
+        box-shadow: 0 0 8px rgba(0, 123, 255, 0.4);
+      }
+      50% {
+        transform: scale(1.05);
+        box-shadow: 0 0 20px rgba(0, 123, 255, 0.9);
+      }
+      100% {
+        transform: scale(1);
+        box-shadow: 0 0 8px rgba(0, 123, 255, 0.4);
+      }
+    }
+
+    @keyframes pulseDiamond {
+      0% {
+        transform: rotate(45deg) scale(0.85);
+        box-shadow: 0 0 8px rgba(0, 123, 255, 0.4);
+      }
+      50% {
+        transform: rotate(45deg) scale(0.9);
+        box-shadow: 0 0 20px rgba(0, 123, 255, 0.9);
+      }
+      100% {
+        transform: rotate(45deg) scale(0.85);
+        box-shadow: 0 0 8px rgba(0, 123, 255, 0.4);
+      }
+    }
+
+    .completed {
+      border-color: #28a745 !important;
+      background-color: green !important;
+      color: white !important;
+      box-shadow: 0 0 5px rgba(40, 167, 69, 0.3);
+    }
+
+    svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: 1;
+    }

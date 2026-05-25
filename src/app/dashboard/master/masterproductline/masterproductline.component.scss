@@ -1,0 +1,153 @@
+.productline-page {
+  display: grid;
+  gap: 24px;
+  padding: 24px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+}
+
+.productline-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1fr) 180px auto;
+  gap: 16px;
+  align-items: start;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.productline-form input,
+.productline-form select,
+.search-box input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+}
+
+.actions,
+.row-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.actions {
+  align-self: end;
+  padding-top: 30px;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  background: #111827;
+  color: white;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.small-button {
+  padding: 8px 12px;
+}
+
+.message {
+  margin-top: 12px;
+  font-weight: 600;
+}
+
+.success {
+  color: #067647;
+}
+
+.error {
+  color: #b42318;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+th,
+td {
+  padding: 12px;
+  border-bottom: 1px solid #eceff4;
+  text-align: left;
+}
+
+th {
+  background: #111827;
+  color: white;
+}
+
+.empty-state {
+  text-align: center;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-card {
+  width: min(900px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+}
+
+.modal-header,
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-form {
+  margin-top: 16px;
+}
+
+@media (max-width: 900px) {
+  .productline-form {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    padding-top: 0;
+  }
+
+  .modal-header,
+  .modal-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -1,0 +1,207 @@
+<div class="assembly-page">
+	<section class="search-shell">
+		<div class="search-shell-header">
+			<div>
+				<p class="eyebrow">Engineering</p>
+				<h2>Assembly Definition</h2>
+			</div>
+			<span class="header-tag">Smart Search</span>
+		</div>
+
+		<div class="search-body">
+			<div class="search-title">Find Assembly Definition by PN and Revision</div>
+
+			<div class="search-grid">
+				<label>Part Number</label>
+				<div class="input-wrap">
+					<input
+						type="text"
+						[value]="pnQuery"
+						(input)="onPnInput($any($event.target).value)"
+						(blur)="pnSuggestions = []"
+						placeholder="Type PN or description"
+						autocomplete="off"
+					/>
+
+					<div class="suggestions" *ngIf="pnSuggestions.length > 0">
+						<button
+							type="button"
+							class="suggestion"
+							*ngFor="let item of pnSuggestions"
+							(mousedown)="selectPnFromSuggestion(item)"
+						>
+							{{ item.pn }} - {{ item.description }}
+						</button>
+					</div>
+				</div>
+
+				<label>Revision</label>
+				<select [value]="selectedMainRevision" (change)="onRevisionChange($any($event.target).value)">
+					<option value="" disabled>Select</option>
+					<option *ngFor="let rev of mainRevisions" [value]="rev.revision">{{ rev.revision }}</option>
+				</select>
+			</div>
+
+			<div class="search-actions">
+				<button type="button" class="go-btn" (click)="runSearch()">Go</button>
+			</div>
+
+			<p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+			<p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+		</div>
+	</section>
+
+	<section class="results-shell" *ngIf="selectedMainItem && selectedMainRevision">
+		<div class="results-shell-header">
+			<h3>Assemblies for PN / REV: {{ selectedMainItem.pn }} / {{ selectedMainRevision }}</h3>
+			<span class="rev-badge">Total {{ lines.length }}</span>
+		</div>
+
+		<div class="results-body">
+			<p class="loading" *ngIf="isLoading">Loading...</p>
+
+			<div *ngIf="!isLoading">
+				<div class="station-group" *ngFor="let group of lineGroups">
+					<div class="station-title">
+						{{ group.station_code || 'Undefined' }} : {{ group.station_name }}
+					</div>
+
+					<div class="data-table">
+						<table>
+							<thead>
+								<tr>
+									<th>Type</th>
+									<th>PN</th>
+									<th>Description</th>
+									<th>Assembly Station</th>
+									<th>Assembly Order</th>
+									<th>REGEX</th>
+									<th>REGEX Group to Validate</th>
+									<th>REGEX Value to Match</th>
+									<th>Transform REGEX</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr *ngFor="let line of group.lines" class="clickable-row" (click)="openEditLineModal(line)">
+									<td>{{ line.son_pn_type || line.son_item_type }}</td>
+									<td>{{ line.son_pn }}</td>
+									<td>{{ line.son_description }}</td>
+									<td>{{ line.station_code }}</td>
+									<td>{{ line.assemble_order }}</td>
+									<td>{{ line.pattern_regex }}</td>
+									<td>{{ line.part_to_validate ?? '' }}</td>
+									<td>{{ line.regex_value_to_match }}</td>
+									<td class="mono">{{ line.transform_regex }}</td>
+								</tr>
+								<tr *ngIf="group.lines.length === 0">
+									<td colspan="9" class="empty">No assembly lines found.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+
+				<div *ngIf="lineGroups.length === 0" class="empty-block">
+					No assembly lines found.
+				</div>
+
+				<div class="actions-row">
+					<button type="button" class="history-toggle" (click)="openHistoryModal()">Show History</button>
+				</div>
+			</div>
+		</div>
+	</section>
+</div>
+
+<div *ngIf="isEditModalOpen" class="modal-backdrop" (click)="closeEditModal()">
+	<div class="modal-card" (click)="$event.stopPropagation()">
+		<div class="modal-header">
+			<div>
+				<h3>Edit Assembly Definition:</h3>
+				<div class="sub-title">
+					TOP PN: {{ selectedMainItem?.pn }}, REV: {{ selectedMainRevision }}, SON PN {{ editingLine?.son_pn }}
+				</div>
+			</div>
+			<button type="button" class="tiny-btn" (click)="closeEditModal()">Close</button>
+		</div>
+
+		<div class="modal-body">
+			<div class="modal-grid">
+				<label>Station</label>
+				<select [(ngModel)]="selectedStationCode" name="selectedStationCode">
+					<option value="" disabled>Select</option>
+					<option *ngFor="let st of stations" [value]="st.station_code">
+						{{ st.station_code }} - {{ st.station_desc }}
+					</option>
+				</select>
+
+				<label>Assemble Order</label>
+				<input type="number" [(ngModel)]="assembleOrder" name="assembleOrder" min="1" placeholder="(auto)" />
+
+				<label>REGEX</label>
+				<input type="text" [(ngModel)]="patternRegex" name="patternRegex" placeholder="Skip" />
+
+				<label>Group to Validate</label>
+				<input type="number" [(ngModel)]="partToValidate" name="partToValidate" min="1" placeholder="ex: 1" />
+
+				<label>REGEX Value to Match</label>
+				<input type="text" [(ngModel)]="regexValueToMatch" name="regexValueToMatch" placeholder="ex: CONST:R" />
+
+				<label>Transform REGEX</label>
+				<input type="text" [(ngModel)]="transformRegex" name="transformRegex" placeholder="(optional)" />
+			</div>
+
+			<p *ngIf="isStationsLoading" class="loading">Loading stations...</p>
+		</div>
+
+		<div class="modal-actions">
+			<button type="button" class="action-btn" (click)="saveAssemblyDefinition()" [disabled]="isSaving">
+				{{ isSaving ? 'Saving...' : 'Save' }}
+			</button>
+		</div>
+	</div>
+</div>
+
+<div *ngIf="isHistoryModalOpen" class="modal-backdrop" (click)="closeHistoryModal()">
+	<div class="modal-card" (click)="$event.stopPropagation()">
+		<div class="modal-header">
+			<h3>{{ selectedMainItem?.pn }} / {{ selectedMainRevision }} history</h3>
+			<button type="button" class="tiny-btn" (click)="closeHistoryModal()">Close</button>
+		</div>
+
+		<div class="modal-body">
+			<p class="loading" *ngIf="isHistoryLoading">Loading...</p>
+
+			<div class="data-table" *ngIf="!isHistoryLoading">
+				<table>
+					<thead>
+						<tr>
+							<th>DATE</th>
+							<th>DESCRIPTION</th>
+							<th>CHANGE</th>
+							<th>USER</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr *ngFor="let h of history">
+							<td>{{ h.changed_at | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
+							<td>{{ h.description }}</td>
+							<td>
+								<div class="change-lines">
+									<div *ngFor="let entry of formatChangeData(h.change_data)">
+										<strong>{{ entry.key }}</strong>
+										<div>{{ entry.value }}</div>
+									</div>
+								</div>
+							</td>
+							<td>{{ h.changed_by || 'system' }}</td>
+						</tr>
+						<tr *ngIf="history.length === 0">
+							<td colspan="4" class="empty">No history found.</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+</div>

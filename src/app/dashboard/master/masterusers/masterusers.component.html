@@ -1,0 +1,160 @@
+<div class="containerUserx">
+  <h2>New User Registration</h2>
+
+  <form [formGroup]="userForm" (ngSubmit)="onSubmit()" class="user-form">
+    <label for="loginId">Login ID:</label>
+    <input id="loginId" type="text" formControlName="loginId" />
+
+    <label for="userName">User Name:</label>
+    <input id="userName" type="text" formControlName="userName" />
+
+    <label for="password">Password:</label>
+    <input id="password" type="password" formControlName="password" />
+
+    <label for="isActive">Status:</label>
+    <select id="isActive" formControlName="isActive">
+      <option [ngValue]="true">Active</option>
+      <option [ngValue]="false">Inactive</option>
+    </select>
+
+    <label for="roleId">Role:</label>
+    <select id="roleId" formControlName="roleId">
+      <option value="">Select role</option>
+      <option *ngFor="let role of roles" [value]="role.id">
+        {{ role.role_name }}
+      </option>
+    </select>
+
+    <label for="pageAccessPreview">Page Access:</label>
+    <input id="pageAccessPreview" type="text" [value]="getPageAccessPreview()" readonly />
+
+    <button type="submit" [disabled]="isSubmitting">
+      {{ isSubmitting ? 'Saving...' : 'Add' }}
+    </button>
+  </form>
+
+  <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+  <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+
+  <h3>Added Users</h3>
+
+  <div class="search-container">
+    <input
+      type="text"
+      placeholder="Search by Login ID, User Name, Status, or Role..."
+      (input)="onSearchChange($any($event.target).value)"
+    />
+  </div>
+
+  <p *ngIf="isLoading" class="message">Loading users...</p>
+
+  <table *ngIf="!isLoading">
+    <thead>
+      <tr>
+        <th>Login ID</th>
+        <th>User Name</th>
+        <th>Status</th>
+        <th>Role</th>
+        <th>Page Access</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <ng-container *ngFor="let user of filteredUsers">
+        <tr>
+          <td>{{ user.login_id }}</td>
+          <td>{{ user.user_name }}</td>
+          <td>{{ user.is_active ? 'Active' : 'Inactive' }}</td>
+          <td>{{ user.role_name }}</td>
+          <td>{{ user.page_access.join(', ') }}</td>
+          <td class="actions-cell">
+            <button type="button" class="small-button" (click)="startEdit(user)">Edit</button>
+            <button type="button" class="small-button secondary" (click)="showHistory(user)">
+              {{ selectedHistoryUserId === user.id ? 'Hide History' : 'History' }}
+            </button>
+          </td>
+        </tr>
+        <tr *ngIf="selectedHistoryUserId === user.id">
+          <td colspan="6">
+            <div class="history-dropdown">
+              <p *ngIf="isHistoryLoading" class="message">Loading history...</p>
+
+              <table *ngIf="!isHistoryLoading" class="history-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Who</th>
+                    <th>Field</th>
+                    <th>Old Value</th>
+                    <th>New Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let entry of historyEntries">
+                    <td>{{ entry.changed_at | date:'medium' }}</td>
+                    <td>{{ entry.changed_by }}</td>
+                    <td>{{ entry.field_name }}</td>
+                    <td>{{ entry.old_value || '-' }}</td>
+                    <td>{{ entry.new_value || '-' }}</td>
+                  </tr>
+                  <tr *ngIf="historyEntries.length === 0">
+                    <td colspan="5" class="empty-state">No history available for this user.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+      </ng-container>
+      <tr *ngIf="filteredUsers.length === 0">
+        <td colspan="6" class="empty-state">No users found.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div *ngIf="isEditModalOpen" class="modal-backdrop" (click)="cancelEdit()">
+    <div class="modal-card" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Edit User</h3>
+        <button type="button" class="secondary" (click)="cancelEdit()">Close</button>
+      </div>
+
+      <form [formGroup]="editForm" class="user-form modal-form">
+        <label for="editLoginId">Login ID:</label>
+        <input id="editLoginId" type="text" formControlName="loginId" />
+
+        <label for="editUserName">User Name:</label>
+        <input id="editUserName" type="text" formControlName="userName" />
+
+        <label for="editPassword">Password:</label>
+        <input id="editPassword" type="password" formControlName="password" />
+
+        <label for="editIsActive">Status:</label>
+        <select id="editIsActive" formControlName="isActive">
+          <option [ngValue]="true">Active</option>
+          <option [ngValue]="false">Inactive</option>
+        </select>
+
+        <label for="editRoleId">Role:</label>
+        <select id="editRoleId" formControlName="roleId">
+          <option value="">Select role</option>
+          <option *ngFor="let role of roles" [value]="role.id">
+            {{ role.role_name }}
+          </option>
+        </select>
+
+        <label for="editPageAccessPreview">Page Access:</label>
+        <input id="editPageAccessPreview" type="text" [value]="getEditPageAccessPreview()" readonly />
+      </form>
+
+      <p class="helper-text">Leave password blank to keep the existing password.</p>
+
+      <div class="modal-actions">
+        <button type="button" [disabled]="isEditSubmitting" (click)="saveEdit()">
+          {{ isEditSubmitting ? 'Saving...' : 'Update' }}
+        </button>
+        <button type="button" class="secondary" (click)="cancelEdit()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>

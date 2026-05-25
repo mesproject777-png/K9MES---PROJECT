@@ -1,0 +1,61 @@
+<div class="ops-page">
+	<section class="ops-card hero-card">
+		<div class="hero-top">
+			<h2>{{ getModeTitle() }}</h2>
+			<span class="tag">Station: {{ getSelectedStationLabel() }}</span>
+		</div>
+
+		<p class="hero-copy">
+			Select station, scan SN or RSN, then press Enter or Tab. Submission happens automatically.
+		</p>
+
+		<div class="station-bar">
+			<label for="stationSelect">Station</label>
+			<select id="stationSelect" [(ngModel)]="selectedStationCode">
+				<option value="" disabled>Select station</option>
+				<option
+					*ngFor="let station of stations; trackBy: trackByStationOption"
+					[value]="station.station_code"
+				>
+					{{ station.station_code }} - {{ station.station_desc }}
+				</option>
+			</select>
+			<span class="station-hint" *ngIf="stationsLoading">Loading stations...</span>
+		</div>
+
+		<div class="search-bar scan-row">
+			<label for="scanInput">SN:</label>
+			<input
+				#scanInput
+				id="scanInput"
+				type="text"
+				[(ngModel)]="scanValue"
+				(keydown.enter)="onScanKey($event)"
+				(keydown.tab)="onScanKey($event)"
+				placeholder="Scan or enter SN/RSN"
+				[disabled]="!selectedStationCode || submitting"
+				autocomplete="off"
+			/>
+		</div>
+
+		<div class="action-strip">
+			<button type="button" class="ghost" (click)="toggleMode()">
+				{{ getSwitchText() }}
+			</button>
+			<div class="watermark" [class.fail]="mode === 'FAIL'">{{ mode }}</div>
+		</div>
+
+		<div class="live-strip" *ngIf="submitting">
+			<span class="dot"></span>
+			<span>Submitting {{ mode }}...</span>
+		</div>
+
+		<p class="action-message" *ngIf="actionMessage" [class.success]="actionSuccess">{{ actionMessage }}</p>
+
+		<p class="error" *ngIf="errorMessage">{{ errorMessage }}</p>
+	</section>
+
+	<p class="action-message" *ngIf="result && !actionMessage">
+		Last processed: {{ result.serial.sn }} ({{ result.serial.rsn }})
+	</p>
+</div>

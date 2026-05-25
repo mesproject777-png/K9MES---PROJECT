@@ -1,0 +1,121 @@
+<div class="rev-page">
+  <div class="card">
+    <h2>Item Revisions</h2>
+
+    <div class="enter-box">
+      <div class="title">Enter PN for Revision</div>
+      <div class="row">
+        <label>Part number:</label>
+        <div class="pn-input">
+          <input
+            type="text"
+            [value]="pnQuery"
+            (input)="onPnInput($any($event.target).value)"
+            (blur)="pnSuggestions = []"
+            placeholder="Type PN..."
+            autocomplete="off"
+          />
+          <div class="suggestions" *ngIf="pnSuggestions.length > 0">
+            <button
+              type="button"
+              class="suggestion"
+              *ngFor="let s of pnSuggestions"
+              (mousedown)="selectPnFromSuggestion(s.pn)"
+            >
+              {{ s.pn }} - {{ s.description }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+    <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+  </div>
+
+  <div class="card" *ngIf="selectedItem">
+    <div class="header-row">
+      <h3>Revisions for PN: {{ selectedItem.pn }}</h3>
+    </div>
+
+    <p *ngIf="isLoading" class="message">Loading revisions...</p>
+
+    <div class="rev-table" *ngIf="!isLoading">
+      <table>
+        <thead>
+          <tr>
+            <th>rev_edit</th>
+            <th>vert</th>
+            <th>Horiz</th>
+            <th>Revision</th>
+            <th>In Date</th>
+            <th>Expire Date</th>
+            <th>Version</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let r of revisions">
+            <td class="icon-col"><span class="icon">✎</span></td>
+            <td class="icon-col"><span class="icon">⤓</span></td>
+            <td class="icon-col"><span class="icon">⤔</span></td>
+            <td>{{ r.revision }}</td>
+            <td>{{ r.in_date | date: 'yyyy-MM-dd' }}</td>
+            <td>{{ r.expire_date ? (r.expire_date | date: 'yyyy-MM-dd') : '' }}</td>
+            <td>{{ r.version }}</td>
+            <td>{{ r.description }}</td>
+          </tr>
+          <tr *ngIf="revisions.length === 0">
+            <td colspan="8" class="empty">No revisions found.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="primary" (click)="openCreateModal()">Add New</button>
+      <button type="button" class="secondary" (click)="toggleHistory()">
+        {{ includeHistory ? 'Hide History ▲' : 'Show History ▼' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<div *ngIf="isCreateModalOpen" class="modal-backdrop" (click)="closeCreateModal()">
+  <div class="modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Add a new revision for PN: {{ selectedItem?.pn }}</h3>
+      <button type="button" class="secondary" (click)="closeCreateModal()">Close</button>
+    </div>
+
+    <form [formGroup]="revisionForm" class="modal-form">
+      <div class="form-row">
+        <label>Revision</label>
+        <input type="text" formControlName="revision" />
+      </div>
+      <div class="form-row">
+        <label>In Date</label>
+        <input type="date" formControlName="in_date" />
+      </div>
+      <div class="form-row">
+        <label>Expire Date</label>
+        <input type="date" formControlName="expire_date" />
+      </div>
+      <div class="form-row">
+        <label>Version</label>
+        <input type="text" formControlName="version" />
+      </div>
+      <div class="form-row">
+        <label>Description</label>
+        <textarea rows="5" formControlName="description"></textarea>
+      </div>
+    </form>
+
+    <div class="modal-actions">
+      <button type="button" class="primary" (click)="saveRevision()" [disabled]="isSaving">
+        {{ isSaving ? 'Saving...' : 'Save' }}
+      </button>
+    </div>
+  </div>
+</div>
+

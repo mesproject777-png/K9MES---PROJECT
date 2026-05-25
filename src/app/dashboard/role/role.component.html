@@ -1,0 +1,64 @@
+<div class="role-management">
+  <div class="role-card">
+    <h2>Role Management</h2>
+    <p class="intro">
+      Create roles and choose which pages they can access. These roles will appear in the user creation screen.
+    </p>
+
+    <form [formGroup]="roleForm" (ngSubmit)="onSubmit()" class="role-form">
+      <label for="roleName">Role Name</label>
+      <input id="roleName" type="text" formControlName="roleName" placeholder="Enter role name" />
+
+      <label>Page Access</label>
+      <div class="page-grid">
+        <label class="page-option" *ngFor="let page of pageOptions">
+          <input
+            type="checkbox"
+            [checked]="isPageSelected(page.key)"
+            (change)="togglePageAccess(page.key, $any($event.target).checked)"
+          />
+          <span>{{ page.label }}</span>
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" [disabled]="isSubmitting">
+          {{ isSubmitting ? 'Saving...' : (editingRoleId ? 'Update Role' : 'Create Role') }}
+        </button>
+        <button *ngIf="editingRoleId" type="button" class="secondary" (click)="cancelEdit()">
+          Cancel
+        </button>
+      </div>
+    </form>
+
+    <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+    <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+  </div>
+
+  <div class="role-card">
+    <h3>Existing Roles</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Role</th>
+          <th>Page Access</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let role of roles">
+          <td>{{ role.role_name }}</td>
+          <td>{{ role.page_access.join(', ') }}</td>
+          <td class="actions">
+            <button type="button" class="secondary" (click)="editRole(role)">Edit</button>
+            <button type="button" class="danger" (click)="deleteRole(role.id)">Delete</button>
+          </td>
+        </tr>
+        <tr *ngIf="roles.length === 0">
+          <td colspan="3" class="empty-state">No roles created yet.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

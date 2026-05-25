@@ -1,0 +1,216 @@
+<div class="items-page">
+  <div class="toolbar">
+    <h2>Items List</h2>
+    <div class="toolbar-actions">
+      <button type="button" class="primary" (click)="openCreateModal()">Add New</button>
+      <button type="button" class="secondary" (click)="downloadFullList()">Download Full List</button>
+    </div>
+  </div>
+
+  <div class="messages">
+    <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+    <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+  </div>
+
+  <div class="table-toolbar">
+    <div class="left">
+      <label>
+        <select [(ngModel)]="limit" (change)="page = 1; loadItems()">
+          <option [value]="15">15</option>
+          <option [value]="25">25</option>
+          <option [value]="50">50</option>
+        </select>
+        entries per page
+      </label>
+    </div>
+    <div class="right">
+      <label>
+        Search PN/Desc :
+        <input
+          type="text"
+          placeholder="Type part number or Description"
+          (input)="onSearchChange($any($event.target).value)"
+        />
+      </label>
+    </div>
+  </div>
+
+  <p *ngIf="isLoading" class="message">Loading items...</p>
+
+  <div class="table-wrapper" *ngIf="!isLoading">
+    <table>
+      <thead>
+        <tr>
+          <th>pn</th>
+          <th>Description</th>
+          <th>Mark_Desc</th>
+          <th>PH</th>
+          <th>SGD</th>
+          <th>PL</th>
+          <th>Item_Type</th>
+          <th>SN_Type</th>
+          <th>PN_Type</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let row of items">
+          <td>{{ row.pn }}</td>
+          <td>{{ row.description }}</td>
+          <td>{{ row.marketing_desc }}</td>
+          <td>{{ row.phantom ? 'Yes' : 'No' }}</td>
+          <td>{{ row.sgd_control ? 'Yes' : 'No' }}</td>
+          <td>{{ row.product_line_description }}</td>
+          <td>{{ displayItemType(row.item_type) }}</td>
+          <td>{{ row.sn_type_name }}</td>
+          <td>{{ row.pn_type_code }}</td>
+          <td class="actions-cell">
+            <button type="button" class="secondary action-btn" (click)="openEditModal(row)">Edit</button>
+          </td>
+        </tr>
+        <tr *ngIf="items.length === 0">
+          <td colspan="10" class="empty-state">No part numbers found.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pager" *ngIf="totalItems > 0">
+    <div class="pager-left">
+      Showing
+      {{ ((page - 1) * limit) + (items.length ? 1 : 0) }}
+      to
+      {{ (page - 1) * limit + items.length }}
+      of
+      {{ totalItems }}
+      entries
+    </div>
+    <div class="pager-right">
+      <button type="button" class="pager-btn" (click)="changePage(1)" [disabled]="page === 1">&laquo;</button>
+      <button type="button" class="pager-btn" (click)="changePage(page - 1)" [disabled]="page === 1">&lsaquo;</button>
+      <span class="pager-info">{{ page }} / {{ totalPages || 1 }}</span>
+      <button type="button" class="pager-btn" (click)="changePage(page + 1)" [disabled]="page >= totalPages">&rsaquo;</button>
+      <button type="button" class="pager-btn" (click)="changePage(totalPages)" [disabled]="page >= totalPages">&raquo;</button>
+    </div>
+  </div>
+</div>
+
+<div *ngIf="isCreateModalOpen" class="modal-backdrop" (click)="closeCreateModal()">
+  <div class="modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{ isEditMode ? 'Edit PN' : 'Add New PN' }}</h3>
+      <button type="button" class="secondary" (click)="closeCreateModal()">Close</button>
+    </div>
+
+    <div class="modal-messages" *ngIf="errorMessage || successMessage">
+      <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+      <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+    </div>
+
+    <form [formGroup]="pnForm" class="modal-form">
+      <div class="grid">
+        <div class="field">
+          <label>Part number</label>
+          <input type="text" formControlName="pn" />
+          <small class="field-error" *ngIf="pnForm.get('pn')?.touched && pnForm.get('pn')?.invalid">Required</small>
+        </div>
+
+        <div class="field">
+          <label>Description</label>
+          <input type="text" formControlName="description" />
+          <small class="field-error" *ngIf="pnForm.get('description')?.touched && pnForm.get('description')?.invalid">Required</small>
+        </div>
+
+        <div class="field">
+          <label>Marketing Desc</label>
+          <input type="text" formControlName="marketing_desc" />
+        </div>
+
+        <div class="field inline">
+          <label>Phantom</label>
+          <label class="radio">
+            <input
+              type="radio"
+              name="phantom"
+              [checked]="pnForm.get('phantom')?.value === false"
+              (change)="pnForm.get('phantom')?.setValue(false)"
+            />
+            No
+          </label>
+          <label class="radio">
+            <input
+              type="radio"
+              name="phantom"
+              [checked]="pnForm.get('phantom')?.value === true"
+              (change)="pnForm.get('phantom')?.setValue(true)"
+            />
+            Yes
+          </label>
+          <small class="field-error" *ngIf="pnForm.get('phantom')?.touched && pnForm.get('phantom')?.invalid">Required</small>
+        </div>
+
+        <div class="field inline">
+          <label>SGD Control</label>
+          <label class="radio">
+            <input
+              type="radio"
+              name="sgd_control"
+              [checked]="pnForm.get('sgd_control')?.value === false"
+              (change)="pnForm.get('sgd_control')?.setValue(false)"
+            />
+            No
+          </label>
+          <label class="radio">
+            <input
+              type="radio"
+              name="sgd_control"
+              [checked]="pnForm.get('sgd_control')?.value === true"
+              (change)="pnForm.get('sgd_control')?.setValue(true)"
+            />
+            Yes
+          </label>
+        </div>
+
+        <div class="field inline">
+          <label>Item Type</label>
+          <label class="radio">
+            <input type="radio" value="Manufactured" formControlName="item_type" /> Manufactured
+          </label>
+          <label class="radio">
+            <input type="radio" value="Purchased" formControlName="item_type" /> Purchased
+          </label>
+          <small class="field-error" *ngIf="pnForm.get('item_type')?.touched && pnForm.get('item_type')?.invalid">Required</small>
+        </div>
+
+        <div class="field">
+          <label>Product Line</label>
+          <select formControlName="product_line_id">
+            <option [ngValue]="null">Select Product Line</option>
+            <option *ngFor="let pl of productLines" [ngValue]="pl.id">{{ pl.description }}</option>
+          </select>
+          <small class="field-error" *ngIf="pnForm.get('product_line_id')?.touched && pnForm.get('product_line_id')?.invalid">Required</small>
+        </div>
+
+        <div class="field">
+          <label>Sn Type</label>
+          <input type="text" formControlName="sn_type_name" placeholder="Enter SN Type (must exist)" />
+        </div>
+
+        <div class="field">
+          <label>Pn Type</label>
+          <select formControlName="pn_type_id">
+            <option [ngValue]="null">Select PN Type</option>
+            <option *ngFor="let pt of pnTypes" [ngValue]="pt.id">{{ pt.code }} - {{ pt.description }}</option>
+          </select>
+          <small class="field-error" *ngIf="pnForm.get('pn_type_id')?.touched && pnForm.get('pn_type_id')?.invalid">Required</small>
+        </div>
+      </div>
+    </form>
+
+    <div class="modal-actions">
+      <button type="button" class="primary" (click)="savePn()" [disabled]="isSaving">
+        {{ isSaving ? (isEditMode ? 'Updating...' : 'Saving...') : (isEditMode ? 'Update' : 'Save') }}
+      </button>
+    </div>
+  </div>
+</div>

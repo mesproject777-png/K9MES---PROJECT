@@ -1,0 +1,106 @@
+.role-management {
+  display: grid;
+  gap: 24px;
+  padding: 32px;
+}
+
+.role-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+}
+
+h2,
+h3 {
+  margin: 0 0 12px;
+}
+
+.intro {
+  color: #5b6472;
+  margin-bottom: 20px;
+}
+
+.role-form {
+  display: grid;
+  gap: 12px;
+}
+
+.role-form input[type='text'] {
+  border: 1px solid #d5d9e0;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 15px;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.page-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f6f8fb;
+}
+
+.form-actions,
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  background: #111827;
+  color: white;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+button.danger {
+  background: #b42318;
+}
+
+.message {
+  margin-top: 16px;
+  font-weight: 600;
+}
+
+.message.success {
+  color: #067647;
+}
+
+.message.error {
+  color: #b42318;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+th,
+td {
+  padding: 12px;
+  border-bottom: 1px solid #eceff4;
+  text-align: left;
+  vertical-align: top;
+}
+
+.empty-state {
+  text-align: center;
+  color: #6b7280;
+}

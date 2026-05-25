@@ -1,0 +1,262 @@
+<div class="sn-type-container">
+  <!-- Header -->
+  <div class="sn-type-header">
+    <h2>Serial Number Types</h2>
+    <button class="btn-primary" (click)="startCreateNew()" *ngIf="!isCreating">
+      <span class="plus">+</span> Create New SN Type
+    </button>
+  </div>
+
+  <!-- Messages -->
+  <div class="messages">
+    <div class="alert alert-success" *ngIf="successMessage">
+      <span class="close" (click)="successMessage = ''">&times;</span>
+      {{ successMessage }}
+    </div>
+    <div class="alert alert-error" *ngIf="errorMessage">
+      <span class="close" (click)="errorMessage = ''">&times;</span>
+      {{ errorMessage }}
+    </div>
+  </div>
+
+  <!-- Loading Spinner -->
+  <div class="spinner" *ngIf="isLoading">
+    <div class="spinner-border"></div>
+  </div>
+
+  <!-- Create New SN Type Form -->
+  <div class="create-form" *ngIf="isCreating">
+    <div class="form-card">
+      <h3>Create New SN Type</h3>
+      <div class="form-group">
+        <label>SN Type Name <span class="required">*</span></label>
+        <input type="text" [(ngModel)]="newSnType.sn_type_name" placeholder="e.g., sn01" class="form-control">
+      </div>
+      <div class="form-group">
+        <label>Remark</label>
+        <textarea [(ngModel)]="newSnType.remark" placeholder="Optional description" class="form-control"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn-success" (click)="createSNType()">Create</button>
+        <button class="btn-secondary" (click)="cancelCreate()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="sn-type-content" *ngIf="!isCreating">
+    <!-- SN Types List -->
+    <div class="sn-types-list">
+      <h3>SN Types List</h3>
+      <div class="list-container">
+        <div *ngIf="snTypes.length === 0" class="no-data">
+          <p>No SN Types found. Create a new one to get started.</p>
+        </div>
+        <div class="sn-type-item" *ngFor="let snType of snTypes" 
+             (click)="selectSnType(snType)"
+             [class.active]="selectedSnType?.id === snType.id">
+          <div class="item-header">
+            <h4>{{ snType.sn_type_name }}</h4>
+            <span class="field-count">{{ getSnTypeFieldCount(snType) }} fields</span>
+          </div>
+          <p class="remark" *ngIf="snType.remark">{{ snType.remark }}</p>
+          <small class="date">Created: {{ snType.created_at | date: 'short' }}</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- SN Type Details Panel -->
+    <div class="sn-type-panel" *ngIf="selectedSnType">
+      <div class="panel-header">
+        <h3>{{ selectedSnType.sn_type_name }}</h3>
+        <div class="header-actions">
+          <button class="btn-edit" (click)="startEdit()" *ngIf="!isEditing">Edit</button>
+          <button class="btn-danger" (click)="deleteSNType(selectedSnType)">Delete</button>
+        </div>
+      </div>
+
+      <!-- Edit Mode -->
+      <div class="edit-form" *ngIf="isEditing">
+        <div class="form-group">
+          <label>SN Type Name <span class="required">*</span></label>
+          <input type="text" [(ngModel)]="editingSnType.sn_type_name" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Remark</label>
+          <textarea [(ngModel)]="editingSnType.remark" class="form-control"></textarea>
+        </div>
+        <div class="form-actions">
+          <button class="btn-success" (click)="updateSNType()">Save</button>
+          <button class="btn-secondary" (click)="cancelEdit()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- View Mode -->
+      <div class="panel-info" *ngIf="!isEditing">
+        <div class="info-row">
+          <label>Name:</label>
+          <span>{{ selectedSnType.sn_type_name }}</span>
+        </div>
+        <div class="info-row" *ngIf="selectedSnType.remark">
+          <label>Remark:</label>
+          <span>{{ selectedSnType.remark }}</span>
+        </div>
+        <div class="info-row">
+          <label>Created:</label>
+          <span>{{ selectedSnType.created_at | date: 'medium' }}</span>
+        </div>
+        <div class="info-row">
+          <label>Last Updated:</label>
+          <span>{{ selectedSnType.updated_at | date: 'medium' }}</span>
+        </div>
+      </div>
+
+      <!-- Fields Section -->
+      <div class="fields-section" *ngIf="!isEditing">
+        <div class="section-header">
+          <h4>SN Type Fields</h4>
+          <button class="btn-small" (click)="startAddField()" *ngIf="!showFieldForm">
+            + Add Field
+          </button>
+        </div>
+
+        <!-- Add Field Form -->
+        <div class="add-field-form" *ngIf="showFieldForm">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Sort Order <span class="required">*</span></label>
+              <input type="number" [(ngModel)]="newField.sort_order" class="form-control" step="1" min="1">
+            </div>
+            <div class="form-group">
+              <label>Field Type <span class="required">*</span></label>
+              <select [(ngModel)]="newField.field_type" (ngModelChange)="onAddFieldTypeChange()" class="form-control">
+                <option value="">Select Field Type</option>
+                <option *ngFor="let type of fieldTypesArray" [value]="type.key">
+                  {{ type.key }} - {{ type.label }}
+                </option>
+              </select>
+            </div>
+            <div class="form-group" *ngIf="isStringType(newField.field_type)">
+              <label>String Value</label>
+              <input type="text" [(ngModel)]="newField.field_string" placeholder="Enter string value" class="form-control">
+            </div>
+            <div class="form-group" *ngIf="isSequenceType(newField.field_type)">
+              <label>Size (1-8) <span class="required">*</span></label>
+              <input type="number" [(ngModel)]="newField.field_size" class="form-control" min="1" max="8">
+            </div>
+            <div class="form-group" *ngIf="isEpvFieldType(newField.field_type)">
+              <label>EPV Type <span class="required">*</span></label>
+              <select [(ngModel)]="selectedEpvTypeId" (ngModelChange)="onEpvTypeChange()" class="form-control">
+                <option [ngValue]="null">Select EPV Type</option>
+                <option *ngFor="let type of epvTypes" [ngValue]="type.id">{{ type.type_name }}</option>
+              </select>
+            </div>
+            <div class="form-group" *ngIf="isEpvFieldType(newField.field_type)">
+              <label>EPV Sub-Type <span class="required">*</span></label>
+              <select [(ngModel)]="newField.epv_sub_type_id" class="form-control">
+                <option [ngValue]="null">Select EPV Sub-Type</option>
+                <option *ngFor="let subType of epvSubTypes" [ngValue]="subType.id">{{ subType.sub_type_name }}</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn-success" (click)="addField()">Add Field</button>
+            <button class="btn-secondary" (click)="cancelAddField()">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Edit Field Form -->
+        <div class="edit-field-form" *ngIf="showEditFieldForm && editingField">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Sort Order <span class="required">*</span></label>
+              <input type="number" [(ngModel)]="editingField.sort_order" class="form-control" step="1" min="1">
+            </div>
+            <div class="form-group">
+              <label>Field Type <span class="required">*</span></label>
+              <select [(ngModel)]="editingField.field_type" (ngModelChange)="onEditFieldTypeChange()" class="form-control">
+                <option value="">Select Field Type</option>
+                <option *ngFor="let type of fieldTypesArray" [value]="type.key">
+                  {{ type.key }} - {{ type.label }}
+                </option>
+              </select>
+            </div>
+            <div class="form-group" *ngIf="isStringType(editingField.field_type)">
+              <label>String Value <span class="required">*</span></label>
+              <input type="text" [(ngModel)]="editingField.field_string" placeholder="Enter string value" class="form-control">
+            </div>
+            <div class="form-group" *ngIf="isSequenceType(editingField.field_type)">
+              <label>Size (1-8) <span class="required">*</span></label>
+              <input type="number" [(ngModel)]="editingField.field_size" class="form-control" min="1" max="8">
+            </div>
+            <div class="form-group" *ngIf="isEpvFieldType(editingField.field_type)">
+              <label>EPV Type <span class="required">*</span></label>
+              <select [(ngModel)]="selectedEpvTypeId" (ngModelChange)="onEpvTypeChange()" class="form-control">
+                <option [ngValue]="null">Select EPV Type</option>
+                <option *ngFor="let type of epvTypes" [ngValue]="type.id">{{ type.type_name }}</option>
+              </select>
+            </div>
+            <div class="form-group" *ngIf="isEpvFieldType(editingField.field_type)">
+              <label>EPV Sub-Type <span class="required">*</span></label>
+              <select [(ngModel)]="editingField.epv_sub_type_id" class="form-control">
+                <option [ngValue]="null">Select EPV Sub-Type</option>
+                <option *ngFor="let subType of epvSubTypes" [ngValue]="subType.id">{{ subType.sub_type_name }}</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn-success" (click)="updateField()">Save Field</button>
+            <button class="btn-secondary" (click)="cancelEditField()">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Fields Table -->
+        <div class="fields-table">
+          <table *ngIf="selectedSnType.fields && selectedSnType.fields.length > 0">
+            <thead>
+              <tr>
+                <th>Sort Order</th>
+                <th>Field Type</th>
+                <th>String/Size</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let field of selectedSnType.fields | sort:'sort_order'" class="field-row">
+                <td class="sort-order">{{ field.sort_order }}</td>
+                <td class="field-type">
+                  <strong>{{ field.field_type }}</strong>
+                  <br>
+                  <small>{{ getFieldTypeLabel(field.field_type) }}</small>
+                </td>
+                <td class="field-info">
+                  <span *ngIf="field.field_string">{{ field.field_string }}</span>
+                  <span *ngIf="field.field_size">(size: {{ field.field_size }})</span>
+                  <span *ngIf="isEpvFieldType(field.field_type)">
+                    {{ field.epv_type_name || field.epv_type_id || '-' }} / {{ field.epv_sub_type_name || field.epv_sub_type_id || '-' }}
+                  </span>
+                </td>
+                <td class="actions">
+                  <button class="btn-edit-field" (click)="startEditField(field)" title="Edit">
+                    <i class="icon-edit">✎</i>
+                  </button>
+                  <button class="btn-delete" (click)="deleteField(field)" title="Delete">
+                    <i class="icon-trash">🗑️</i>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="no-fields" *ngIf="!selectedSnType.fields || selectedSnType.fields.length === 0">
+            <p>No fields added yet. Click "Add Field" to get started.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- No Selection Message -->
+    <div class="sn-type-panel empty" *ngIf="!selectedSnType">
+      <p>Select an SN Type from the list to view its details.</p>
+    </div>
+  </div>
+</div>

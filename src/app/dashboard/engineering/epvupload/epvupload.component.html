@@ -1,0 +1,201 @@
+<div class="epv-upload-container">
+  <div class="epv-upload-header">
+    <h2>EPV Upload</h2>
+    <p>Upload EPV file and process values for a selected SN Type.</p>
+  </div>
+
+  <div class="management-card">
+    <h3>EPVs Type and Sub-Type Management</h3>
+    <div class="management-grid">
+      <div class="management-block">
+        <h4>Add Type</h4>
+        <div class="form-group">
+          <label>Type:</label>
+          <input type="text" class="form-control" [(ngModel)]="newTypeName" placeholder="Enter EPV type name">
+        </div>
+        <div class="form-group">
+          <label>Regex:</label>
+          <input type="text" class="form-control" [(ngModel)]="newTypeRegex" placeholder="e.g. ^[A-Z0-9]{12}$">
+        </div>
+        <div class="form-actions compact">
+          <button class="btn-primary" (click)="createType()">Add new EPV type</button>
+          <button class="btn-danger" (click)="deleteType()">Delete Type (if not used)</button>
+        </div>
+      </div>
+
+      <div class="management-block">
+        <h4>Add Sub-Type</h4>
+        <div class="form-group">
+          <label>Type:</label>
+          <select class="form-control" [(ngModel)]="selectedTypeForSubTypeId" (ngModelChange)="onSelectedTypeForSubTypeChange()">
+            <option [ngValue]="null">Choose Type</option>
+            <option *ngFor="let type of epvTypes" [ngValue]="type.id">{{ type.type_name }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Existing sub-type for chosen type:</label>
+          <textarea class="form-control" rows="3" [value]="getExistingSubTypeNamesText()" readonly></textarea>
+        </div>
+        <div class="form-group">
+          <label>Sub Type:</label>
+          <input type="text" class="form-control" [(ngModel)]="newSubTypeName" placeholder="Enter sub-type name">
+        </div>
+        <div class="form-group">
+          <label>Regex:</label>
+          <input type="text" class="form-control" [(ngModel)]="newSubTypeRegex" placeholder="e.g. ^[0-9]{15}$">
+        </div>
+        <div class="form-actions compact">
+          <button class="btn-primary" (click)="createSubType()" [disabled]="existingSubTypes.length > 0">Add Sub-Type</button>
+        </div>
+        <small class="field-hint" *ngIf="existingSubTypes.length > 0">
+          Only one sub-type is allowed for each EPV type.
+        </small>
+
+        <div class="sub-types-list" *ngIf="existingSubTypes.length > 0">
+          <h5>Sub-Types</h5>
+          <table>
+            <thead>
+              <tr>
+                <th>Sub-Type</th>
+                <th>Regex</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let subType of existingSubTypes">
+                <td>{{ subType.sub_type_name }}</td>
+                <td>{{ subType.regex_rule }}</td>
+                <td>
+                  <button class="btn-danger small" (click)="deleteSubType(subType)">Delete Sub-Type</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="messages">
+    <div class="alert alert-success" *ngIf="successMessage">{{ successMessage }}</div>
+    <div class="alert alert-error" *ngIf="errorMessage">{{ errorMessage }}</div>
+  </div>
+
+  <div class="master-card">
+    <h3>EPV Regex Master</h3>
+    <p>Reference table for EPV type and sub-type regex rules.</p>
+
+    <div class="master-empty" *ngIf="regexMasterRows.length === 0">
+      No EPV type/sub-type mapping found.
+    </div>
+
+    <div class="master-table-wrap" *ngIf="regexMasterRows.length > 0">
+      <table class="master-table">
+        <thead>
+          <tr>
+            <th>EPV Type</th>
+            <th>Type Regex</th>
+            <th>Sub-Type</th>
+            <th>Sub-Type Regex</th>
+            <th>Total</th>
+            <th>Used</th>
+            <th>Unused</th>
+            <th>Last Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of regexMasterRows">
+            <td>{{ row.type_name }}</td>
+            <td>{{ row.type_regex_rule }}</td>
+            <td>{{ row.sub_type_name || '-' }}</td>
+            <td>{{ row.sub_type_regex_rule || '-' }}</td>
+            <td>{{ row.total_quantity || 0 }}</td>
+            <td>{{ row.used_quantity || 0 }}</td>
+            <td>{{ row.unused_quantity || 0 }}</td>
+            <td>{{ (row.sub_type_updated_at || row.type_updated_at) | date: 'short' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="upload-card" *ngIf="!isLoading">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>EPV Type <span class="required">*</span></label>
+        <select class="form-control" [(ngModel)]="uploadSelectedTypeId" (ngModelChange)="onUploadTypeChange()">
+          <option [ngValue]="null">Choose EPV Type</option>
+          <option *ngFor="let type of epvTypes" [ngValue]="type.id">
+            {{ type.type_name }}
+          </option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>EPV Sub-Type <span class="required">*</span></label>
+        <select class="form-control" [(ngModel)]="uploadSelectedSubTypeId">
+          <option [ngValue]="null">Choose EPV Sub-Type</option>
+          <option *ngFor="let subType of uploadSubTypes" [ngValue]="subType.id">
+            {{ subType.sub_type_name }}
+          </option>
+        </select>
+        <small class="field-hint" *ngIf="uploadSubTypes.length === 0 && uploadSelectedTypeId">
+          No sub-type exists for selected type. Please create one in Type Management.
+        </small>
+      </div>
+
+      <div class="form-group">
+        <label>EPV File <span class="required">*</span></label>
+        <input
+          type="file"
+          class="form-control"
+          accept=".pdf,.txt,.csv,.json"
+          (change)="onFileSelected($event)"
+        >
+        <small class="field-hint" *ngIf="selectedFile">Selected: {{ selectedFile.name }}</small>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn-primary" (click)="upload()" [disabled]="isUploading || !uploadSelectedTypeId || !uploadSelectedSubTypeId || !selectedFile">
+        {{ isUploading ? 'Processing...' : 'Upload and Process' }}
+      </button>
+    </div>
+  </div>
+
+  <div class="summary-card" *ngIf="epvValuesTotal > 0">
+    <h4>Latest Processing Summary</h4>
+    <p>Detected {{ epvValuesTotal }} EPV values.</p>
+    <div class="preview-tags" *ngIf="epvValuesPreview.length > 0">
+      <span class="tag" *ngFor="let value of epvValuesPreview">{{ value }}</span>
+    </div>
+  </div>
+
+  <div class="history-card" *ngIf="uploadHistory.length > 0">
+    <h4>Recent Uploads</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>EPV Type</th>
+          <th>EPV Sub-Type</th>
+          <th>Type</th>
+          <th>Values</th>
+          <th>First Value</th>
+          <th>Uploaded At</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let upload of uploadHistory">
+          <td>{{ upload.file_name }}</td>
+          <td>{{ upload.epv_type_name || '-' }}</td>
+          <td>{{ upload.epv_sub_type_name || '-' }}</td>
+          <td>{{ upload.source_kind | uppercase }}</td>
+          <td>{{ upload.record_count }}</td>
+          <td>{{ upload.first_value || '-' }}</td>
+          <td>{{ upload.created_at | date: 'short' }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

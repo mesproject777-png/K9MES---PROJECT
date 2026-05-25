@@ -1,0 +1,397 @@
+/* Importing the Poppins font from Google Fonts to ensure consistent typography across the site */
+@import url("https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap");
+
+/* Global styles to reset default browser styles and apply a consistent look */
+* {
+  margin: 0; /* Resetting margin */
+  padding: 0; /* Resetting padding */
+  box-sizing: border-box; /* Ensuring consistent box model */
+  font-family: "Poppins", sans-serif; /* Applying the Poppins font globally */
+  text-decoration: none; /* Removing default link underlines */
+  list-style: none; /* Removing default list styles */
+}
+
+/* Customizing material symbols to match the site's design */
+.material-symbols-outlined {
+  /* Adjusting font variation settings for material symbols to ensure they fit the design */
+  font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+/* Setting the background of the body to create a gradient effect */
+body {
+  background: rgb(255, 255, 255);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(201, 214, 255, 1) 100%
+  );
+  height: 100vh; /* Ensuring the body fills the viewport */
+}
+
+/* Styling the form container to be centered and visually appealing */
+form {
+  width: 850px; /* Setting the form width */
+  height: 550px; /* Setting the form height */
+  background-color: #fff; /* Setting a white background for the form */
+  border-radius: 30px; /* Adding a rounded corner effect */
+  position: absolute; /* Positioning the form absolutely */
+  left: 50%; /* Centering horizontally */
+  top: 50%; /* Centering vertically */
+  transform: translate(-50%, -50%); /* Adjusting position to ensure perfect centering */
+}
+
+/* Styling the left part of the form to create a visually appealing section */
+div.left {
+  background-color: black; /* Setting a blue background for the left part */
+  width: 50%; /* Setting the width to half of the form */
+  height: inherit; /* Inheriting the height from the form */
+  border-radius: 30px 30% 30% 30px; /* Creating a unique rounded corner effect */
+  position: relative; /* Positioning relatively for child elements */
+}
+
+div.left div {
+  /* Centering content within the left part both horizontally and vertically */
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center; /* Centering text */
+  line-height: 40px; /* Adjusting line height for better readability */
+  width: max-content; /* Ensuring the content width is dynamic */
+}
+
+div.left div p {
+  color: #fff; /* Setting text color to white */
+  font-size: 36px; /* Setting font size for headings */
+  margin: 0; /* Removing margins */
+  font-weight: bolder; /* Making the font bolder */
+}
+
+div.left div a {
+  display: block; /* Displaying links as blocks */
+  color: #fff; /* Setting link color to white */
+  text-decoration: none; /* Removing default link underlines */
+  font-size: 14.5px; /* Setting font size for links */
+}
+
+div.left div input[type="submit"] {
+  /* Styling the submit button on the left side to match the design */
+  border: 2px solid #fff; /* Adding a white border */
+  width: 160px; /* Setting the button width */
+  height: 46px; /* Setting the button height */
+  border-radius: 8px; /* Adding a rounded corner effect */
+  background-color: transparent; /* Making the background transparent */
+  color: #fff; /* Setting text color to white */
+  cursor: pointer; /* Changing the cursor to a pointer */
+  font-size: 16px; /* Setting font size */
+  font-weight: bold; /* Making the font bold */
+}
+
+/* Styling the right part of the form to create a functional section */
+div.right {
+  width: 50%; /* Setting the width to half of the form */
+  height: 100%; /* Setting the height to full */
+  position: absolute; /* Positioning absolutely */
+  left: 50%; /* Centering horizontally */
+  top: 0; /* Positioning from the top */
+  padding: 40px; /* Adding padding for better spacing */
+  overflow: hidden; /* Hiding any overflow */
+}
+
+div.right div {
+  /* Centering content within the right part both horizontally and vertically */
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  text-align: center; /* Centering text */
+  transform: translate(-50%, -50%); /* Adjusting position for perfect centering */
+  box-sizing: border-box; /* Ensuring consistent box model */
+}
+
+div.right h1 {
+  font-size: 36px; /* Setting font size for headings */
+  text-align: center; /* Centering text */
+  font-weight: bold; /* Making the font bold */
+  opacity: 70%; /* Adjusting opacity for a subtle effect */
+}
+
+div.right input {
+  /* Styling form inputs for better usability and design */
+  padding: 13px 50px 13px 20px; /* Adding padding for better spacing */
+  margin: 10px 0; /* Adding margins for better spacing */
+  background-color: #efefef; /* Setting a light gray background */
+  border: none; /* Removing default borders */
+  border-radius: 8px; /* Adding a rounded corner effect */
+  font-size: 16px; /* Setting font size */
+}
+
+div.right input:focus {
+  /* Removing outline on focus to improve design consistency */
+  outline-color: transparent;
+}
+
+div.right div span {
+  /* Positioning icons within the form */
+  position: absolute;
+  left: 85%;
+  display: block;
+}
+
+div.right .person {
+  top: 23%; /* Positioning the person icon */
+}
+
+div.right .lock {
+  top: 44%; /* Positioning the lock icon */
+}
+
+div.right div a {
+  color: #000; /* Setting link color to black */
+  display: block; /* Displaying links as blocks */
+  margin-bottom: 20px; /* Adding margin for better spacing */
+}
+
+div.right div button {
+  /* Styling the submit button on the right side to match the design */
+  background-color: black; /* Setting a blue background */
+  width: 100%; /* Setting the button width to full */
+  height: 48px; /* Setting the button height */
+  /* margin: 20px 0 20px 0; */ /* Optional margin for spacing */
+  color: #fff; /* Setting text color to white */
+  border: none; /* Removing default borders */
+  border-radius: 8px; /* Adding a rounded corner effect */
+  cursor: pointer; /* Changing the cursor to a pointer */
+  font-size: 16px; /* Setting font size */
+  font-weight: bold; /* Making the font bold */
+}
+
+div.right div button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.login-error {
+  color: #b42318;
+  font-weight: 600;
+  margin: 12px 0;
+}
+
+.login-hint {
+  color: #555;
+  margin: 12px 0 6px;
+  font-size: 14px;
+}
+
+div.right div p {
+  margin: 15px 0; /* Adding margin for better spacing */
+}
+
+div.right div div {
+  margin-top: 20px; /* Adding margin for better spacing */
+  top: 100%; /* Positioning relative to the parent */
+  width: 100%; /* Setting the width to full */
+}
+
+div.right div div a {
+  /* Styling social media icons for better design consistency */
+  display: inline-block; /* Displaying icons inline */
+  margin: 0 8px; /* Adding margin for better spacing */
+  border: 2px solid #ccc; /* Adding a light gray border */
+  padding: 6px 5px 0 5px; /* Adding padding for better spacing */
+  text-align: center; /* Centering text */
+  border-radius: 8px; /* Adding a rounded corner effect */
+  font-size: 24px; /* Setting font size */
+  width: 17%; /* Setting the width as a percentage */
+  height: 50px; /* Setting the height */
+}
+
+
+
+:root {
+  --sqrt3: 1.73205080757;                      /* Square root of 3 */
+  --time: 11;                                  /* Duration of animation  */
+  --gap: 1;                                    /* Horizontal gap between hexagons */
+  --radius: 3;                                 /* Radius of inscribed circle */
+  --Gap: var(--gap) / 2 * var(--sqrt3);        /* Vertical gap between hexagons */
+  --Radius: 2 / var(--sqrt3) * var(--radius);  /* Radius of circumcircle */
+}
+
+@keyframes odd-animation {
+  0%   { transform: translate(calc( 0.5 * var(--offset-x) ), calc( 0.5 * var(--offset-y) )) scale(0) }
+  33%  { transform: translate(calc(   1 * var(--offset-x) ), calc(   1 * var(--offset-y) )) scale(1) }
+  66%  { transform: translate(calc(   2 * var(--offset-x) ), calc(   2 * var(--offset-y) )) scale(1) }
+  100% { transform: translate(calc(   3 * var(--offset-x) ), calc(   3 * var(--offset-y) )) scale(0) }
+}
+
+@keyframes even-animation {
+  50%  { transform: translate(calc( 1 * var(--offset-x) ), calc( 1 * var(--offset-y) )) scale(1) }
+  100% { transform: translate(calc( 2 * var(--offset-x) ), calc( 2 * var(--offset-y) )) scale(0) }
+}
+
+body {
+  align-items: center;
+  background-color: black;
+  display: flex;
+  height: 100vh;
+  justify-content: center;
+  overflow: hidden;
+  margin: 0;
+}
+
+.hex {
+  color: white;
+  display: flex;
+  font-size: 3vmin;
+  height: calc(2em * var(--Radius));
+  width: calc(2em * var(--radius));
+}
+
+.hex::before {
+  border: calc(0.5em * var(--Radius)) solid transparent;
+  border-left: 0;
+  border-right: calc(1em * var(--radius)) solid currentColor;
+  content: "";
+  height: var(--Radius);
+}
+
+.hex::after  {
+  border: calc(0.5em * var(--Radius)) solid transparent;
+  border-left: calc(1em * var(--radius)) solid currentColor;
+  border-right: 0;
+  content: "";
+  height: var(--Radius);
+}
+
+.center {
+  position: relative;
+}
+
+.odd,
+.even {
+  --global-offset-x: calc( 0.5em * var(--gap) + var(--radius) * 1em);
+  --global-offset-y: calc( 1.5em * var(--Radius) + var(--Gap) * 1em);
+  animation: infinite cubic-bezier(.21, .61, .01, .89);
+  position: absolute;
+  transform: translate(0, 0) scale(0);  
+}
+
+.odd {
+  animation-duration: 1s;
+}
+.even {
+  animation-duration: 1.333333333s;
+}
+
+.hex.first {
+  animation-delay: -1.2857142857s;
+}
+.hex.second {
+  animation-delay: -1.619047619s;
+}
+.hex.third {
+  animation-delay: 1.0476190476s;
+}
+
+@supports (animation-delay: calc(1 * 1s)) and (animation-duration: calc(1 * 1s)) {
+  .odd {
+    animation-duration: calc(var(--time) * 1s);
+  }
+  .even {
+    animation-duration: calc( var(--time) * 1 / 1 * 1s);
+  }
+  
+  .hex.first {
+    animation-delay: calc( var(--time) / -1.75 * 1s );
+  }
+  .hex.second {
+    animation-delay: calc( var(--time) * 1.25 / -5.25 * 1s );
+  }
+  .hex.third {
+    animation-delay: calc( var(--time) * -0.25 / -2.625 * 1s );
+  }
+}
+
+.hex.one {
+  --offset-x: calc( var(--global-offset-x) * 1 );
+  --offset-y: calc( var(--global-offset-y) * -1 );
+  animation-name: odd-animation;
+  bottom: 0;
+  left: 0;
+}
+.hex.two {
+  --offset-x: calc( var(--global-offset-x) * 1.5 );
+  --offset-y: calc( var(--global-offset-y) * -0.5 );
+  animation-name: even-animation;
+  bottom: calc( var(--global-offset-y) * 0.5 );
+  left: calc( var(--global-offset-x) * 1.5 );
+}
+.hex.three {
+  --offset-x: calc( var(--global-offset-x) * 2 );
+  --offset-y: calc( var(--global-offset-y) * 0 );
+  animation-name: odd-animation;
+  bottom: 0;
+  right: 0;
+}
+.hex.four {
+  --offset-x: calc( var(--global-offset-x) * 1.5 );
+  --offset-y: calc( var(--global-offset-y) * 0.5 );
+  animation-name: even-animation;
+  top: calc( var(--global-offset-y) * 0.5 );
+  left: calc( var(--global-offset-x) * 1.5 );
+}
+.hex.five {
+  --offset-x: calc( var(--global-offset-x) * 1 );
+  --offset-y: calc( var(--global-offset-y) * 1 );
+  animation-name: odd-animation;
+  top: 0;
+  left: 0;
+}
+.hex.six {
+  --offset-x: calc( var(--global-offset-x) * 0 );
+  --offset-y: calc( var(--global-offset-y) * 1 );
+  animation-name: even-animation;
+  top: calc( var(--global-offset-y) * 1 );
+  left: 0;
+}
+.hex.seven {
+  --offset-x: calc( var(--global-offset-x) * -1 );
+  --offset-y: calc( var(--global-offset-y) * 1 );
+  animation-name: odd-animation;
+  top: 0;
+  right: 0;
+}
+.hex.eight {
+  --offset-x: calc( var(--global-offset-x) * -1.5 );
+  --offset-y: calc( var(--global-offset-y) * 0.5 );
+  animation-name: even-animation;
+  top: calc( var(--global-offset-y) * 0.5 );
+  right: calc( var(--global-offset-x) * 1.5 );
+}
+.hex.nine {
+  --offset-x: calc( var(--global-offset-x) * -2 );
+  --offset-y: calc( var(--global-offset-y) * 0 );
+  animation-name: odd-animation;
+  top: 0;
+  right: 0;
+}
+.hex.ten {
+  --offset-x: calc( var(--global-offset-x) * -1.5 );
+  --offset-y: calc( var(--global-offset-y) * -0.5 );
+  animation-name: even-animation;
+  bottom: calc( var(--global-offset-y) * 0.5 );
+  right: calc( var(--global-offset-x) * 1.5 );
+}
+.hex.eleven {
+  --offset-x: calc( var(--global-offset-x) * -1 );
+  --offset-y: calc( var(--global-offset-y) * -1 );
+  animation-name: odd-animation;
+  bottom: 0;
+  right: 0;
+}
+.hex.twelve {
+  --offset-x: calc( var(--global-offset-x) * 0 );
+  --offset-y: calc( var(--global-offset-y) * -1 );
+  animation-name: even-animation;
+  bottom: calc( var(--global-offset-y) * 1 );
+  left: 0;
+}
