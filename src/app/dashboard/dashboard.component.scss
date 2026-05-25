@@ -4,11 +4,11 @@
 }
 
 #sidebar {
-	width: 260px;
+	width: 88px;
 }
 
 #content {
-	margin-left: 260px;
+	margin-left: 88px;
 	min-height: 100vh;
 	padding: 28px;
 	background: transparent;
@@ -16,11 +16,11 @@
 
 @media (max-width: 980px) {
 	#sidebar {
-		width: 240px;
+		width: 80px;
 	}
 
 	#content {
-		margin-left: 240px;
+		margin-left: 80px;
 		padding: 16px;
 	}
 }

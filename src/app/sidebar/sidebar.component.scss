@@ -3,48 +3,76 @@
   top: 0;
   left: 0;
   height: 100vh;
-  width: 260px;
+  width: 88px;
+  box-sizing: border-box;
   display: flex;
   overflow-x: hidden;
   flex-direction: column;
+  align-items: center;
   background: linear-gradient(180deg, #0e2a47 0%, #0f4b7a 40%, #126093 100%);
   padding: 22px 16px;
   border-right: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: 12px 0 30px rgba(6, 20, 33, 0.18);
   backdrop-filter: blur(6px);
-  transition: box-shadow 0.2s ease;
+  transition: width 0.3s ease, box-shadow 0.2s ease;
   z-index: 9000;
 }
 
+.sidebar:hover,
+.sidebar:focus-within {
+  width: 260px;
+  align-items: stretch;
+}
+
 .sidebar .sidebar-header {
+  width: 100%;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   margin-bottom: 8px;
 }
 
+.sidebar:hover .sidebar-header,
+.sidebar:focus-within .sidebar-header {
+  justify-content: flex-start;
+}
+
 .brand-mark {
-  width: 44px;
-  height: 44px;
+  width: 56px;
+  height: 52px;
   border-radius: 14px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  color: #0d3f6d;
-  background:
-    linear-gradient(135deg, #ffffff 0%, #d8efff 100%);
+  overflow: hidden;
+  background: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.78);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.92),
     0 10px 18px rgba(3, 18, 31, 0.24);
-  font-size: 1rem;
-  line-height: 1;
-  font-weight: 800;
-  letter-spacing: 0;
+}
+
+.brand-mark img {
+  display: block;
+  width: 92%;
+  height: 92%;
+  object-fit: contain;
 }
 
 .brand-copy {
-  display: grid;
+  display: flex;
+  align-items: center;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: max-width 0.25s ease, opacity 0.25s ease, transform 0.25s ease;
+}
+
+.sidebar:hover .brand-copy,
+.sidebar:focus-within .brand-copy {
+  max-width: 170px;
   opacity: 1;
   transform: translateX(0);
 }
@@ -59,8 +87,8 @@
 
 .sidebar .sidebar-header p {
   color: rgba(223, 235, 248, 0.92);
-  font-size: 0.76rem;
-  font-weight: 500;
+  font-size: 0.88rem;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -74,19 +102,53 @@
 }
 
 .sidebar-links h4 span {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 0.25s ease, opacity 0.25s ease;
+}
+
+.sidebar:hover .sidebar-links h4 span,
+.sidebar:focus-within .sidebar-links h4 span {
+  max-width: 140px;
   opacity: 1;
 }
 
 .sidebar-links .menu-separator {
-  display: none;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 1px;
+  background: rgba(194, 222, 247, 0.55);
+  transform: translateY(-50%) scaleX(1);
+  transform-origin: right;
+  transition: transform 0.2s ease;
+}
+
+.sidebar:hover .sidebar-links .menu-separator,
+.sidebar:focus-within .sidebar-links .menu-separator {
+  transform: translateY(-50%) scaleX(0);
 }
 
 .sidebar-links {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   list-style: none;
-  margin-top: 14px;
+  margin: 14px 0 0;
+  padding: 0;
   height: 80%;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: none;
+}
+
+.sidebar:hover .sidebar-links,
+.sidebar:focus-within .sidebar-links {
+  align-items: stretch;
 }
 
 .sidebar-links::-webkit-scrollbar {
@@ -96,21 +158,43 @@
 .sidebar-links li a {
   display: flex;
   align-items: center;
-  gap: 0 14px;
+  justify-content: center;
+  gap: 0;
+  width: 54px;
+  min-height: 52px;
+  box-sizing: border-box;
   color: rgba(239, 247, 255, 0.96);
   font-weight: 600;
   white-space: nowrap;
-  margin: 3px 0;
-  padding: 12px 10px;
+  margin: 5px 0;
+  padding: 0;
   text-decoration: none;
   border-radius: 10px;
   border: 1px solid transparent;
-  transition: 0.2s ease;
+  transition: width 0.25s ease, padding 0.25s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.sidebar:hover .sidebar-links li a,
+.sidebar:focus-within .sidebar-links li a {
+  justify-content: flex-start;
+  gap: 0 14px;
+  width: 100%;
+  min-height: 48px;
+  margin: 3px 0;
+  padding: 12px 10px;
 }
 
 .sidebar-links li a .material-symbols-outlined {
+  flex: 0 0 30px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
   font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24;
-  font-size: 1.2rem;
+  font-size: 24px;
+  line-height: 30px;
+  text-align: center;
 }
 
 .sidebar-links li a:hover {
@@ -128,18 +212,36 @@
 
 .user-account {
   margin-top: auto;
-  padding: 10px;
+  width: 54px;
+  height: 52px;
+  padding: 5px;
   margin-left: 0;
   background: rgba(255, 255, 255, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 12px;
   backdrop-filter: blur(3px);
+  overflow: hidden;
+  transition: width 0.25s ease, height 0.25s ease, padding 0.25s ease, background 0.2s ease;
+}
+
+.sidebar:hover .user-account,
+.sidebar:focus-within .user-account {
+  width: 100%;
+  height: auto;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .user-profile {
   display: flex;
   align-items: center;
+  justify-content: center;
   color: #ffffff;
+}
+
+.sidebar:hover .user-profile,
+.sidebar:focus-within .user-profile {
+  justify-content: flex-start;
 }
 
 .user-profile img {
@@ -163,18 +265,44 @@
 .user-detail {
   margin-left: 10px;
   white-space: nowrap;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: max-width 0.25s ease, opacity 0.25s ease, transform 0.25s ease;
+}
+
+.sidebar:hover .user-detail,
+.sidebar:focus-within .user-detail {
+  max-width: 150px;
   opacity: 1;
   transform: translateX(0);
 }
 
 .link-label {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: max-width 0.25s ease, opacity 0.25s ease, transform 0.25s ease;
+}
+
+.sidebar:hover .link-label,
+.sidebar:focus-within .link-label {
+  max-width: 170px;
   opacity: 1;
   transform: translateX(0);
 }
 
 @media (max-width: 980px) {
   .sidebar {
-    width: 240px;
+    width: 80px;
     padding: 18px 12px;
+  }
+
+  .sidebar:hover,
+  .sidebar:focus-within {
+    width: 240px;
   }
 }

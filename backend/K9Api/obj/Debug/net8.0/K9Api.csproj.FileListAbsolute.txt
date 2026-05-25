@@ -90,3 +90,4 @@ C:\Users\littl\Downloads\K9_24MaySunday\K9\backend\K9Api\obj\Debug\net8.0\refint
 C:\Users\littl\Downloads\K9_24MaySunday\K9\backend\K9Api\obj\Debug\net8.0\K9Api.pdb
 C:\Users\littl\Downloads\K9_24MaySunday\K9\backend\K9Api\obj\Debug\net8.0\K9Api.genruntimeconfig.cache
 C:\Users\littl\Downloads\K9_24MaySunday\K9\backend\K9Api\obj\Debug\net8.0\ref\K9Api.dll
+C:\Users\littl\Downloads\K9_24MaySunday\K9\backend\K9Api\obj\Debug\net8.0\K9Api.sourcelink.json

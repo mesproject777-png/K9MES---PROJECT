@@ -67,6 +67,16 @@ div.left div p {
   font-weight: bolder; /* Making the font bolder */
 }
 
+.login-brand-logo {
+  display: block;
+  width: 320px;
+  height: auto;
+  object-fit: contain;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32);
+}
+
 div.left div a {
   display: block; /* Displaying links as blocks */
   color: #fff; /* Setting link color to white */
