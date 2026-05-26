@@ -150,11 +150,7 @@ public static class ConvertedEndpoints
             }
 
             var user = rows[0];
-            var storedPassword = user["password"]?.ToString();
-            var isPasswordValid = !string.IsNullOrWhiteSpace(storedPassword)
-                && string.Equals(storedPassword, password, StringComparison.Ordinal);
-
-            if (!isPasswordValid)
+            if (user["password"] is not string storedPassword || !string.Equals(storedPassword, password, StringComparison.Ordinal))
             {
                 return JsonError("Invalid login ID or password", 401);
             }
@@ -1266,10 +1262,7 @@ public static class ConvertedEndpoints
             }
 
             await using var connection = await OpenConnectionAsync();
-            var rows = await QueryRowsAsync(
-                connection,
-                "SELECT id, pn, description FROM items WHERE pn ILIKE @pn ORDER BY pn ASC LIMIT 1",
-                ("pn", $"%{pn}%"));
+            var rows = await QueryRowsAsync(connection, "SELECT id, pn, description FROM items WHERE pn = @pn", ("pn", pn));
             return rows.Count == 0 ? JsonMessage("Part number not found", 404) : Results.Json(rows[0]);
         });
 

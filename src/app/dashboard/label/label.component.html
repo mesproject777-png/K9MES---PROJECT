@@ -3,7 +3,8 @@
   <div class="label-header">
     <div>
       <h2>Labels</h2>
-      <p>Showing route data for <strong>{{ currentPn }}</strong>.</p>
+      <p *ngIf="currentPn">Showing route data for <strong>{{ currentPn }}</strong>.</p>
+      <p *ngIf="!currentPn">No part number selected.</p>
       <p *ngIf="selectedItem">{{ selectedItem.description }}</p>
       <div class="account-login-details">
         <p class="account-login-title">Account login details</p>

@@ -66,6 +66,7 @@
           <td>{{ row.pn_type_code }}</td>
           <td class="actions-cell">
             <button type="button" class="secondary action-btn" (click)="openEditModal(row)">Edit</button>
+            <button type="button" class="secondary action-btn" (click)="openRouting(row)">Routing</button>
           </td>
         </tr>
         <tr *ngIf="items.length === 0">
