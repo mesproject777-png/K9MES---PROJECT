@@ -59,6 +59,13 @@ export class EngineeringmenuComponent {
       route: '/dashboard/engineering/routing'
     },
     {
+      id: 'hlEngineering9',
+      title: 'Five Step Wizard',
+      description: 'Build PartNumber, WorkOrder, Routing and BOM flow.',
+      icon: 'linear_scale',
+      route: '/dashboard/engineering/five-step-wizard'
+    },
+    {
       id: 'hlEngineering10',
       title: 'Assembly Definition',
       description: 'Define assembly structure and rules.',

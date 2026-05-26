@@ -1,0 +1,31 @@
+<section class="wizard-page" aria-labelledby="wizardTitle">
+  <h2 id="wizardTitle">Five Step Wizard</h2>
+
+  <div class="wizard-track" aria-label="Engineering wizard steps">
+    <button
+      type="button"
+      class="wizard-step"
+      *ngFor="let step of steps; let i = index"
+      [class.active]="i === activeStep"
+      [class.complete]="i < activeStep"
+      (click)="goToStep(i)"
+      [attr.aria-current]="i === activeStep ? 'step' : null"
+    >
+      <span class="step-number">{{ i + 1 }}</span>
+      <span class="step-label">{{ step.label }}</span>
+    </button>
+  </div>
+
+  <div class="wizard-content">
+    <h3>{{ steps[activeStep].label }}</h3>
+  </div>
+
+  <div class="wizard-actions">
+    <button type="button" class="secondary" (click)="previousStep()" [disabled]="activeStep === 0">
+      Previous
+    </button>
+    <button type="button" class="primary" (click)="nextStep()" [disabled]="activeStep === steps.length - 1">
+      Next
+    </button>
+  </div>
+</section>

@@ -25,6 +25,7 @@ import { RoutingComponent } from './dashboard/engineering/routing/routing.compon
 import { StationsComponent } from './dashboard/engineering/stations/stations.component';
 import { EpvuploadComponent } from './dashboard/engineering/epvupload/epvupload.component';
 import { AssemblydefinitionComponent } from './dashboard/engineering/assemblydefinition/assemblydefinition.component';
+import { FivestepwizardComponent } from './dashboard/engineering/fivestepwizard/fivestepwizard.component';
 import { ManagerComponent } from './dashboard/manager/manager.component';
 import { ManagermenuComponent } from './dashboard/manager/managermenu/managermenu.component';
 import { WorkordersComponent } from './dashboard/manager/workorders/workorders.component';
@@ -102,6 +103,7 @@ const routes: Routes = [
           { path: 'bom', component: BomComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/bom' } },
           { path: 'stations', component: StationsComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/menu' } },
           { path: 'routing', component: RoutingComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/routing' } },
+          { path: 'five-step-wizard', component: FivestepwizardComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/menu' } },
           { path: 'epv-upload', component: EpvuploadComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/sntype' } },
           { path: 'assembly-definition', component: AssemblydefinitionComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/menu' } },
         ]
