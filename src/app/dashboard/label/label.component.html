@@ -1,7 +1,40 @@
 
-<div style="height: 100%;display: flex;justify-content: center;align-items: center;border:1px ridge black;padding:20px;">
-  <div class="container-wrapper">
-    <div class="container" #taskContainer id="taskContainer"></div>
-    <svg #linesSVG id="linesSVG"></svg>
+<div class="label-page" #labelPage>
+  <svg #summaryLinesSVG class="summary-lines"></svg>
+
+  <section class="product-summary">
+    <div class="summary-row single">
+      <div class="summary-box primary" #plantBox (click)="highlightSummaryBox(plantBox)">Plant</div>
+    </div>
+
+    <div class="summary-row single">
+      <div class="summary-box primary" #siteBox (click)="highlightSummaryBox(siteBox)">Site</div>
+    </div>
+
+    <div class="summary-row single">
+      <div class="summary-box primary" #workOrderBox (click)="highlightSummaryBox(workOrderBox)">Work Order</div>
+    </div>
+
+    <div class="summary-row three-column">
+      <div class="summary-box side" #partLeftBox (click)="highlightSummaryBox(partLeftBox)">Parent Part No</div>
+      <div class="summary-box primary" #partNumberBox (click)="highlightSummaryBox(partNumberBox)">Part Number</div>
+      <div class="summary-box side" #partRightBox (click)="highlightSummaryBox(partRightBox)">Child</div>
+    </div>
+
+    <div class="summary-row three-column photo-row">
+      <div class="summary-box side" #photoLeftBox (click)="highlightSummaryBox(photoLeftBox)">Box</div>
+      <div class="product-photo" #productPhotoBox (click)="highlightSummaryBox(productPhotoBox)">
+        <span class="material-symbols-outlined">image</span>
+        <strong>Product Photo</strong>
+      </div>
+      <div class="summary-box side" #photoRightBox (click)="highlightSummaryBox(photoRightBox)">Box</div>
+    </div>
+  </section>
+
+  <div class="flow-shell">
+    <div class="container-wrapper">
+      <div class="container" #taskContainer id="taskContainer"></div>
+      <svg #linesSVG id="linesSVG"></svg>
+    </div>
   </div>
 </div>
