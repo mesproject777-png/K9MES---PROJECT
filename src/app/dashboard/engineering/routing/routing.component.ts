@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { Router } from '@angular/router';
 
 interface ItemLookupRow {
   id: number;
@@ -91,7 +92,8 @@ export class RoutingComponent implements OnInit {
 
   constructor(
     private http: HttpClient,
-    private fb: FormBuilder
+    private fb: FormBuilder,
+    private router: Router
   ) {
     this.stepForm = this.fb.group({
       station_code: ['', Validators.required],
@@ -102,6 +104,20 @@ export class RoutingComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadStationsMaster();
+    this.pnQuery = 'blb-stb';
+    this.selectPnFromSuggestion('blb-stb');
+  }
+
+  openLabelsForCurrentItem(): void {
+    if (!this.selectedItem) {
+      this.errorMessage = 'Please select a part number first.';
+      this.scheduleClearMessages();
+      return;
+    }
+
+    this.router.navigate(['/dashboard/label'], {
+      queryParams: { pn: this.selectedItem.pn }
+    });
   }
 
   loadStationsMaster(): void {

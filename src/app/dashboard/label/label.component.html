@@ -1,7 +1,32 @@
 
-<div style="height: 100%;display: flex;justify-content: center;align-items: center;border:1px ridge black;padding:20px;">
-  <div class="container-wrapper">
-    <div class="container" #taskContainer id="taskContainer"></div>
-    <svg #linesSVG id="linesSVG"></svg>
+<div class="label-page">
+  <div class="label-header">
+    <div>
+      <h2>Labels</h2>
+      <p>Showing route data for <strong>{{ currentPn }}</strong>.</p>
+      <p *ngIf="selectedItem">{{ selectedItem.description }}</p>
+      <div class="account-login-details">
+        <p class="account-login-title">Account login details</p>
+        <div *ngIf="currentUser; else noCurrentUser">
+          <p><strong>Login ID:</strong> {{ currentUser.login_id }}</p>
+          <p><strong>Account:</strong> {{ currentUser.user_name }}</p>
+          <p><strong>Role:</strong> {{ currentUser.role_name }}</p>
+        </div>
+        <ng-template #noCurrentUser>
+          <p>No logged-in account details are available.</p>
+        </ng-template>
+      </div>
+    </div>
+    <div class="label-status">
+      <p *ngIf="isLoading">Loading route...</p>
+      <p *ngIf="statusMessage" class="message">{{ statusMessage }}</p>
+    </div>
+  </div>
+
+  <div class="label-body">
+    <div class="container-wrapper">
+      <div class="container" #taskContainer id="taskContainer"></div>
+      <svg #linesSVG id="linesSVG"></svg>
+    </div>
   </div>
 </div>

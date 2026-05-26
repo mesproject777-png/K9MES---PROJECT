@@ -76,6 +76,9 @@
 
     <div class="actions">
       <button type="button" class="primary" (click)="openCreateStepModal()">Add New</button>
+      <button type="button" class="secondary" (click)="openLabelsForCurrentItem()" [disabled]="!selectedItem">
+        Open Labels
+      </button>
       <button type="button" class="secondary" (click)="toggleHistory()">
         {{ includeHistory ? 'Hide History ▲' : 'Show History ▼' }}
       </button>

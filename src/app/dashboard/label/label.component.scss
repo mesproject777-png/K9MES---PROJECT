@@ -6,16 +6,137 @@ body {
       background: #f0f0f0;
     }
 
+    .label-page {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    .label-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .label-header h2 {
+      margin: 0 0 8px;
+    }
+
+    .label-header p {
+      margin: 4px 0;
+    }
+
+    .account-login-details {
+      margin-top: 12px;
+      padding: 12px 14px;
+      background: #fff;
+      border: 1px solid #d0d7de;
+      border-radius: 10px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+      max-width: 420px;
+    }
+
+    .account-login-title {
+      margin: 0 0 8px;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .label-status {
+      min-width: 280px;
+      text-align: right;
+    }
+
+    .message {
+      color: #0f5132;
+      background: #d1e7dd;
+      border: 1px solid #badbcc;
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin: 0;
+    }
+
+    .label-body {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      border: 1px ridge black;
+      padding: 20px;
+      min-height: 560px;
+      box-sizing: border-box;
+      overflow: visible;
+    }
+
     .container-wrapper {
       position: relative;
-      width: max-content;
+      width: 100%;
+      max-width: 100%;
+      overflow: visible;
     }
 
     .container {
-      display: grid;
-      grid-template-columns: repeat(6, 120px);
-      gap: 40px;
+      display: flex;
+      flex-direction: column;
+      flex-wrap: nowrap;
+      justify-content: center;
+      align-items: stretch;
+      gap: 24px;
       position: relative;
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .hierarchy-flow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 26px;
+      margin-bottom: 44px;
+      position: relative;
+      width: 100%;
+      z-index: 2;
+    }
+
+    .hierarchy-row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 42px;
+      width: 100%;
+    }
+
+    .hierarchy-box {
+      background: white;
+      color: #333;
+      font-weight: bold;
+      border-radius: 8px;
+      font-size: 16px;
+      padding: 10px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100px;
+      width: 100px;
+      min-width: 100px;
+      min-height: 100px;
+      transition: transform 0.3s ease, background 0.3s ease;
+      border: 2px solid #ccc;
+      text-align: center;
+      line-height: 1.2;
+      position: relative;
+      z-index: 2;
+    }
+
+    .diagram-row {
+      width: 100%;
+      flex: 0 0 auto;
     }
 
     .task {
@@ -33,11 +154,14 @@ body {
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      height: 120px;
-      width: 120px;
+      height: 100px;
+      width: 100px;
+      min-width: 100px;
+      min-height: 100px;
       transition: transform 0.3s ease, background 0.3s ease;
       border: 2px solid #ccc;
       cursor: pointer;
+      margin: 0;
     }
 
     .task p {
@@ -47,12 +171,23 @@ body {
 
     .diamond {
       background: white !important;
-      transform: rotate(45deg) scale(0.85);
+      transform: rotate(45deg) scale(0.95);
       border-width: 3px !important;
+      border-radius: 0 !important;
+      width: 100px;
+      height: 100px;
+      min-width: 100px;
+      min-height: 100px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 8px;
     }
-
     .diamond p {
       transform: rotate(-45deg);
+      margin: 0;
+      font-size: 16px;
+      font-weight: bold;
     }
 
     .icon {
