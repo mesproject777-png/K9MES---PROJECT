@@ -3,6 +3,38 @@
     <app-sidebar></app-sidebar>
   </div>
   <div id="content">
-    <router-outlet></router-outlet>
+    <header class="app-header">
+      <div class="brand-block">
+        <span class="brand-name">K9MES</span>
+      </div>
+
+      <label class="header-search" aria-label="Search">
+        <span class="material-symbols-outlined">search</span>
+        <input type="search" placeholder="Search..." />
+      </label>
+
+      <div class="profile-menu">
+        <button type="button" class="profile-button" (click)="toggleProfileMenu()">
+          <span class="profile-avatar material-symbols-outlined">account_circle</span>
+          <span class="profile-name">{{ currentUser?.user_name || currentUser?.login_id || 'User' }}</span>
+          <span class="material-symbols-outlined profile-chevron">expand_more</span>
+        </button>
+
+        <div class="profile-dropdown" *ngIf="isProfileMenuOpen">
+          <button type="button" (click)="openProfile()">
+            <span class="material-symbols-outlined">person</span>
+            <span>My Profile</span>
+          </button>
+          <button type="button" (click)="logout()">
+            <span class="material-symbols-outlined">logout</span>
+            <span>Logout</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <router-outlet></router-outlet>
+    </main>
   </div>
 </div>
