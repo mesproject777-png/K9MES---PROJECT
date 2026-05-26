@@ -44,3 +44,11 @@ testem.log
 # System files
 .DS_Store
 Thumbs.db
+
+bin/
+obj/
+.codex-build/
+*.dll
+*.exe
+*.pdb
+
