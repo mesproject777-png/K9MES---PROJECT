@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 
 interface ItemLookupRow {
   id: number;
@@ -64,6 +64,7 @@ interface StationsResponse {
 export class RoutingComponent implements OnInit {
   readonly apiBase = 'http://localhost:5000/api/routing';
   readonly stationsApi = 'http://localhost:5000/api/stations';
+  private readonly lastRoutingPnKey = 'k9:lastRoutingPn';
 
   isLoading = false;
   isSaving = false;
@@ -93,6 +94,7 @@ export class RoutingComponent implements OnInit {
   constructor(
     private http: HttpClient,
     private fb: FormBuilder,
+    private route: ActivatedRoute,
     private router: Router
   ) {
     this.stepForm = this.fb.group({
@@ -104,8 +106,12 @@ export class RoutingComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadStationsMaster();
-    this.pnQuery = 'blb-stb';
-    this.selectPnFromSuggestion('blb-stb');
+    this.route.queryParamMap.subscribe((params) => {
+      const pn = params.get('pn')?.trim() || this.getLastRoutingPn();
+      if (pn) {
+        this.selectPnFromSuggestion(pn);
+      }
+    });
   }
 
   openLabelsForCurrentItem(): void {
@@ -173,6 +179,7 @@ export class RoutingComponent implements OnInit {
     this.http.get<ItemLookupRow>(`${this.apiBase}/by-pn`, { params }).subscribe({
       next: (item) => {
         this.selectedItem = item;
+        this.rememberRoutingPn(item.pn);
         this.loadRouting();
       },
       error: (error) => {
@@ -317,6 +324,7 @@ export class RoutingComponent implements OnInit {
         this.isSaving = false;
         this.isStepModalOpen = false;
         this.successMessage = this.isEditMode ? 'Station updated successfully.' : 'Station added successfully.';
+        this.rememberRoutingPn(this.selectedItem?.pn || '');
         this.scheduleClearMessages();
         this.loadRouting();
       },
@@ -370,6 +378,25 @@ export class RoutingComponent implements OnInit {
   }
 
   private clearMessageTimer: number | null = null;
+
+  private getLastRoutingPn(): string {
+    try {
+      return localStorage.getItem(this.lastRoutingPnKey)?.trim() || '';
+    } catch {
+      return '';
+    }
+  }
+
+  private rememberRoutingPn(pn: string): void {
+    const cleanPn = pn.trim();
+    if (!cleanPn) return;
+
+    try {
+      localStorage.setItem(this.lastRoutingPnKey, cleanPn);
+    } catch {
+      // Local storage can be unavailable in restricted browser modes.
+    }
+  }
 
   private scheduleClearMessages(): void {
     if (this.clearMessageTimer) {

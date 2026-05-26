@@ -40,7 +40,7 @@ export class LabelComponent implements AfterViewInit {
   @ViewChild('linesSVG', { static: true }) linesSVG!: ElementRef<SVGElement>;
 
   readonly routingApi = 'http://localhost:5000/api/routing';
-  readonly defaultPn = 'blb-stb';
+  private readonly lastRoutingPnKey = 'k9:lastRoutingPn';
   readonly tasksPerRow = 8;
   readonly diamondTasks = [3, 8, 14, 17, 22, 26];
   readonly diamondColors: Record<number, string> = {
@@ -48,7 +48,7 @@ export class LabelComponent implements AfterViewInit {
     8: '#f39c12'
   };
 
-  currentPn = this.defaultPn;
+  currentPn = '';
   selectedItem: LabelItem | null = null;
   routeSteps: LabelStepRow[] = [];
   currentUser: AuthUser | null = null;
@@ -74,8 +74,19 @@ export class LabelComponent implements AfterViewInit {
     this.currentUser = this.authService.getCurrentUser();
     this.renderDemoFlow();
     this.route.queryParamMap.subscribe((params) => {
-      const pn = params.get('pn')?.trim() || this.defaultPn;
+      const pn = params.get('pn')?.trim() || this.getLastRoutingPn();
+      if (!pn) {
+        this.currentPn = '';
+        this.selectedItem = null;
+        this.routeSteps = [];
+        this.isLoading = false;
+        this.statusMessage = 'Select a part number in Routing first.';
+        this.renderDemoFlow();
+        return;
+      }
+
       this.currentPn = pn;
+      this.rememberRoutingPn(pn);
       this.loadRoutingForCurrentPn();
     });
   }
@@ -88,6 +99,8 @@ export class LabelComponent implements AfterViewInit {
     this.http.get<LabelItem>(`${this.routingApi}/by-pn`, { params }).subscribe({
       next: (item) => {
         this.selectedItem = item;
+        this.currentPn = item.pn;
+        this.rememberRoutingPn(item.pn);
         this.loadRoutingSteps(item.id);
       },
       error: () => {
@@ -122,6 +135,25 @@ export class LabelComponent implements AfterViewInit {
         this.renderDemoFlow();
       }
     });
+  }
+
+  private getLastRoutingPn(): string {
+    try {
+      return localStorage.getItem(this.lastRoutingPnKey)?.trim() || '';
+    } catch {
+      return '';
+    }
+  }
+
+  private rememberRoutingPn(pn: string): void {
+    const cleanPn = pn.trim();
+    if (!cleanPn) return;
+
+    try {
+      localStorage.setItem(this.lastRoutingPnKey, cleanPn);
+    } catch {
+      // Local storage can be unavailable in restricted browser modes.
+    }
   }
 
   private renderDemoFlow(): void {
