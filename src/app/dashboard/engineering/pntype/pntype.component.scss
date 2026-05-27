@@ -1,32 +1,48 @@
 .pn-page {
   display: grid;
-  gap: 24px;
-  padding: 24px;
+  gap: 32px;
+  padding: 36px 34px;
 }
 
 .card {
   background: #fff;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+  border: 0;
+  border-radius: 18px;
+  padding: 30px;
+  box-shadow: 0 18px 44px rgba(17, 24, 39, 0.08);
+}
+
+.card h2 {
+  font-size: 28px;
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+
+.card h3 {
+  font-size: 22px;
+  line-height: 1.2;
+  margin-bottom: 2px;
 }
 
 .pn-form {
   display: grid;
-  grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr) minmax(260px, 1.2fr) 180px auto;
-  gap: 16px;
+  grid-template-columns: minmax(210px, 0.95fr) minmax(260px, 1.2fr) minmax(320px, 1.45fr) minmax(180px, 0.65fr) auto;
+  gap: 20px;
   align-items: start;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
 .field label {
-  font-weight: 600;
+  color: #031b38;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .pn-form input,
@@ -34,9 +50,17 @@
 .search-box input {
   box-sizing: border-box;
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #d0d5dd;
+  height: 50px;
+  padding: 0 16px;
+  border: 1px solid #cfd8e3;
   border-radius: 10px;
+  background: #ffffff;
+  color: #001b3d;
+  font-size: 16px;
+}
+
+.search-box {
+  margin-top: 0;
 }
 
 .actions,
@@ -49,25 +73,29 @@
 
 .actions {
   align-self: end;
-  padding-top: 30px;
+  padding-top: 0;
 }
 
 button {
   border: none;
   border-radius: 10px;
-  padding: 10px 16px;
-  background: #111827;
+  min-height: 44px;
+  padding: 0 20px;
+  background: #0d1424;
   color: white;
+  font-size: 16px;
+  font-weight: 500;
   cursor: pointer;
 }
 
 button.secondary {
-  background: #e5e7eb;
+  background: #e3e7ed;
   color: #111827;
 }
 
 .small-button {
-  padding: 8px 12px;
+  min-height: 43px;
+  padding: 0 15px;
 }
 
 .message {
@@ -86,19 +114,28 @@ button.secondary {
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
 th,
 td {
-  padding: 12px;
-  border-bottom: 1px solid #eceff4;
+  padding: 15px 16px;
+  border-bottom: 1px solid #e8edf3;
   text-align: left;
+  color: #001b3d;
+  font-size: 17px;
+  line-height: 1.35;
 }
 
 th {
+  height: 58px;
   background: #111827;
   color: white;
+  font-weight: 800;
+}
+
+td {
+  height: 74px;
 }
 
 .empty-state {
@@ -139,6 +176,10 @@ th {
 @media (max-width: 900px) {
   .pn-form {
     grid-template-columns: 1fr;
+  }
+
+  .pn-page {
+    padding: 18px;
   }
 
   .actions {

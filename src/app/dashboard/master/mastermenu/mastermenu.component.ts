@@ -59,13 +59,6 @@ export class MastermenuComponent {
       route: '/dashboard/master/pntype'
     },
     {
-      id: 'hlSnType',
-      title: 'SN Type',
-      description: 'Configure serial-number types.',
-      icon: 'qr_code',
-      route: '/dashboard/master/sntype'
-    },
-    {
       id: 'hl5',
       title: 'Role Management',
       description: 'Define roles and permissions.',
