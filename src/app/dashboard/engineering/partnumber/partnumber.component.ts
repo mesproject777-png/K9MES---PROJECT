@@ -2,6 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
+import { environment } from '../../../../environments/environment';
 
 interface ProductLine {
   id: number;
@@ -54,10 +55,10 @@ interface ItemRow {
   styleUrl: './partnumber.component.scss'
 })
 export class PartnumberComponent implements OnInit {
-  readonly itemsApiUrl = 'http://localhost:5000/api/items';
-  readonly productLinesApiUrl = 'http://localhost:5000/api/users/product-lines';
-  readonly pnTypesApiUrl = 'http://localhost:5000/api/users/pn-types';
-  readonly snTypesApiUrl = 'http://localhost:5000/api/sn-types';
+  readonly itemsApiUrl = `${environment.apiUrl}/api/items`;
+  readonly productLinesApiUrl = `${environment.apiUrl}/api/users/product-lines`;
+  readonly pnTypesApiUrl = `${environment.apiUrl}/api/users/pn-types`;
+  readonly snTypesApiUrl = `${environment.apiUrl}/api/sn-types`;
   private readonly lastRoutingPnKey = 'k9:lastRoutingPn';
 
   isLoading = false;

@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { environment } from '../../../../environments/environment';
 
 interface ProductLine {
   id: number;
@@ -30,7 +31,7 @@ export class MasterproductlineComponent implements OnInit {
   isEditModalOpen = false;
   searchText = '';
 
-  private readonly apiUrl = 'http://localhost:5000/api/users/product-lines';
+  private readonly apiUrl = `${environment.apiUrl}/api/users/product-lines`;
 
   constructor(
     private fb: FormBuilder,

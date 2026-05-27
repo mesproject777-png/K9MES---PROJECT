@@ -3,6 +3,7 @@ import { Component, OnInit } from '@angular/core';
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { AuthService, AuthUser } from '../../services/auth.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-profile',
@@ -18,7 +19,7 @@ export class ProfileComponent implements OnInit {
   successMessage = '';
   errorMessage = '';
 
-  private readonly apiBaseUrl = 'http://localhost:5000/api/users';
+  private readonly apiBaseUrl = `${environment.apiUrl}/api/users`;
 
   constructor(
     private authService: AuthService,

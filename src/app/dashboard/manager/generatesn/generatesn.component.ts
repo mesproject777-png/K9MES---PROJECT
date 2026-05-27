@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { environment } from '../../../../environments/environment';
 
 interface GeneratedSerialRow {
   sn: string;
@@ -41,7 +42,7 @@ export class GenerateSnComponent implements OnInit {
     }
 
     this.validating = true;
-    this.http.get(`http://localhost:5000/api/generate-sn/work-orders?wo=${encodeURIComponent(this.wo)}`).subscribe({
+    this.http.get(`${environment.apiUrl}/api/generate-sn/work-orders?wo=${encodeURIComponent(this.wo)}`).subscribe({
       next: (response: any) => {
         const data = response.data || response;
         this.woDetails = data[0] || null;
@@ -70,7 +71,7 @@ export class GenerateSnComponent implements OnInit {
     this.loading = true;
     this.message = '';
 
-    this.http.post('http://localhost:5000/api/generate-sn/generate', {
+    this.http.post(`${environment.apiUrl}/api/generate-sn/generate`, {
       wo: this.wo.trim(),
       qty: this.quantity
     }).subscribe({

@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component } from '@angular/core';
 import { AuthService } from '../../../services/auth.service';
+import { environment } from '../../../../environments/environment';
 
 interface TraceSerial {
   sn: string;
@@ -82,10 +83,10 @@ interface AssemblyBindResponse {
   styleUrl: './assembly.component.scss'
 })
 export class OperationsAssemblyComponent {
-  readonly traceabilityApi = 'http://localhost:5000/api/traceability/search';
-  readonly passFailApi = 'http://localhost:5000/api/traceability/pass-fail';
-  readonly assemblyOpsStatusApi = 'http://localhost:5000/api/assembly/operations/status';
-  readonly assemblyOpsBindApi = 'http://localhost:5000/api/assembly/operations/bind';
+  readonly traceabilityApi = `${environment.apiUrl}/api/traceability/search`;
+  readonly passFailApi = `${environment.apiUrl}/api/traceability/pass-fail`;
+  readonly assemblyOpsStatusApi = `${environment.apiUrl}/api/assembly/operations/status`;
+  readonly assemblyOpsBindApi = `${environment.apiUrl}/api/assembly/operations/bind`;
 
   query = '';
   selectedStage = '';

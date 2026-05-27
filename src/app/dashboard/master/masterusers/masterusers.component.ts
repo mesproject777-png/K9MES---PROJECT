@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { AuthService } from '../../../services/auth.service';
+import { environment } from '../../../../environments/environment';
 
 interface Role {
   id: number;
@@ -53,7 +54,7 @@ export class MasterusersComponent implements OnInit {
   selectedHistoryUserId: number | null = null;
   isEditModalOpen = false;
 
-  private readonly apiBaseUrl = 'http://localhost:5000/api/users';
+  private readonly apiBaseUrl = `${environment.apiUrl}/api/users`;
 
   constructor(
     private fb: FormBuilder,

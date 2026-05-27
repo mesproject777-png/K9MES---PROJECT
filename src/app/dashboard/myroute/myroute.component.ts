@@ -2,6 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 interface TraceSerial {
   id: number;
@@ -85,7 +86,7 @@ interface TraceSearchResponse {
   styleUrls: ['./myroute.component.scss']
 })
 export class MyrouteComponent implements OnDestroy {
-  readonly traceabilityApi = 'http://localhost:5000/api/traceability/search';
+  readonly traceabilityApi = `${environment.apiUrl}/api/traceability/search`;
 
   query = '';
   loading = false;

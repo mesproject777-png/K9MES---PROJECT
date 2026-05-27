@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { environment } from '../../../../environments/environment';
 
 interface Site {
   id: number;
@@ -49,9 +50,9 @@ interface ItemRevisionRow {
   styleUrl: './workorders.component.scss'
 })
 export class WorkordersComponent implements OnInit {
-  readonly apiBase = 'http://localhost:5000/api/work-orders';
-  readonly itemRevisionsApi = 'http://localhost:5000/api/item-revisions';
-  readonly sitesApi = 'http://localhost:5000/api/sites';
+  readonly apiBase = `${environment.apiUrl}/api/work-orders`;
+  readonly itemRevisionsApi = `${environment.apiUrl}/api/item-revisions`;
+  readonly sitesApi = `${environment.apiUrl}/api/sites`;
 
   isLoading = false;
   isSaving = false;

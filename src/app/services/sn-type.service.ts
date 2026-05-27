@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import { environment } from '../../environments/environment';
 
 export interface SNTypeField {
   id?: number;
@@ -98,8 +99,8 @@ export interface EPVRegexMasterRow {
   providedIn: 'root'
 })
 export class SnTypeService {
-  private apiUrl = 'http://localhost:5000/api/sn-types';
-  private epvTypeApiUrl = 'http://localhost:5000/api/epv-types';
+  private apiUrl = `${environment.apiUrl}/api/sn-types`;
+  private epvTypeApiUrl = `${environment.apiUrl}/api/epv-types`;
   
   private snTypesSubject = new BehaviorSubject<SNType[]>([]);
   public snTypes$ = this.snTypesSubject.asObservable();

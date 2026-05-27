@@ -1,5 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component } from '@angular/core';
+import { environment } from '../../../../environments/environment';
 
 interface ItemLookupRow {
   id: number;
@@ -82,8 +83,8 @@ interface AssemblyGroup {
   styleUrl: './assemblydefinition.component.scss'
 })
 export class AssemblydefinitionComponent {
-  readonly apiBase = 'http://localhost:5000/api/assembly';
-  readonly stationsApiBase = 'http://localhost:5000/api/stations';
+  readonly apiBase = `${environment.apiUrl}/api/assembly`;
+  readonly stationsApiBase = `${environment.apiUrl}/api/stations`;
 
   pnQuery = '';
   pnSuggestions: ItemLookupRow[] = [];

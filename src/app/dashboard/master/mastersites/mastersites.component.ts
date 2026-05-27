@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { environment } from '../../../../environments/environment';
 
 interface Site {
   id: number;
@@ -28,7 +29,7 @@ export class MastersitesComponent implements OnInit {
   isEditModalOpen = false;
   searchText = '';
 
-  private readonly apiUrl = 'http://localhost:5000/api/sites';
+  private readonly apiUrl = `${environment.apiUrl}/api/sites`;
 
   constructor(
     private fb: FormBuilder,

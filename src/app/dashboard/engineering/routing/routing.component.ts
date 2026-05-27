@@ -2,6 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { environment } from '../../../../environments/environment';
 
 interface ItemLookupRow {
   id: number;
@@ -62,8 +63,8 @@ interface StationsResponse {
   styleUrl: './routing.component.scss'
 })
 export class RoutingComponent implements OnInit {
-  readonly apiBase = 'http://localhost:5000/api/routing';
-  readonly stationsApi = 'http://localhost:5000/api/stations';
+  readonly apiBase = `${environment.apiUrl}/api/routing`;
+  readonly stationsApi = `${environment.apiUrl}/api/stations`;
   private readonly lastRoutingPnKey = 'k9:lastRoutingPn';
 
   isLoading = false;

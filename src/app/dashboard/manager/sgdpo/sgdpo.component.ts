@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { environment } from '../../../../environments/environment';
 
 type SgdPoStatus = 'open' | 'cancel' | 'complete';
 
@@ -28,7 +29,7 @@ interface SgdPoListResponse {
   styleUrl: './sgdpo.component.scss'
 })
 export class SgdpoComponent implements OnInit {
-  readonly apiBase = 'http://localhost:5000/api/sgd-pos';
+  readonly apiBase = `${environment.apiUrl}/api/sgd-pos`;
 
   isLoading = false;
   isSaving = false;

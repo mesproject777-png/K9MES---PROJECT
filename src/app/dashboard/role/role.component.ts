@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { environment } from '../../../environments/environment';
 
 interface Role {
   id: number;
@@ -58,7 +59,7 @@ export class RoleComponent implements OnInit {
     { key: 'dashboard/master/pntype', label: 'Master PN Type' },
   ];
 
-  private readonly rolesApiUrl = 'http://localhost:5000/api/users/roles';
+  private readonly rolesApiUrl = `${environment.apiUrl}/api/users/roles`;
 
   constructor(
     private fb: FormBuilder,

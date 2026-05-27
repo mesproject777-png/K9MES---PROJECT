@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { environment } from '../../../../environments/environment';
 
 interface ItemLookupRow {
   id: number;
@@ -31,7 +32,7 @@ interface ItemRevisionsResponse {
   styleUrl: './itemrevisions.component.scss'
 })
 export class ItemrevisionsComponent implements OnInit {
-  readonly apiBase = 'http://localhost:5000/api/item-revisions';
+  readonly apiBase = `${environment.apiUrl}/api/item-revisions`;
 
   isLoading = false;
   isSaving = false;

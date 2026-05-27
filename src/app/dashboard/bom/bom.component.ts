@@ -1,5 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component } from '@angular/core';
+import { environment } from '../../../environments/environment';
 
 interface ItemLookupRow {
   id: number;
@@ -56,7 +57,7 @@ interface RevisionsResponse {
   styleUrl: './bom.component.scss'
 })
 export class BomComponent {
-  readonly apiBase = 'http://localhost:5000/api/bom';
+  readonly apiBase = `${environment.apiUrl}/api/bom`;
 
   pnQuery = '';
   pnSuggestions: ItemLookupRow[] = [];

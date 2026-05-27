@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, tap } from 'rxjs';
+import { environment } from '../../environments/environment';
 
 export interface AuthUser {
   id: number;
@@ -19,7 +20,7 @@ export interface AuthUser {
 })
 export class AuthService {
   private readonly storageKey = 'mes_auth_user';
-  private readonly apiBaseUrl = 'http://localhost:5000/api/users';
+  private readonly apiBaseUrl = `${environment.apiUrl}/api/users`;
   private readonly currentUserSubject = new BehaviorSubject<AuthUser | null>(this.readStoredUser());
 
   currentUser$ = this.currentUserSubject.asObservable();

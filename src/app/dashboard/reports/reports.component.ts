@@ -1,5 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { AfterViewInit, Component, ElementRef, OnInit, ViewChild } from '@angular/core';
+import { environment } from '../../../environments/environment';
 
 interface TraceSerial {
   id: number;
@@ -59,8 +60,8 @@ interface PassFailResponse {
   styleUrl: './reports.component.scss'
 })
 export class ReportsComponent implements OnInit, AfterViewInit {
-  readonly passFailApi = 'http://localhost:5000/api/traceability/pass-fail';
-  readonly stationsApi = 'http://localhost:5000/api/stations';
+  readonly passFailApi = `${environment.apiUrl}/api/traceability/pass-fail`;
+  readonly stationsApi = `${environment.apiUrl}/api/stations`;
 
   @ViewChild('scanInput') scanInputRef!: ElementRef<HTMLInputElement>;
 

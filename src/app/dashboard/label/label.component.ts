@@ -2,6 +2,7 @@ import { AfterViewInit, Component, ElementRef, Renderer2, ViewChild } from '@ang
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { ActivatedRoute } from '@angular/router';
 import { AuthService, AuthUser } from '../../services/auth.service';
+import { environment } from '../../../environments/environment';
 
 interface LabelItem {
   id: number;
@@ -39,7 +40,7 @@ export class LabelComponent implements AfterViewInit {
   @ViewChild('taskContainer', { static: true }) taskContainer!: ElementRef;
   @ViewChild('linesSVG', { static: true }) linesSVG!: ElementRef<SVGElement>;
 
-  readonly routingApi = 'http://localhost:5000/api/routing';
+  readonly routingApi = `${environment.apiUrl}/api/routing`;
   private readonly lastRoutingPnKey = 'k9:lastRoutingPn';
   readonly tasksPerRow = 8;
   readonly diamondTasks = [3, 8, 14, 17, 22, 26];

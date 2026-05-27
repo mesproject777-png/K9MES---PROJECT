@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { environment } from '../../../../environments/environment';
 
 interface TransferResponse {
   success: boolean;
@@ -41,7 +42,7 @@ export class PnwochangeComponent {
     this.loadingAll = true;
     this.resetMessage();
 
-    this.http.post<TransferResponse>('http://localhost:5000/api/work-orders/transfer', {
+    this.http.post<TransferResponse>(`${environment.apiUrl}/api/work-orders/transfer`, {
       source_wo: this.sourceWo.trim(),
       target_wo: this.targetWo.trim(),
       mode: 'all-new'
@@ -76,7 +77,7 @@ export class PnwochangeComponent {
     this.loadingSingle = true;
     this.resetMessage();
 
-    this.http.post<TransferResponse>('http://localhost:5000/api/work-orders/transfer', {
+    this.http.post<TransferResponse>(`${environment.apiUrl}/api/work-orders/transfer`, {
       source_wo: this.sourceWo.trim(),
       target_wo: this.targetWo.trim(),
       mode: 'single',

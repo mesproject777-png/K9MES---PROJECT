@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { environment } from '../../../../environments/environment';
 
 interface StationRow {
   id: number;
@@ -24,7 +25,7 @@ interface StationsResponse {
   styleUrl: './stations.component.scss'
 })
 export class StationsComponent implements OnInit {
-  readonly apiUrl = 'http://localhost:5000/api/stations';
+  readonly apiUrl = `${environment.apiUrl}/api/stations`;
 
   isLoading = false;
   isSaving = false;
