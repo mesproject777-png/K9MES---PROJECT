@@ -40,24 +40,25 @@
 
 .brand-mark {
   width: 56px;
-  height: 52px;
-  border-radius: 14px;
+  height: 56px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
   overflow: hidden;
-  background: #ffffff;
+  background: linear-gradient(135deg, #ffffff 0%, #dff0ff 100%);
   border: 1px solid rgba(255, 255, 255, 0.78);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.92),
     0 10px 18px rgba(3, 18, 31, 0.24);
 }
 
-.brand-mark img {
-  display: block;
-  width: 92%;
-  height: 92%;
-  object-fit: contain;
+.brand-mark span {
+  color: #0d3f6d;
+  font-family: 'Space Grotesk', 'Manrope', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .brand-copy {
@@ -208,75 +209,6 @@
   background: linear-gradient(120deg, #d4ebff 0%, #bde5f6 100%);
   border-color: #8bc5e9;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
-.user-account {
-  margin-top: auto;
-  width: 54px;
-  height: 52px;
-  padding: 5px;
-  margin-left: 0;
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 12px;
-  backdrop-filter: blur(3px);
-  overflow: hidden;
-  transition: width 0.25s ease, height 0.25s ease, padding 0.25s ease, background 0.2s ease;
-}
-
-.sidebar:hover .user-account,
-.sidebar:focus-within .user-account {
-  width: 100%;
-  height: auto;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.user-profile {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-}
-
-.sidebar:hover .user-profile,
-.sidebar:focus-within .user-profile {
-  justify-content: flex-start;
-}
-
-.user-profile img {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  border: 2px solid rgba(255, 255, 255, 0.72);
-}
-
-.user-profile h3 {
-  font-size: 0.92rem;
-  font-weight: 600;
-}
-
-.user-profile span {
-  font-size: 0.74rem;
-  color: rgba(227, 239, 250, 0.9);
-  font-weight: 500;
-}
-
-.user-detail {
-  margin-left: 10px;
-  white-space: nowrap;
-  max-width: 0;
-  overflow: hidden;
-  opacity: 0;
-  transform: translateX(-8px);
-  transition: max-width 0.25s ease, opacity 0.25s ease, transform 0.25s ease;
-}
-
-.sidebar:hover .user-detail,
-.sidebar:focus-within .user-detail {
-  max-width: 150px;
-  opacity: 1;
-  transform: translateX(0);
 }
 
 .link-label {

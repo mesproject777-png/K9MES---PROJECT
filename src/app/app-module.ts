@@ -12,6 +12,7 @@ import { HomeComponent } from './dashboard/home/home.component';
 import { UsersComponent } from './dashboard/users/users.component';
 import { RoleComponent } from './dashboard/role/role.component';
 import { ProfileComponent } from './dashboard/profile/profile.component';
+import { WorkflowComponent } from './dashboard/workflow/workflow.component';
 import { MasterComponent } from './dashboard/master/master.component';
 import { MyrouteComponent } from './dashboard/myroute/myroute.component';
 import { MasterstationComponent } from './dashboard/master/masterstation/masterstation.component';
@@ -56,6 +57,7 @@ import { ShippedPackagesComponent } from './dashboard/operations/packing/shipped
     UsersComponent,
     RoleComponent,
     ProfileComponent,
+    WorkflowComponent,
     MasterComponent,
     MyrouteComponent,
     MasterstationComponent,

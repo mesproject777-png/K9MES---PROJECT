@@ -7,6 +7,7 @@ import { HomeComponent } from './dashboard/home/home.component';
 import { UsersComponent } from './dashboard/users/users.component';
 import { RoleComponent } from './dashboard/role/role.component';
 import { ProfileComponent } from './dashboard/profile/profile.component';
+import { WorkflowComponent } from './dashboard/workflow/workflow.component';
 
 import { MasterComponent } from './dashboard/master/master.component';
 import { MastermenuComponent } from './dashboard/master/mastermenu/mastermenu.component';
@@ -57,6 +58,7 @@ const routes: Routes = [
     children: [
       { path: '', redirectTo: 'home', pathMatch: 'full' },
       { path: 'home', component: HomeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
+      { path: 'workflow', component: WorkflowComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
       { path: 'bom', component: BomComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/bom' } },
       { path: 'ecn', component: EcnComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/ecn' } },
       { path: 'label', component: LabelComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/label' } },

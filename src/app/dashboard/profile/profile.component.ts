@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { AuthService, AuthUser } from '../../services/auth.service';
 
 @Component({
@@ -9,7 +10,7 @@ import { AuthService, AuthUser } from '../../services/auth.service';
   templateUrl: './profile.component.html',
   styleUrl: './profile.component.scss'
 })
-export class ProfileComponent {
+export class ProfileComponent implements OnInit {
   currentUser: AuthUser | null = null;
   passwordForm: FormGroup;
   isChangingPassword = false;
@@ -22,7 +23,8 @@ export class ProfileComponent {
   constructor(
     private authService: AuthService,
     private fb: FormBuilder,
-    private http: HttpClient
+    private http: HttpClient,
+    private route: ActivatedRoute
   ) {
     this.currentUser = this.authService.getCurrentUser();
     this.authService.currentUser$.subscribe((user) => {
@@ -37,6 +39,17 @@ export class ProfileComponent {
       },
       { validators: this.passwordsMatchValidator }
     );
+  }
+
+  ngOnInit(): void {
+    this.route.queryParamMap.subscribe((params) => {
+      if (params.get('section') === 'settings') {
+        this.showPasswordForm = true;
+        window.setTimeout(() => {
+          document.getElementById('account-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+    });
   }
 
   get displayName(): string {

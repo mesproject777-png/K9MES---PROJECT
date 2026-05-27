@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { AuthService, AuthUser } from '../services/auth.service';
+import { AuthService } from '../services/auth.service';
 
 interface SidebarItem {
   label: string;
@@ -15,10 +15,9 @@ interface SidebarItem {
   styleUrl: './sidebar.component.scss'
 })
 export class SidebarComponent {
-  currentUser: AuthUser | null = null;
-
   readonly sidebarItems: SidebarItem[] = [
     { label: 'Dashboard', route: '/dashboard/home', icon: 'dashboard', pageKey: 'dashboard/home' },
+    { label: 'Work Flow', route: '/dashboard/workflow', icon: 'account_tree', pageKey: 'dashboard/home' },
     { label: 'Master', route: '/dashboard/master', icon: 'settings', pageKey: 'dashboard/master/menu' },
     { label: 'Manager', route: '/dashboard/manager/menu', icon: 'manage_accounts', pageKey: 'dashboard/manager/menu' },
     { label: 'Engineering', route: '/dashboard/engineering/menu', icon: 'engineering', pageKey: 'dashboard/engineering/menu' },
@@ -31,19 +30,10 @@ export class SidebarComponent {
     { label: 'SN Live Tracker', route: '/dashboard/myroute', icon: 'flag', pageKey: 'dashboard/myroute' },
   ];
 
-  constructor(private authService: AuthService) {
-    this.currentUser = this.authService.getCurrentUser();
-
-    this.authService.currentUser$.subscribe((user) => {
-      this.currentUser = user;
-    });
-  }
+  constructor(private authService: AuthService) {}
 
   canAccess(pageKey: string): boolean {
     return this.authService.hasAccess(pageKey);
   }
 
-  logout(): void {
-    this.authService.logout();
-  }
 }

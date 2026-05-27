@@ -1,10 +1,10 @@
 <aside class="sidebar">
   <div class="sidebar-header">
     <div class="brand-mark" aria-label="K9">
-      <img src="/assets/k9-logo-full.jpeg" alt="K9 logo" />
+      <span>K9</span>
     </div>
     <div class="brand-copy">
-      <p>MES Workspace</p>
+      <p>MES</p>
     </div>
   </div>
 
@@ -22,41 +22,5 @@
         <span class="link-label">Notifications</span>
       </a>
     </li>
-
-    <h4>
-      <span>Account</span>
-      <div class="menu-separator"></div>
-    </h4>
-
-    <li [hidden]="!canAccess('dashboard/profile')">
-      <a routerLink="/dashboard/profile" routerLinkActive="active-link">
-        <span class="material-symbols-outlined">account_circle</span>
-        <span class="link-label">Profile</span>
-      </a>
-    </li>
-
-    <li>
-      <a href="#" (click)="$event.preventDefault()">
-        <span class="material-symbols-outlined">settings</span>
-        <span class="link-label">Settings</span>
-      </a>
-    </li>
-
-    <li>
-      <a href="#" (click)="logout(); $event.preventDefault()">
-        <span class="material-symbols-outlined">logout</span>
-        <span class="link-label">Logout</span>
-      </a>
-    </li>
   </ul>
-
-  <div class="user-account">
-    <div class="user-profile">
-      <img src="https://cdn-icons-png.flaticon.com/256/9572/9572778.png" alt="Profile Image" />
-      <div class="user-detail">
-        <h3>{{ currentUser?.user_name || currentUser?.login_id || 'User' }}</h3>
-        <span>{{ currentUser?.role_name || 'Role' }}</span>
-      </div>
-    </div>
-  </div>
 </aside>

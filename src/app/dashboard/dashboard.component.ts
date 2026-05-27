@@ -32,6 +32,11 @@ export class DashboardComponent {
     this.router.navigate(['/dashboard/profile']);
   }
 
+  openSettings(): void {
+    this.isProfileMenuOpen = false;
+    this.router.navigate(['/dashboard/profile'], { queryParams: { section: 'settings' } });
+  }
+
   logout(): void {
     this.isProfileMenuOpen = false;
     this.authService.logout();
