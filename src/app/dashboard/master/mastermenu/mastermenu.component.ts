@@ -38,6 +38,13 @@ export class MastermenuComponent {
       route: '/dashboard/master/sites'
     },
     {
+      id: 'hlSnType',
+      title: 'SN Type',
+      description: 'Configure serial-number types.',
+      icon: 'qr_code',
+      route: '/dashboard/master/sntype'
+    },
+    {
       id: 'hl4',
       title: 'Product Line',
       description: 'Manage product line master data.',

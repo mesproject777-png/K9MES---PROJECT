@@ -88,7 +88,7 @@ const routes: Routes = [
           { path: 'sites', component: MastersitesComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/sites' } },
           { path: 'stations', component: StationsComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/stations' } },
           { path: 'pntype', component: PntypeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/pntype' } },
-          { path: 'sntype', component: SnTypeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/sntype' } },
+          { path: 'sntype', component: SnTypeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/sntype' } },
           { path: 'rolemanagement', component: RoleComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/role' } },
         ]
       },
@@ -102,7 +102,6 @@ const routes: Routes = [
           { path: 'menu', component: EngineeringmenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/menu' } },
           { path: 'productline', component: MasterproductlineComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/productline' } },
           { path: 'pntype', component: PntypeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/pntype' } },
-          { path: 'sntype', component: SnTypeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/sntype' } },
           { path: 'partnumber', component: PartnumberComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/partnumber' } },
           { path: 'itemrevisions', component: ItemrevisionsComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/itemrevisions' } },
           { path: 'bom', component: BomComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/bom' } },

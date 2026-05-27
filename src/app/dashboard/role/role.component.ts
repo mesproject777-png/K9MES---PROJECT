@@ -32,7 +32,7 @@ export class RoleComponent implements OnInit {
     { key: 'dashboard/engineering/menu', label: 'Engineering Menu' },
     { key: 'dashboard/engineering/productline', label: 'Engineering - Product Line' },
     { key: 'dashboard/engineering/pntype', label: 'Engineering - PN Type' },
-    { key: 'dashboard/engineering/sntype', label: 'Engineering - SN Type' },
+    { key: 'dashboard/engineering/sntype', label: 'Master - SN Type' },
     { key: 'dashboard/engineering/partnumber', label: 'Engineering - Part Number' },
     { key: 'dashboard/engineering/itemrevisions', label: 'Engineering - Item Revisions' },
     { key: 'dashboard/bom', label: 'Engineering - BOM Per Item' },
@@ -56,7 +56,6 @@ export class RoleComponent implements OnInit {
     { key: 'dashboard/master/sites', label: 'Master Plant' },
     { key: 'dashboard/master/stations', label: 'Master Stations' },
     { key: 'dashboard/master/pntype', label: 'Master PN Type' },
-    { key: 'dashboard/master/sntype', label: 'Master SN Type' },
   ];
 
   private readonly rolesApiUrl = 'http://localhost:5000/api/users/roles';
