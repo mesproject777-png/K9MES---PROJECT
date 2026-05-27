@@ -3,17 +3,11 @@ setlocal
 
 cd /d %~dp0
 
-if exist ".env.local" (
-  for /f "usebackq eol=# tokens=1,* delims==" %%A in (".env.local") do (
-    if not "%%A"=="" set "%%A=%%B"
-  )
-)
-
 echo Starting backend API...
-start "MES API" cmd /k "dotnet run --project backend\\K9Api"
+start "MES API" cmd /k "dotnet run --project backend\K9Api\K9Api.csproj"
 
 echo Starting Angular frontend...
-start "K9 UI" cmd /k ".\\node_modules\\.bin\\ng.cmd serve --port 4200"
+start "K9 UI" cmd /k "npm start"
 
 echo.
 echo Backend:  http://localhost:5000
