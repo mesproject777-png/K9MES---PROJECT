@@ -1,14 +1,16 @@
 <section class="wizard-page" aria-labelledby="wizardTitle">
-  <h2 id="wizardTitle">Five Step Wizard</h2>
+  <h2 id="wizardTitle">Work Flow</h2>
 
-  <div class="wizard-track" aria-label="Engineering wizard steps">
+  <div class="wizard-track" aria-label="Work Flow wizard steps">
     <button
       type="button"
       class="wizard-step"
       *ngFor="let step of steps; let i = index"
       [class.active]="i === activeStep"
-      [class.complete]="i < activeStep"
-      (click)="goToStep(i)"
+      [class.complete]="isStepCompleted(i)"
+      [class.ready]="i === activeStep + 1 && isStepAvailable(i)"
+      [disabled]="!isStepAvailable(i)"
+      (click)="i === 0 ? openPartNumberModal() : (i === 1 ? openWorkOrderModal() : (i === 2 ? openRoutingModal() : (i === 3 ? openBomModal() : openPreviewModal())))"
       [attr.aria-current]="i === activeStep ? 'step' : null"
     >
       <span class="step-number">{{ i + 1 }}</span>
@@ -18,6 +20,12 @@
 
   <div class="wizard-content">
     <h3>{{ steps[activeStep].label }}</h3>
+    <p *ngIf="activeStep === 0" class="step-description">Create or select the parent part number for the workflow.</p>
+    <p *ngIf="activeStep === 1" class="step-description">Create the work order details linked with the selected part number.</p>
+    <p *ngIf="activeStep === 2" class="step-description">Configure routing stations used by this workflow.</p>
+    <p *ngIf="activeStep === 3" class="step-description">Click Step 4 BOM to add child components.</p>
+    <p *ngIf="activeStep === 4" class="step-description">Click Step 5 Preview to review and submit the workflow.</p>
+    <p *ngIf="previewError" class="message error">{{ previewError }}</p>
   </div>
 
   <div class="wizard-actions">
@@ -29,3 +37,745 @@
     </button>
   </div>
 </section>
+
+<!-- PartNumber Modal -->
+<div *ngIf="showPartNumberModal" class="modal-backdrop" (click)="closePartNumberModal()">
+  <div class="modal-card fullpage-modal-card workflow-full-modal" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <p class="bom-eyebrow">Work Flow Step 1</p>
+        <h3>Create Part Number</h3>
+      </div>
+      <button type="button" class="btn-secondary-light" (click)="closePartNumberModal()">Close</button>
+    </div>
+
+    <form [formGroup]="partNumberForm" class="pn-form modal-form workflow-form-card">
+      <div class="field">
+        <label for="pnType">Type</label>
+        <input id="pnType" type="text" formControlName="type" />
+      </div>
+
+      <div class="field">
+        <label for="pnCode">Part Number</label>
+        <input id="pnCode" type="text" formControlName="code" />
+      </div>
+
+      <div class="field">
+        <label for="pnDescription">Description</label>
+        <input id="pnDescription" type="text" formControlName="description" />
+      </div>
+
+      <div class="field">
+        <label for="pnStatus">Status</label>
+        <select id="pnStatus" formControlName="status">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </div>
+    </form>
+
+    <p *ngIf="partNumberMessage" class="message success">{{ partNumberMessage }}</p>
+    <p *ngIf="partNumberErrorMessage" class="message error">{{ partNumberErrorMessage }}</p>
+
+    <div class="modal-actions">
+      <button type="button" class="primary" (click)="savePartNumber()" [disabled]="isPartNumberSubmitting">
+        {{ isPartNumberSubmitting ? 'Adding...' : 'Add' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Routing Full-Page Modal -->
+<div *ngIf="showRoutingModal" class="modal-backdrop" (click)="closeRoutingModal()">
+  <div class="modal-card fullpage-modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Routing details for PN: {{ getBomParentPn() }}</h3>
+      <div class="routing-header-actions">
+        <button type="button" class="btn-blue" (click)="toggleAddRoutingRow()">Add New</button>
+        <button type="button" class="btn-secondary-light" (click)="closeRoutingModal()">Close</button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <form [formGroup]="routingForm" class="routing-pn-form">
+        <div class="form-row">
+          <label>PN</label>
+          <input type="text" formControlName="pn" placeholder="Enter PN to load routing" />
+        </div>
+        <div class="form-row">
+          <label>&nbsp;</label>
+          <div>
+            <button type="button" class="btn-blue" (click)="loadRoutingFromPn()">Load PN</button>
+          </div>
+        </div>
+      </form>
+
+      <div *ngIf="routingError" class="message error">{{ routingError }}</div>
+      <div *ngIf="routingSuccess" class="message success">{{ routingSuccess }}</div>
+
+      <form *ngIf="showAddRoutingRow" [formGroup]="addRoutingForm" class="routing-add-card">
+        <div class="form-row">
+          <label>Station</label>
+          <select formControlName="station_code">
+            <option value="">Select station</option>
+            <option *ngFor="let s of stations" [value]="s.station_code">{{ s.station_code }} - {{ s.station_desc }}</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label>Sample</label>
+          <select formControlName="sample_mode">
+            <option value="Full">Full</option>
+            <option value="Sample">Sample</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label>Report</label>
+          <select formControlName="report_mode">
+            <option value="Regular">Regular</option>
+            <option value="Auto Only">Auto Only</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label>&nbsp;</label>
+          <div>
+            <button class="btn-blue" type="button" (click)="saveRoutingRow()">Save</button>
+          </div>
+        </div>
+      </form>
+
+        <div class="routing-list">
+          <table *ngIf="routeSteps.length > 0">
+            <thead>
+              <tr>
+                <th>Station</th>
+                <th>Sample</th>
+                <th>Report Method</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of routeSteps">
+                <td>{{ row.station_code }} - {{ row.station_name }}</td>
+                <td>{{ row.sample_mode }}</td>
+                <td>{{ row.report_mode }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p *ngIf="routeSteps.length === 0" class="routing-empty">No routing rows added yet.</p>
+        </div>
+    </div>
+
+    <div class="modal-actions">
+      <div style="flex:1"></div>
+      <button class="btn-blue" type="button" (click)="openRoutingHistory()">Show History</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOM Full-Page Modal -->
+<div *ngIf="showBomModal" class="modal-backdrop" (click)="closeBomModal()">
+  <div class="modal-card fullpage-modal-card bom-modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-header bom-modal-header">
+      <div>
+        <p class="bom-eyebrow">Work Flow Step 4</p>
+        <h3>Bill of Materials (BOM)</h3>
+      </div>
+      <div class="routing-header-actions">
+        <button type="button" class="btn-blue" (click)="toggleAddBomComponent()">Add Component</button>
+        <button type="button" class="btn-blue" (click)="saveBom()">Save BOM</button>
+        <button type="button" class="btn-secondary-light" (click)="closeBomModal()">Close</button>
+      </div>
+    </div>
+
+    <div class="modal-body bom-body">
+      <section class="bom-summary-card">
+        <div>
+          <span>Main Product / Parent PN</span>
+          <strong>{{ getBomParentPn() }}</strong>
+        </div>
+        <div>
+          <span>Work Order</span>
+          <strong>{{ getBomWorkOrder() }}</strong>
+        </div>
+        <div>
+          <span>Revision</span>
+          <strong>{{ getBomRevision() }}</strong>
+        </div>
+        <div>
+          <span>Plant</span>
+          <strong>{{ getBomPlant() }}</strong>
+        </div>
+        <div>
+          <span>Status</span>
+          <strong class="status-pill">{{ getBomStatus() }}</strong>
+        </div>
+      </section>
+
+      <p *ngIf="bomMessage" class="message success">{{ bomMessage }}</p>
+      <p *ngIf="bomError" class="message error">{{ bomError }}</p>
+
+      <form *ngIf="showAddBomComponent" [formGroup]="bomComponentForm" class="bom-add-card">
+        <div class="form-row">
+          <label>Child Part Number</label>
+          <input type="text" formControlName="childPartNumber" placeholder="Enter child PN" />
+        </div>
+        <div class="form-row">
+          <label>Child Name</label>
+          <input type="text" formControlName="childName" placeholder="Enter child name" />
+        </div>
+        <div class="form-row">
+          <label>Quantity</label>
+          <input type="number" min="0.001" step="0.001" formControlName="quantity" />
+        </div>
+        <div class="form-row">
+          <label>Unit</label>
+          <select formControlName="unit">
+            <option value="Nos">Nos</option>
+            <option value="Mtr">Mtr</option>
+            <option value="Kg">Kg</option>
+            <option value="Set">Set</option>
+            <option value="Ltr">Ltr</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Station</label>
+          <select formControlName="station" (change)="onBomStationChange($any($event.target).value)">
+            <option value="">Select station</option>
+            <option *ngFor="let step of getBomStationOptions()" [value]="step.station_code">
+              {{ step.station_code }} - {{ step.station_name }}
+            </option>
+          </select>
+          <small class="field-hint" *ngIf="getBomStationOptions().length === 0">
+            Please add routing station before adding BOM component.
+          </small>
+        </div>
+        <div class="form-row remarks-row">
+          <label>Remarks</label>
+          <input type="text" formControlName="remarks" placeholder="Optional" />
+        </div>
+        <div class="bom-add-actions">
+          <button type="button" class="btn-blue" (click)="addBomComponent()">Add</button>
+          <button type="button" class="btn-secondary-light" (click)="toggleAddBomComponent()">Cancel</button>
+        </div>
+      </form>
+
+      <div class="bom-workspace">
+        <section class="bom-table-card">
+          <div class="bom-section-title">
+            <div>
+              <h4>BOM Components</h4>
+              <p>Child materials are linked to {{ getBomParentPn() }} and assigned to routing stations.</p>
+            </div>
+            <span>Total Components: {{ bomComponents.length }}</span>
+          </div>
+
+          <div class="bom-routing-note" *ngIf="getBomStationOptions().length === 0">
+            Please add routing station before adding BOM component.
+          </div>
+
+          <div class="bom-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>S.No</th>
+                  <th>Child Part Number</th>
+                  <th>Child Name</th>
+                  <th>Quantity</th>
+                  <th>Unit</th>
+                  <th>Station</th>
+                  <th>Remarks</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let component of bomComponents; let i = index">
+                  <td>{{ i + 1 }}</td>
+                  <td>{{ component.childPartNumber }}</td>
+                  <td>{{ component.childName }}</td>
+                  <td>{{ component.quantity }}</td>
+                  <td>{{ component.unit }}</td>
+                  <td>{{ component.station }}</td>
+                  <td>{{ component.remarks || '-' }}</td>
+                  <td>
+                    <button type="button" class="tiny-btn danger" (click)="removeBomComponent(i)">Delete</button>
+                  </td>
+                </tr>
+                <tr *ngIf="bomComponents.length === 0">
+                  <td colspan="8" class="bom-empty">No child components added yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="bom-tree-card">
+          <h4>BOM Tree View</h4>
+          <div class="bom-tree">
+            <div class="tree-parent">{{ getBomParentPn() }}</div>
+            <div *ngIf="bomComponents.length === 0" class="tree-empty">No child components.</div>
+            <div class="tree-child" *ngFor="let component of bomComponents">
+              <span>-></span>
+              <strong>{{ component.childPartNumber }}</strong>
+              <em>- {{ component.childName }}</em>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BOM Station Rules Popup -->
+<div *ngIf="showStationRulesModal" class="rules-popup-backdrop" (click)="closeStationRulesModal()">
+  <div class="rules-popup-card" (click)="$event.stopPropagation()">
+    <div class="rules-popup-header">
+      <div>
+        <h3>Rules</h3>
+        <p>{{ selectedRuleStationName }}</p>
+      </div>
+      <button type="button" class="rules-close-btn" (click)="closeStationRulesModal()">Close</button>
+    </div>
+
+    <div class="rules-popup-body">
+      <ul *ngIf="selectedStationRules.length > 0; else noStationRules">
+        <li *ngFor="let rule of selectedStationRules">{{ rule }}</li>
+      </ul>
+      <ng-template #noStationRules>
+        <p>No rules configured for this station.</p>
+      </ng-template>
+    </div>
+
+    <div class="rules-popup-actions">
+      <button type="button" class="btn-blue" (click)="closeStationRulesModal()">OK / Got it</button>
+    </div>
+  </div>
+</div>
+
+<!-- Preview Full-Page Modal -->
+<div *ngIf="showPreviewModal" class="modal-backdrop" (click)="closePreviewModal()">
+  <div class="modal-card fullpage-modal-card preview-modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-header preview-modal-header">
+      <div>
+        <p class="bom-eyebrow">Work Flow Step 5</p>
+        <h3>Preview</h3>
+      </div>
+      <div class="routing-header-actions">
+        <button type="button" class="btn-secondary-light" (click)="backFromPreview()">Back</button>
+        <button type="button" class="btn-blue" (click)="finalSubmitWorkflow()">Final Submit</button>
+        <button type="button" class="btn-secondary-light" (click)="closePreviewModal()">Close</button>
+      </div>
+    </div>
+
+    <div class="modal-body preview-body graph-preview-body">
+      <p *ngIf="previewMessage" class="message success">{{ previewMessage }}</p>
+      <p *ngIf="previewError" class="message error">{{ previewError }}</p>
+
+      <section class="manufacturing-graph" aria-label="Manufacturing workflow graph">
+        <div class="graph-top-chain">
+          <div class="graph-node complete">
+            <span class="node-icon">PL</span>
+            <small>Plant</small>
+            <strong>{{ getBomPlant() }}</strong>
+          </div>
+          <div class="graph-connector vertical"></div>
+          <div class="graph-node complete">
+            <span class="node-icon">ST</span>
+            <small>Site</small>
+            <strong>{{ getPreviewSite() }}</strong>
+          </div>
+          <div class="graph-connector vertical"></div>
+          <div class="graph-node active wide-node">
+            <span class="node-icon">WO</span>
+            <small>Work Order</small>
+            <strong>{{ getBomWorkOrder() }}</strong>
+            <em>Qty: {{ getPreviewQuantity() }} | {{ getPreviewWorkOrderStatus() }}</em>
+          </div>
+        </div>
+
+        <div class="graph-connector vertical center-line"></div>
+
+        <div class="product-structure-grid">
+          <div class="graph-node complete">
+            <span class="node-icon">PN</span>
+            <small>Parent Part No</small>
+            <strong>{{ getBomParentPn() }}</strong>
+          </div>
+
+          <div class="graph-connector horizontal"></div>
+
+          <div class="graph-node active wide-node">
+            <span class="node-icon">IT</span>
+            <small>Part Number</small>
+            <strong>{{ getBomParentPn() }}</strong>
+            <em>Type: {{ getPreviewPnType() }}</em>
+            <em>Rev: {{ getBomRevision() }}</em>
+          </div>
+
+          <div class="graph-connector horizontal"></div>
+
+          <div class="child-node-stack">
+            <div class="graph-node pending small-node" *ngIf="getPreviewChildComponents().length === 0">
+              <small>Child</small>
+              <strong>Not selected</strong>
+            </div>
+            <div class="graph-node pending child-node" *ngFor="let child of getPreviewChildComponents()">
+              <small>Child</small>
+              <strong>{{ child.childPartNumber || 'Not selected' }}</strong>
+              <em>{{ child.childName || 'Not selected' }}</em>
+            </div>
+          </div>
+
+          <div class="graph-node pending">
+            <span class="node-icon">BX</span>
+            <small>Box</small>
+            <strong *ngIf="getPreviewPackagingComponents().length === 0">Not selected</strong>
+            <strong *ngIf="getPreviewPackagingComponents().length > 0">
+              {{ getPreviewPackagingComponents()[0].childPartNumber }}
+            </strong>
+          </div>
+
+          <div class="graph-connector horizontal"></div>
+
+          <div class="graph-node photo-node">
+            <div class="product-photo-placeholder">IMG</div>
+            <small>Product Photo</small>
+            <strong>{{ workflowParentDescription || getBomParentPn() }}</strong>
+          </div>
+
+          <div class="graph-connector horizontal"></div>
+
+          <div class="graph-node pending">
+            <span class="node-icon">PK</span>
+            <small>Box</small>
+            <strong *ngIf="getPreviewPackagingComponents().length < 2">Not selected</strong>
+            <strong *ngIf="getPreviewPackagingComponents().length >= 2">
+              {{ getPreviewPackagingComponents()[1].childPartNumber }}
+            </strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="preview-section process-graph-section">
+        <div class="preview-section-title">
+          <h4>Process Flow</h4>
+          <span>{{ getBomStationOptions().length || 0 }} routing stations</span>
+        </div>
+
+        <div class="process-flow-strip">
+          <div class="process-node image-process-node complete">
+            <div class="process-illustration worker-illustration" aria-hidden="true">
+              <span class="worker-head"></span>
+              <span class="worker-body"></span>
+              <span class="worker-helmet"></span>
+            </div>
+            <strong>Operator / Technician</strong>
+            <em>Completed</em>
+          </div>
+          <div class="process-arrow">-></div>
+
+          <ng-container *ngIf="getBomStationOptions().length > 0; else noPreviewRoutingGraph">
+            <ng-container *ngFor="let station of getBomStationOptions(); let last = last">
+              <div class="process-node pending">
+                <strong>{{ station.station_name || station.station_code || 'Not selected' }}</strong>
+                <span>Sample: {{ station.sample_mode || 'Not selected' }}</span>
+                <span>Report: {{ station.report_mode || 'Not selected' }}</span>
+                <em>Pending</em>
+              </div>
+              <div class="process-arrow">-></div>
+            </ng-container>
+          </ng-container>
+
+          <ng-template #noPreviewRoutingGraph>
+            <div class="process-node pending">
+              <strong>No routing rows added yet.</strong>
+              <em>Pending</em>
+            </div>
+            <div class="process-arrow">-></div>
+          </ng-template>
+
+          <div class="process-node image-process-node" [class.complete]="dispatchFlowApproved" [class.pending]="!dispatchFlowApproved">
+            <div class="process-illustration box-illustration" aria-hidden="true">
+              <span class="box-top"></span>
+              <span class="box-front"></span>
+            </div>
+            <strong>Packing Box</strong>
+            <em>{{ dispatchFlowApproved ? 'Completed' : 'Pending' }}</em>
+          </div>
+          <div class="process-arrow">-></div>
+          <div class="process-node image-process-node" [class.complete]="dispatchFlowApproved" [class.pending]="!dispatchFlowApproved">
+            <div class="process-illustration cart-illustration" aria-hidden="true">
+              <span class="cart-box"></span>
+              <span class="cart-base"></span>
+              <span class="cart-wheel left"></span>
+              <span class="cart-wheel right"></span>
+            </div>
+            <strong>Big Storage Box / Cart</strong>
+            <em>{{ dispatchFlowApproved ? 'Completed' : 'Pending' }}</em>
+          </div>
+          <div class="process-arrow">-></div>
+          <div class="process-node image-process-node dispatch" [class.complete]="dispatchFlowApproved" [class.pending]="!dispatchFlowApproved">
+            <div class="process-illustration truck-illustration" aria-hidden="true">
+              <span class="truck-box"></span>
+              <span class="truck-cab"></span>
+              <span class="truck-wheel left"></span>
+              <span class="truck-wheel right"></span>
+            </div>
+            <strong>Truck Dispatch / Shipping</strong>
+            <em>{{ dispatchFlowApproved ? 'Completed' : 'Pending' }}</em>
+          </div>
+        </div>
+      </section>
+
+      <section class="preview-section compact-bom-section">
+        <div class="preview-section-title">
+          <h4>BOM Child Components</h4>
+          <span>{{ bomComponents.length || 0 }} components</span>
+        </div>
+
+        <div class="bom-child-preview" *ngIf="bomComponents.length > 0; else noPreviewBomGraph">
+          <div class="bom-child-card" *ngFor="let component of bomComponents">
+            <strong>{{ component.childPartNumber || 'Not selected' }}</strong>
+            <span>{{ component.childName || 'Not selected' }}</span>
+            <span>Qty: {{ component.quantity || 'Not selected' }} {{ component.unit || '' }}</span>
+            <em>Station: {{ component.station || 'Not selected' }}</em>
+          </div>
+        </div>
+
+        <ng-template #noPreviewBomGraph>
+          <div class="preview-empty-card">No BOM child components added yet.</div>
+        </ng-template>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- Final Product Report Popup -->
+<div *ngIf="showFinalReportModal" class="report-popup-backdrop" (click)="closeFinalReportModal()">
+  <div class="final-report-card" (click)="$event.stopPropagation()">
+    <div class="final-report-header">
+      <div>
+        <p class="bom-eyebrow">Manufacturing Summary</p>
+        <h3>Final Product Report</h3>
+      </div>
+      <span class="report-status-badge" [ngClass]="getFinalReportStatus().toLowerCase().replace(' ', '-')">
+        {{ getFinalReportStatus() }}
+      </span>
+    </div>
+
+    <div class="report-progress">
+      <span [style.width.%]="getFinalReportProgress()"></span>
+    </div>
+
+    <div class="final-report-body">
+      <section class="report-section">
+        <div class="report-section-heading">
+          <h4>Important Product Summary</h4>
+          <small>{{ getFinalReportProgress() }}% complete</small>
+        </div>
+        <div class="report-summary-grid">
+          <div class="report-info-card">
+            <small>Work Order Number</small>
+            <strong>{{ getBomWorkOrder() }}</strong>
+          </div>
+          <div class="report-info-card">
+            <small>Part Number</small>
+            <strong>{{ getBomParentPn() }}</strong>
+          </div>
+          <div class="report-info-card">
+            <small>Parent PN</small>
+            <strong>{{ getBomParentPn() }}</strong>
+          </div>
+          <div class="report-info-card">
+            <small>Quantity</small>
+            <strong>{{ getPreviewQuantity() }}</strong>
+          </div>
+          <div class="report-info-card">
+            <small>Plant</small>
+            <strong>{{ getBomPlant() }}</strong>
+          </div>
+          <div class="report-info-card">
+            <small>Site</small>
+            <strong>{{ getPreviewSite() }}</strong>
+          </div>
+          <div class="report-info-card">
+            <small>Current Station</small>
+            <strong>{{ getCurrentStationName() }}</strong>
+          </div>
+          <div class="report-info-card">
+            <small>Status</small>
+            <strong>{{ getFinalReportStatus() }}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="report-section split-report-section">
+        <div>
+          <div class="report-section-heading">
+            <h4>Routing/Test Steps</h4>
+            <small>{{ getBomStationOptions().length || 0 }} stations</small>
+          </div>
+          <div class="report-checklist" *ngIf="getBomStationOptions().length > 0; else noReportRouting">
+            <div class="report-check-row" *ngFor="let station of getBomStationOptions(); let i = index">
+              <span class="check-mark" [class.pending]="getRoutingStepStatus(i) === 'Pending'">
+                {{ getRoutingStepStatus(i) === 'Completed' ? 'OK' : '...' }}
+              </span>
+              <strong>{{ station.station_name || station.station_code || 'Not selected' }}</strong>
+              <em class="status-pill" [class.completed]="getRoutingStepStatus(i) === 'Completed'" [class.pending]="getRoutingStepStatus(i) === 'Pending'">
+                {{ getRoutingStepStatus(i) }}
+              </em>
+            </div>
+          </div>
+          <ng-template #noReportRouting>
+            <div class="report-empty-line">No routing rows added yet.</div>
+          </ng-template>
+        </div>
+
+        <div>
+          <div class="report-section-heading">
+            <h4>BOM Summary</h4>
+            <small>{{ bomComponents.length || 0 }} child components</small>
+          </div>
+          <div class="report-bom-list" *ngIf="bomComponents.length > 0; else noReportBom">
+            <div class="report-bom-row" *ngFor="let component of bomComponents">
+              <strong>{{ component.childName || component.childPartNumber || 'Not selected' }}</strong>
+              <span>Qty: {{ component.quantity || 'Not selected' }} {{ component.unit || '' }}</span>
+              <em>{{ component.station || 'Not selected' }}</em>
+            </div>
+          </div>
+          <ng-template #noReportBom>
+            <div class="report-empty-line">No BOM child components added yet.</div>
+          </ng-template>
+        </div>
+      </section>
+
+      <section class="report-section operator-report-section">
+        <div class="report-info-card">
+          <small>Operator/Technician</small>
+          <strong>Not selected</strong>
+        </div>
+        <div class="report-info-card">
+          <small>Start Time</small>
+          <strong>Not selected</strong>
+        </div>
+        <div class="report-info-card">
+          <small>Current Status</small>
+          <strong>{{ getOperatorStatus() }}</strong>
+        </div>
+      </section>
+
+      <section class="report-notes">
+        <small>Notes/Remarks</small>
+        <p>{{ getReportNotes() }}</p>
+      </section>
+    </div>
+
+    <div class="final-report-actions">
+      <button type="button" class="btn-secondary-light" (click)="closeFinalReportModal()">Close</button>
+      <button type="button" class="btn-blue" (click)="approveFinalReport()">Approve &amp; Continue</button>
+    </div>
+  </div>
+</div>
+ 
+<!-- WorkOrder Modal -->
+<div *ngIf="showWorkOrderModal" class="modal-backdrop" (click)="closeWorkOrderModal()">
+  <div class="modal-card fullpage-modal-card workflow-full-modal" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <p class="bom-eyebrow">Work Flow Step 2</p>
+        <h3>Create Work Order</h3>
+      </div>
+      <button type="button" class="btn-secondary-light" (click)="closeWorkOrderModal()">Close</button>
+    </div>
+
+    <div class="modal-body">
+      <form [formGroup]="workOrderForm" class="modal-form workflow-form-card">
+        <div class="form-row">
+          <label>WO:</label>
+          <input type="text" formControlName="wo" />
+        </div>
+
+        <div class="form-row">
+          <label>Site:</label>
+          <select formControlName="site_id">
+            <option [ngValue]="null">Select Site</option>
+            <option *ngFor="let s of sites" [ngValue]="s.id">{{ s.name }}</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label>Plant:</label>
+          <select formControlName="plant">
+            <option value="">Select Plant</option>
+            <option *ngFor="let plant of getPlantOptions()" [value]="plant">{{ plant }}</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label>Due Date:</label>
+          <input type="date" formControlName="due_date" />
+        </div>
+
+        <div class="form-row">
+          <label>Quantity:</label>
+          <input type="number" formControlName="qty" min="1" />
+        </div>
+
+        <div class="form-row">
+          <label>Status:</label>
+          <select formControlName="status">
+            <option value="Allocated">Allocated</option>
+            <option value="Planned">Planned</option>
+            <option value="Released">Released</option>
+            <option value="Cancelled">Cancelled</option>
+            <option value="Closed">Closed</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label>PN:</label>
+          <div class="pn-input">
+            <input
+              type="text"
+              [value]="pnQuery"
+              (input)="onPnInput($any($event.target).value)"
+              (blur)="pnSuggestions = []"
+              autocomplete="off"
+            />
+            <div class="suggestions" *ngIf="pnSuggestions.length > 0">
+              <button
+                type="button"
+                class="suggestion"
+                *ngFor="let s of pnSuggestions"
+                (mousedown)="selectPnSuggestion(s)"
+              >
+                {{ s.pn }} - {{ s.description }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label>Revision:</label>
+          <input type="text" formControlName="revision" placeholder="Enter revision (e.g. A)" />
+        </div>
+
+        <div class="form-row">
+          <label>Lot:</label>
+          <input type="text" formControlName="lot" />
+        </div>
+      </form>
+    </div>
+
+    <p *ngIf="workOrderMessage" class="message success">{{ workOrderMessage }}</p>
+    <p *ngIf="workOrderErrorMessage" class="message error">{{ workOrderErrorMessage }}</p>
+
+    <div class="modal-actions">
+      <button type="button" class="primary" (click)="saveWorkOrder()" [disabled]="isWorkOrderSubmitting">
+        {{ isWorkOrderSubmitting ? 'Saving...' : 'Save' }}
+      </button>
+    </div>
+  </div>
+</div>

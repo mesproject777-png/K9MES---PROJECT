@@ -106,6 +106,7 @@ const routes: Routes = [
           { path: 'bom', component: BomComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/bom' } },
           { path: 'stations', component: StationsComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/menu' } },
           { path: 'routing', component: RoutingComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/routing' } },
+          { path: 'five-step-wizard', redirectTo: '/dashboard/workflow', pathMatch: 'full' },
           { path: 'epv-upload', component: EpvuploadComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/sntype' } },
           { path: 'assembly-definition', component: AssemblydefinitionComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/menu' } },
         ]
