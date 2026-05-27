@@ -83,9 +83,12 @@ const routes: Routes = [
           { path: 'menu', component: MastermenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/menu' } },
           { path: 'masterstation', component: MasterstationComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/masterstation' } },
           { path: 'masterusers', component: MasterusersComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/masterusers' } },
-          { path: 'masterrouting', component: MasterroutingComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/masterrouting' } },
           { path: 'masterproductline', component: MasterproductlineComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/masterproductline' } },
+          { path: 'plant', component: MastersitesComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/sites' } },
           { path: 'sites', component: MastersitesComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/sites' } },
+          { path: 'stations', component: StationsComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/stations' } },
+          { path: 'pntype', component: PntypeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/pntype' } },
+          { path: 'sntype', component: SnTypeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/sntype' } },
           { path: 'rolemanagement', component: RoleComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/role' } },
         ]
       },

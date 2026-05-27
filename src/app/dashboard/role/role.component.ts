@@ -52,9 +52,11 @@ export class RoleComponent implements OnInit {
     { key: 'dashboard/master/menu', label: 'Master Menu' },
     { key: 'dashboard/master/masterstation', label: 'Master Station' },
     { key: 'dashboard/master/masterusers', label: 'Master Users' },
-    { key: 'dashboard/master/masterrouting', label: 'Master Routing' },
     { key: 'dashboard/master/masterproductline', label: 'Master Product Line' },
-    { key: 'dashboard/master/sites', label: 'Master Sites' },
+    { key: 'dashboard/master/sites', label: 'Master Plant' },
+    { key: 'dashboard/master/stations', label: 'Master Stations' },
+    { key: 'dashboard/master/pntype', label: 'Master PN Type' },
+    { key: 'dashboard/master/sntype', label: 'Master SN Type' },
   ];
 
   private readonly rolesApiUrl = 'http://localhost:5000/api/users/roles';

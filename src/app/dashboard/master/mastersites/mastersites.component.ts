@@ -56,7 +56,7 @@ export class MastersitesComponent implements OnInit {
         this.isLoading = false;
       },
       error: () => {
-        this.errorMessage = 'Unable to load sites.';
+        this.errorMessage = 'Unable to load plants.';
         this.isLoading = false;
       }
     });
@@ -74,13 +74,13 @@ export class MastersitesComponent implements OnInit {
     this.isSubmitting = true;
     this.http.post<Site>(this.apiUrl, this.siteForm.value).subscribe({
       next: () => {
-        this.successMessage = 'Site created successfully.';
+        this.successMessage = 'Plant created successfully.';
         this.isSubmitting = false;
         this.resetCreateForm();
         this.loadSites();
       },
       error: (error) => {
-        this.errorMessage = error?.error?.error || 'Unable to save site.';
+        this.errorMessage = error?.error?.error || 'Unable to save plant.';
         this.isSubmitting = false;
       }
     });
@@ -111,13 +111,13 @@ export class MastersitesComponent implements OnInit {
     this.isEditSubmitting = true;
     this.http.put<Site>(`${this.apiUrl}/${this.editingId}`, this.editForm.value).subscribe({
       next: () => {
-        this.successMessage = 'Site updated successfully.';
+        this.successMessage = 'Plant updated successfully.';
         this.isEditSubmitting = false;
         this.cancelEdit();
         this.loadSites();
       },
       error: (error) => {
-        this.errorMessage = error?.error?.error || 'Unable to save site.';
+        this.errorMessage = error?.error?.error || 'Unable to save plant.';
         this.isEditSubmitting = false;
       }
     });
@@ -129,14 +129,14 @@ export class MastersitesComponent implements OnInit {
 
     this.http.delete<{ message: string }>(`${this.apiUrl}/${id}`).subscribe({
       next: () => {
-        this.successMessage = 'Site deleted successfully.';
+        this.successMessage = 'Plant deleted successfully.';
         if (this.editingId === id) {
           this.cancelEdit();
         }
         this.loadSites();
       },
       error: (error) => {
-        this.errorMessage = error?.error?.error || 'Unable to delete site.';
+        this.errorMessage = error?.error?.error || 'Unable to delete plant.';
       }
     });
   }

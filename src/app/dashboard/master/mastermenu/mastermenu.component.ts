@@ -24,11 +24,18 @@ export class MastermenuComponent {
       route: '/dashboard/master/masterusers'
     },
     {
-      id: 'hl3',
-      title: 'Routing',
-      description: 'Configure routing definitions.',
-      icon: 'route',
-      route: '/dashboard/master/masterrouting'
+      id: 'hlPlant',
+      title: 'Plant',
+      description: 'Manage plant locations and setup.',
+      icon: 'factory',
+      route: '/dashboard/master/plant'
+    },
+    {
+      id: 'hlSites',
+      title: 'Sites',
+      description: 'Manage site locations and setup.',
+      icon: 'location_on',
+      route: '/dashboard/master/sites'
     },
     {
       id: 'hl4',
@@ -38,11 +45,25 @@ export class MastermenuComponent {
       route: '/dashboard/master/masterproductline'
     },
     {
-      id: 'hlSites',
-      title: 'Sites',
-      description: 'Manage site locations and setup.',
-      icon: 'location_on',
-      route: '/dashboard/master/sites'
+      id: 'hlStations',
+      title: 'Stations',
+      description: 'Manage station definitions.',
+      icon: 'precision_manufacturing',
+      route: '/dashboard/master/stations'
+    },
+    {
+      id: 'hlPnType',
+      title: 'PN Type',
+      description: 'Configure part-number types.',
+      icon: 'sell',
+      route: '/dashboard/master/pntype'
+    },
+    {
+      id: 'hlSnType',
+      title: 'SN Type',
+      description: 'Configure serial-number types.',
+      icon: 'qr_code',
+      route: '/dashboard/master/sntype'
     },
     {
       id: 'hl5',
