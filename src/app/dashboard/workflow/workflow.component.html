@@ -1,4 +1,988 @@
-<section class="workflow-shell">
-  <app-fivestepwizard></app-fivestepwizard>
+<section class="workflow-page" aria-label="Workflow">
+  <div
+    class="workflow-save-popover"
+    *ngIf="showSavePreviousWorkPopup"
+    [style.left.%]="savePreviousWorkPopupLeft"
+    role="alert"
+  >
+    save previous work
+  </div>
+
+  <div class="workflow-window">
+    <div class="workflow-tabs" role="tablist" aria-label="Workflow sections">
+      <button
+        type="button"
+        class="workflow-tab"
+        *ngFor="let tab of tabs; let i = index"
+        [class.active]="i === activeTabIndex"
+        [id]="tab.id + '-tab'"
+        [attr.aria-controls]="tab.id + '-panel'"
+        [attr.aria-selected]="i === activeTabIndex"
+        role="tab"
+        (click)="selectTab(i)"
+      >
+        <span class="material-symbols-outlined" aria-hidden="true">{{ tab.icon }}</span>
+        <span>{{ tab.label }}</span>
+        <span
+          class="pane-signal"
+          [class.saved]="isPaneSaved(i)"
+          [attr.aria-label]="isPaneSaved(i) ? tab.label + ' saved' : tab.label + ' not saved'"
+        ></span>
+      </button>
+    </div>
+
+    <div class="workflow-panes">
+      <section
+        class="workflow-pane"
+        *ngFor="let tab of tabs; let i = index"
+        [class.active]="getPaneState(i) === 'active'"
+        [class.before]="getPaneState(i) === 'before'"
+        [class.after]="getPaneState(i) === 'after'"
+        [id]="tab.id + '-panel'"
+        [attr.aria-labelledby]="tab.id + '-tab'"
+        [attr.aria-hidden]="i === activeTabIndex ? 'false' : 'true'"
+        role="tabpanel"
+      >
+        <form
+          *ngIf="i === 0"
+          class="workflow-panel-form"
+          [formGroup]="partNumberForm"
+          (ngSubmit)="savePartNumber()"
+        >
+          <div class="workflow-pane-body">
+            <div class="workflow-messages" *ngIf="partNumberErrorMessage">
+              <p *ngIf="partNumberErrorMessage" class="message error">{{ partNumberErrorMessage }}</p>
+            </div>
+
+            <div class="workflow-form-grid">
+              <div class="form-field">
+                <label for="workflowPn">Part number</label>
+                <input id="workflowPn" type="text" formControlName="pn" />
+                <small class="field-error" *ngIf="partNumberForm.get('pn')?.touched && partNumberForm.get('pn')?.invalid">
+                  Required
+                </small>
+              </div>
+
+              <div class="form-field">
+                <label for="workflowDescription">Description</label>
+                <input id="workflowDescription" type="text" formControlName="description" />
+                <small
+                  class="field-error"
+                  *ngIf="partNumberForm.get('description')?.touched && partNumberForm.get('description')?.invalid"
+                >
+                  Required
+                </small>
+              </div>
+
+              <fieldset class="choice-field">
+                <legend>SGD Control</legend>
+                <div class="choice-options">
+                  <label class="radio-option">
+                    <input
+                      type="radio"
+                      name="workflow_sgd_control"
+                      [checked]="partNumberForm.get('sgd_control')?.value === false"
+                      (change)="partNumberForm.get('sgd_control')?.setValue(false)"
+                    />
+                    <span>No</span>
+                  </label>
+                  <label class="radio-option">
+                    <input
+                      type="radio"
+                      name="workflow_sgd_control"
+                      [checked]="partNumberForm.get('sgd_control')?.value === true"
+                      (change)="partNumberForm.get('sgd_control')?.setValue(true)"
+                    />
+                    <span>Yes</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset class="choice-field">
+                <legend>Item Type</legend>
+                <div class="choice-options">
+                  <label class="radio-option">
+                    <input type="radio" value="Manufactured" formControlName="item_type" />
+                    <span>Manufactured</span>
+                  </label>
+                  <label class="radio-option">
+                    <input type="radio" value="Purchased" formControlName="item_type" />
+                    <span>Purchased</span>
+                  </label>
+                </div>
+                <small
+                  class="field-error"
+                  *ngIf="partNumberForm.get('item_type')?.touched && partNumberForm.get('item_type')?.invalid"
+                >
+                  Required
+                </small>
+              </fieldset>
+
+              <div class="form-field">
+                <label for="workflowSnType">SN Type</label>
+                <input
+                  id="workflowSnType"
+                  type="text"
+                  formControlName="sn_type_name"
+                  placeholder="Enter SN Type (must exist)"
+                />
+              </div>
+
+              <div class="form-field">
+                <label for="workflowPnType">PN Type</label>
+                <select id="workflowPnType" formControlName="pn_type_id">
+                  <option [ngValue]="null">Select PN Type</option>
+                  <option *ngFor="let pnType of pnTypes" [ngValue]="pnType.id">
+                    {{ pnType.code }} - {{ pnType.description }}
+                  </option>
+                </select>
+                <small
+                  class="field-error"
+                  *ngIf="partNumberForm.get('pn_type_id')?.touched && partNumberForm.get('pn_type_id')?.invalid"
+                >
+                  Required
+                </small>
+              </div>
+            </div>
+          </div>
+
+          <div class="workflow-pane-footer">
+            <button type="submit" class="save-button" [class.saved]="isPartNumberSaved">
+              {{ isPartNumberSaved ? 'Saved' : 'Save' }}
+            </button>
+          </div>
+        </form>
+
+        <form
+          *ngIf="i === 1"
+          class="workflow-panel-form"
+          [formGroup]="workOrderForm"
+          (ngSubmit)="saveWorkOrder()"
+        >
+          <div class="workflow-pane-body">
+            <div class="workflow-messages" *ngIf="workOrderErrorMessage">
+              <p *ngIf="workOrderErrorMessage" class="message error">{{ workOrderErrorMessage }}</p>
+            </div>
+
+            <div class="workflow-form-grid work-order-grid">
+              <div class="form-field">
+                <label for="workflowWo">WO</label>
+                <input id="workflowWo" type="text" formControlName="wo" />
+                <small class="field-error" *ngIf="workOrderForm.get('wo')?.touched && workOrderForm.get('wo')?.invalid">
+                  Required
+                </small>
+              </div>
+
+              <div class="form-field">
+                <label for="workflowPlant">Plant</label>
+                <select id="workflowPlant" formControlName="plant">
+                  <option [ngValue]="null">Select Plant</option>
+                  <option *ngFor="let plant of plantOptions" [ngValue]="plant">{{ plant }}</option>
+                </select>
+                <small
+                  class="field-error"
+                  *ngIf="workOrderForm.get('plant')?.touched && workOrderForm.get('plant')?.invalid"
+                >
+                  Required
+                </small>
+              </div>
+
+              <div class="form-field">
+                <label for="workflowSite">Site</label>
+                <select id="workflowSite" formControlName="site_id">
+                  <option [ngValue]="null">Select Site</option>
+                  <option *ngFor="let site of sites" [ngValue]="site.id">{{ site.name }}</option>
+                </select>
+                <small
+                  class="field-error"
+                  *ngIf="workOrderForm.get('site_id')?.touched && workOrderForm.get('site_id')?.invalid"
+                >
+                  Required
+                </small>
+              </div>
+
+              <div class="form-field">
+                <label for="workflowDueDate">Due Date</label>
+                <input id="workflowDueDate" type="date" formControlName="due_date" />
+                <small
+                  class="field-error"
+                  *ngIf="workOrderForm.get('due_date')?.touched && workOrderForm.get('due_date')?.invalid"
+                >
+                  Required
+                </small>
+              </div>
+
+              <div class="form-field">
+                <label for="workflowQuantity">Quantity</label>
+                <input id="workflowQuantity" type="number" min="1" formControlName="qty" />
+                <small
+                  class="field-error"
+                  *ngIf="workOrderForm.get('qty')?.touched && workOrderForm.get('qty')?.invalid"
+                >
+                  Required
+                </small>
+              </div>
+
+              <div class="form-field">
+                <label for="workflowStatus">Status</label>
+                <select id="workflowStatus" formControlName="status">
+                  <option *ngFor="let status of workOrderStatusOptions" [ngValue]="status">{{ status }}</option>
+                </select>
+                <small
+                  class="field-error"
+                  *ngIf="workOrderForm.get('status')?.touched && workOrderForm.get('status')?.invalid"
+                >
+                  Required
+                </small>
+              </div>
+
+              <div class="form-field">
+                <label for="workflowWorkOrderPn">PN</label>
+                <input id="workflowWorkOrderPn" type="text" formControlName="pn" />
+                <small class="field-error" *ngIf="workOrderForm.get('pn')?.touched && workOrderForm.get('pn')?.invalid">
+                  Required
+                </small>
+              </div>
+
+              <div class="form-field">
+                <label for="workflowRevision">Revision</label>
+                <input
+                  id="workflowRevision"
+                  type="text"
+                  formControlName="revision"
+                  placeholder="Enter revision (e.g. A)"
+                />
+                <small
+                  class="field-error"
+                  *ngIf="workOrderForm.get('revision')?.touched && workOrderForm.get('revision')?.invalid"
+                >
+                  Required
+                </small>
+              </div>
+
+              <div class="form-field">
+                <label for="workflowLot">Lot</label>
+                <input id="workflowLot" type="text" formControlName="lot" />
+              </div>
+            </div>
+          </div>
+
+          <div class="workflow-pane-footer">
+            <button type="submit" class="save-button" [class.saved]="isWorkOrderSaved">
+              {{ isWorkOrderSaved ? 'Saved' : 'Save' }}
+            </button>
+          </div>
+        </form>
+
+        <div *ngIf="i === 2" class="routing-panel">
+          <div class="routing-panel-body">
+            <div class="routing-heading">
+              Route for PN: {{ routingPartNumber || '-' }}, Description:- {{ routingDescription || '-' }}
+            </div>
+
+            <p *ngIf="routingErrorMessage" class="message error">{{ routingErrorMessage }}</p>
+
+            <div class="routing-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Move</th>
+                    <th>Station code</th>
+                    <th>Station</th>
+                    <th>Sample</th>
+                    <th>Report</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let step of routeSteps">
+                    <td class="move-cell">
+                      <button type="button" class="move-button" title="Move up" (click)="moveRoutingStep(step, 'up')">
+                        <span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_up</span>
+                      </button>
+                      <button type="button" class="move-button" title="Move down" (click)="moveRoutingStep(step, 'down')">
+                        <span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_down</span>
+                      </button>
+                    </td>
+                    <td>{{ step.station_code }}</td>
+                    <td>{{ step.station_name }}</td>
+                    <td>{{ step.sample_mode }}</td>
+                    <td>{{ step.report_mode }}</td>
+                    <td class="routing-actions-cell">
+                      <button type="button" class="secondary-button" (click)="editRoutingStep(step)">Edit</button>
+                      <button type="button" class="danger-button" (click)="deleteRoutingStep(step)">Delete</button>
+                    </td>
+                  </tr>
+                  <tr *ngIf="routeSteps.length === 0">
+                    <td colspan="6" class="routing-empty">No route stations found.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="routing-footer" [class.editor-open]="isRoutingStepEditorOpen">
+            <div class="routing-footer-left">
+              <button
+                *ngIf="!isRoutingStepEditorOpen"
+                type="button"
+                class="primary-button"
+                (click)="openRoutingStepEditor()"
+              >
+                Add New
+              </button>
+
+              <form *ngIf="isRoutingStepEditorOpen" class="routing-step-form" [formGroup]="routingStepForm">
+                <div class="form-field">
+                  <label for="workflowRoutingStation">Station</label>
+                  <select id="workflowRoutingStation" formControlName="station_code">
+                    <option value="" disabled>Select station</option>
+                    <option *ngFor="let station of stations" [value]="station.station_code">
+                      {{ station.station_code }} - {{ station.station_desc }}
+                    </option>
+                  </select>
+                </div>
+
+                <div class="form-field">
+                  <label for="workflowRoutingSample">Sample</label>
+                  <select id="workflowRoutingSample" formControlName="sample_mode">
+                    <option *ngFor="let mode of sampleModeOptions" [value]="mode">{{ mode }}</option>
+                  </select>
+                </div>
+
+                <div class="form-field">
+                  <label for="workflowRoutingReport">Report Method</label>
+                  <select id="workflowRoutingReport" formControlName="report_mode">
+                    <option *ngFor="let mode of reportModeOptions" [value]="mode">{{ mode }}</option>
+                  </select>
+                </div>
+              </form>
+            </div>
+
+            <div class="routing-footer-actions">
+              <button
+                *ngIf="!isRoutingStepEditorOpen"
+                type="button"
+                class="save-childs-button"
+                [class.saved]="isRoutingChildrenSaved"
+                [disabled]="routeSteps.length === 0"
+                (click)="saveRoutingChildren()"
+              >
+                {{ isRoutingChildrenSaved ? 'Saved' : 'Save Routing' }}
+              </button>
+              <button
+                *ngIf="!isRoutingStepEditorOpen"
+                type="button"
+                class="secondary-button"
+                (click)="toggleRoutingHistory()"
+              >
+                {{ includeRoutingHistory ? 'Hide History' : 'Show History' }}
+              </button>
+              <button
+                *ngIf="isRoutingStepEditorOpen"
+                type="button"
+                class="save-button"
+                [disabled]="isRoutingSaving"
+                (click)="saveRoutingStep()"
+              >
+                {{ isRoutingSaving ? 'Saving...' : 'Save' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="routing-history" *ngIf="includeRoutingHistory">
+            <h4>Changes</h4>
+            <div class="routing-history-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Change</th>
+                    <th>User</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let history of routeHistory">
+                    <td>{{ history.changed_at | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
+                    <td>{{ history.description }}</td>
+                    <td>
+                      <strong>{{ history.change_field || '-' }}</strong>
+                      <span class="change-values">
+                        <span>{{ history.old_value || '-' }}</span>
+                        <span>-></span>
+                        <span>{{ history.new_value || '-' }}</span>
+                      </span>
+                    </td>
+                    <td>{{ history.changed_by || 'system' }}</td>
+                  </tr>
+                  <tr *ngIf="routeHistory.length === 0">
+                    <td colspan="4" class="routing-empty">No history found.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="i === 3" class="bom-panel">
+          <div class="bom-panel-body">
+            <div class="bom-heading">BOM for {{ bomPartNumber || '-' }}</div>
+
+            <p *ngIf="bomErrorMessage" class="message error">{{ bomErrorMessage }}</p>
+
+            <div class="bom-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>PN</th>
+                    <th>Description</th>
+                    <th>Station</th>
+                    <th>Item Type</th>
+                    <th>PN Type</th>
+                    <th>Qty</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let child of bomChildren">
+                    <td>{{ child.son_pn }}</td>
+                    <td>{{ child.son_description }}</td>
+                    <td>{{ child.station_code }} - {{ child.station_name }}</td>
+                    <td>{{ child.item_type }}</td>
+                    <td>{{ child.pn_type }}</td>
+                    <td>{{ child.qty }}</td>
+                    <td class="bom-actions-cell">
+                      <button type="button" class="danger-button" (click)="deleteBomChild(child)">Delete</button>
+                    </td>
+                  </tr>
+                  <tr *ngIf="bomChildren.length === 0">
+                    <td colspan="7" class="routing-empty">No BOM childs found.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="bom-footer" [class.editor-open]="isBomChildEditorOpen">
+            <div class="bom-footer-left">
+              <button
+                *ngIf="!isBomChildEditorOpen"
+                type="button"
+                class="primary-button"
+                (click)="openBomChildEditor()"
+              >
+                Add New Son
+              </button>
+
+              <form *ngIf="isBomChildEditorOpen" class="bom-child-form" [formGroup]="bomChildForm">
+                <div class="form-field">
+                  <label for="workflowBomSonPn">Son Part Number</label>
+                  <input id="workflowBomSonPn" type="text" formControlName="son_pn" placeholder="Type son PN" />
+                </div>
+
+                <div class="form-field">
+                  <label for="workflowBomQty">Qty</label>
+                  <input id="workflowBomQty" type="number" min="1" formControlName="qty" />
+                </div>
+
+                <div class="form-field">
+                  <label for="workflowBomStation">Station</label>
+                  <select
+                    id="workflowBomStation"
+                    formControlName="station_code"
+                    (change)="onBomStationChange($any($event.target).value)"
+                  >
+                    <option value="" disabled>Select station</option>
+                    <option *ngFor="let station of stations" [value]="station.station_code">
+                      {{ station.station_code }} - {{ station.station_desc }}
+                    </option>
+                  </select>
+                </div>
+              </form>
+            </div>
+
+            <div class="bom-footer-actions">
+              <button
+                *ngIf="!isBomChildEditorOpen"
+                type="button"
+                class="save-childs-button"
+                [class.saved]="isBomChildrenSaved"
+                [disabled]="bomChildren.length === 0"
+                (click)="saveBomChildren()"
+              >
+                {{ isBomChildrenSaved ? 'Saved' : 'Save Childs' }}
+              </button>
+              <button
+                *ngIf="!isBomChildEditorOpen"
+                type="button"
+                class="secondary-button"
+                (click)="toggleBomHistory()"
+              >
+                {{ includeBomHistory ? 'Hide History' : 'Show History' }}
+              </button>
+              <button
+                *ngIf="isBomChildEditorOpen"
+                type="button"
+                class="save-button"
+                [disabled]="isBomChildSaving"
+                (click)="saveBomChild()"
+              >
+                {{ isBomChildSaving ? 'Saving...' : 'Save' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="routing-history" *ngIf="includeBomHistory">
+            <h4>Changes</h4>
+            <div class="routing-history-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Change</th>
+                    <th>User</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let history of bomHistory">
+                    <td>{{ history.changed_at | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
+                    <td>{{ history.description }}</td>
+                    <td>
+                      <strong>{{ history.change_field || '-' }}</strong>
+                      <span class="change-values">
+                        <span>{{ history.old_value || '-' }}</span>
+                        <span>-></span>
+                        <span>{{ history.new_value || '-' }}</span>
+                      </span>
+                    </td>
+                    <td>{{ history.changed_by || 'system' }}</td>
+                  </tr>
+                  <tr *ngIf="bomHistory.length === 0">
+                    <td colspan="4" class="routing-empty">No history found.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="i === 4" class="preview-panel">
+          <div class="preview-canvas" aria-label="Workflow preview">
+            <div class="preview-hierarchy">
+              <div class="preview-node hierarchy-node plant-node">
+                <span class="preview-node-icon plant-icon material-symbols-outlined" aria-hidden="true">factory</span>
+                <span class="preview-node-copy">
+                  <strong>Plant</strong>
+                  <small>{{ previewPlantName }}</small>
+                </span>
+              </div>
+
+              <span class="tree-link vertical" aria-hidden="true"></span>
+
+              <div class="preview-node hierarchy-node site-node">
+                <span class="preview-node-icon site-icon material-symbols-outlined" aria-hidden="true">location_on</span>
+                <span class="preview-node-copy">
+                  <strong>Site</strong>
+                  <small>{{ previewSiteName }}</small>
+                </span>
+              </div>
+
+              <span class="tree-link vertical" aria-hidden="true"></span>
+
+              <div class="preview-node hierarchy-node work-order-node">
+                <span class="preview-node-icon work-icon material-symbols-outlined" aria-hidden="true">assignment</span>
+                <span class="preview-node-copy">
+                  <strong>Work Order</strong>
+                  <small>{{ previewWorkOrderNumber }}</small>
+                </span>
+              </div>
+
+              <div class="tree-branch" aria-hidden="true">
+                <span class="branch-stem"></span>
+                <span class="branch-line"></span>
+                <span class="branch-drop left"></span>
+                <span class="branch-drop center"></span>
+                <span class="branch-drop right"></span>
+              </div>
+
+              <div class="tree-row three-up">
+                <div class="preview-node hierarchy-node part-side-node">
+                  <span class="preview-node-icon parent-icon material-symbols-outlined" aria-hidden="true">deployed_code</span>
+                  <span class="preview-node-copy">
+                    <strong>Parent Part No</strong>
+                    <small>{{ previewParentPartNumber }}</small>
+                  </span>
+                </div>
+
+                <div class="preview-node hierarchy-node part-number-node">
+                  <span class="preview-node-icon part-icon material-symbols-outlined" aria-hidden="true">settings</span>
+                  <span class="preview-node-copy">
+                    <strong>Part Number</strong>
+                    <small>{{ previewPartNumber }}</small>
+                  </span>
+                </div>
+
+                <button type="button" class="preview-node hierarchy-node child-node" (click)="openChildDetails()">
+                  <span class="preview-node-icon child-icon material-symbols-outlined" aria-hidden="true">extension</span>
+                  <span class="preview-node-copy">
+                    <strong>Child</strong>
+                    <small>{{ previewChildSummary }}</small>
+                  </span>
+                </button>
+              </div>
+
+              <span class="tree-link vertical product-drop" aria-hidden="true"></span>
+
+              <div class="tree-row product-row">
+                <div class="preview-node hierarchy-node box-node">
+                  <span class="preview-node-icon box-icon material-symbols-outlined" aria-hidden="true">inventory_2</span>
+                  <span class="preview-node-copy">
+                    <strong>Box</strong>
+                    <small>{{ previewBoxLeft }}</small>
+                  </span>
+                </div>
+
+                <div class="preview-node hierarchy-node product-node">
+                  <span class="product-title">Product Photo</span>
+                  <span class="product-visual" aria-hidden="true">
+                    <span class="product-shaft"></span>
+                    <span class="product-hub left"></span>
+                    <span class="product-hub right"></span>
+                    <span class="product-cap left"></span>
+                    <span class="product-cap right"></span>
+                  </span>
+                </div>
+
+                <div class="preview-node hierarchy-node box-node">
+                  <span class="preview-node-icon box-icon material-symbols-outlined" aria-hidden="true">inventory_2</span>
+                  <span class="preview-node-copy">
+                    <strong>Box</strong>
+                    <small>{{ previewBoxRight }}</small>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div class="product-process-link" aria-hidden="true">
+              <span class="product-line-down"></span>
+              <span class="product-line-across"></span>
+              <span class="product-line-drop"></span>
+            </div>
+
+            <div class="preview-process-flow" #previewProcessFlow>
+              <svg
+                class="preview-flow-lines"
+                aria-hidden="true"
+                *ngIf="previewConnectorPath"
+                [attr.width]="previewConnectorWidth"
+                [attr.height]="previewConnectorHeight"
+                [attr.viewBox]="'0 0 ' + previewConnectorWidth + ' ' + previewConnectorHeight"
+              >
+                <path class="preview-flow-line-path" [attr.d]="previewConnectorPath"></path>
+              </svg>
+
+              <ng-container *ngFor="let row of previewFlowRows; let rowIndex = index">
+                <div
+                  class="preview-flow-row-wrap"
+                  [class.turn-left]="row.turnSide === 'left'"
+                  [class.turn-right]="row.turnSide === 'right'"
+                >
+                  <div class="preview-flow-row" [class.reverse-row]="row.isReversed">
+                    <ng-container *ngFor="let node of row.nodes; let nodeIndex = index">
+                      <ng-container [ngSwitch]="node.kind">
+                        <div
+                          *ngSwitchCase="'operator'"
+                          #previewFlowNode
+                          class="operator-node flow-card"
+                          [attr.data-flow-id]="node.id"
+                        >
+                          <span class="operator-avatar" aria-hidden="true">
+                            <span class="material-symbols-outlined">{{ node.icon }}</span>
+                          </span>
+                          <strong>{{ node.title }}</strong>
+                        </div>
+
+                        <button
+                          *ngSwitchCase="'station'"
+                          #previewFlowNode
+                          type="button"
+                          class="station-node flow-card"
+                          [attr.data-flow-id]="node.id"
+                          [class.station-diamond]="node.station?.sample_mode === 'Sample'"
+                          [class.station-square]="node.station?.sample_mode !== 'Sample'"
+                          [class.in-progress]="node.station?.status === 'In Progress'"
+                          [class.pending]="node.station?.status === 'Pending'"
+                          (click)="node.station ? openPreviewStationDetails(node.station) : null"
+                        >
+                          <span class="station-node-inner">
+                            <span class="station-icon material-symbols-outlined" aria-hidden="true">
+                              {{ node.station?.icon }}
+                            </span>
+                            <strong>Station {{ node.station?.flowIndex }}</strong>
+                            <small [class]="node.station ? getPreviewStatusClass(node.station.status) : ''">
+                              {{ node.station?.status }}
+                            </small>
+                          </span>
+                        </button>
+
+                        <div
+                          *ngSwitchCase="'empty'"
+                          #previewFlowNode
+                          class="preview-empty-station flow-card"
+                          [attr.data-flow-id]="node.id"
+                        >
+                          <span class="material-symbols-outlined" aria-hidden="true">{{ node.icon }}</span>
+                          <strong>{{ node.title }}</strong>
+                        </div>
+
+                        <div
+                          *ngSwitchCase="'logistics'"
+                          #previewFlowNode
+                          class="logistics-node flow-card"
+                          [attr.data-flow-id]="node.id"
+                          [class.cart-node]="node.variant === 'cart'"
+                          [class.pallet-node]="node.variant === 'pallet'"
+                          [class.truck-node]="node.variant === 'truck'"
+                        >
+                          <span
+                            *ngIf="node.variant !== 'pallet'"
+                            class="logistics-icon material-symbols-outlined"
+                            aria-hidden="true"
+                          >
+                            {{ node.icon }}
+                          </span>
+                          <span *ngIf="node.variant === 'pallet'" class="pallet-crates" aria-hidden="true">
+                            <span></span><span></span><span></span><span></span><span></span>
+                          </span>
+                          <strong>{{ node.title }}</strong>
+                          <small *ngIf="node.subtitle">{{ node.subtitle }}</small>
+                        </div>
+                      </ng-container>
+
+                      <span
+                        class="flow-line"
+                        *ngIf="nodeIndex < row.nodes.length - 1"
+                        aria-hidden="true"
+                      ></span>
+                    </ng-container>
+                  </div>
+
+                  <div
+                    class="flow-row-turn"
+                    *ngIf="rowIndex < previewFlowRows.length - 1"
+                    [class.right-turn]="row.turnSide === 'right'"
+                    [class.left-turn]="row.turnSide === 'left'"
+                    aria-hidden="true"
+                  >
+                    <span></span>
+                  </div>
+                </div>
+              </ng-container>
+            </div>
+
+          </div>
+
+          <div class="preview-footer">
+            <p
+              class="preview-action-message"
+              [class.error]="previewActionMessageType === 'error'"
+              *ngIf="previewActionMessage"
+            >
+              {{ previewActionMessage }}
+            </p>
+
+            <div class="preview-footer-actions">
+              <button type="button" class="secondary-button preview-save-button" (click)="savePreview()">
+                <span class="material-symbols-outlined" aria-hidden="true">save</span>
+                Save Preview
+              </button>
+              <button type="button" class="save-button preview-workflow-button" (click)="saveWorkflow()">
+                <span class="material-symbols-outlined" aria-hidden="true">task_alt</span>
+                Save Workflow
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
 </section>
 
+<div *ngIf="isChildDetailsOpen" class="preview-popup-backdrop">
+  <div class="preview-child-modal" role="dialog" aria-modal="true" aria-labelledby="previewChildTitle">
+    <div class="preview-popup-header">
+      <div>
+        <h3 id="previewChildTitle">Child Parts</h3>
+        <p>{{ previewPartNumber }} BOM</p>
+      </div>
+      <button type="button" class="icon-close-button" aria-label="Close child details" (click)="closeChildDetails()">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+
+    <div class="preview-child-summary">
+      <span class="material-symbols-outlined" aria-hidden="true">extension</span>
+      <strong>{{ previewChildSummary }}</strong>
+      <small>{{ previewWorkOrderNumber }}</small>
+    </div>
+
+    <div class="preview-child-table" *ngIf="bomChildren.length > 0; else noPreviewChildren">
+      <table>
+        <thead>
+          <tr>
+            <th>Child PN</th>
+            <th>Description</th>
+            <th>Station</th>
+            <th>Item Type</th>
+            <th>PN Type</th>
+            <th>Qty</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let child of bomChildren">
+            <td>{{ child.son_pn }}</td>
+            <td>{{ child.son_description }}</td>
+            <td>{{ child.station_code }} - {{ child.station_name }}</td>
+            <td>{{ child.item_type }}</td>
+            <td>{{ child.pn_type }}</td>
+            <td>{{ child.qty }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ng-template #noPreviewChildren>
+      <div class="preview-empty-popup">
+        <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+        <strong>No BOM childs found.</strong>
+      </div>
+    </ng-template>
+  </div>
+</div>
+
+<div *ngIf="activePreviewStation as station" class="preview-popup-backdrop station-popup-backdrop">
+  <div class="preview-station-modal" role="dialog" aria-modal="true" aria-labelledby="previewStationTitle">
+    <div class="station-modal-top">
+      <span class="station-modal-icon material-symbols-outlined" aria-hidden="true">{{ station.icon }}</span>
+      <div>
+        <h3 id="previewStationTitle">{{ station.station_name }}</h3>
+        <span class="status-pill in-progress">In Progress</span>
+      </div>
+      <button type="button" class="icon-close-button" aria-label="Close station details" (click)="closePreviewStationDetails()">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+
+    <div class="station-progress">
+      <span [style.width.%]="activePreviewStationProgress"></span>
+      <strong>{{ activePreviewStationProgress }}%</strong>
+    </div>
+
+    <dl class="station-detail-list">
+      <div>
+        <dt>Task ID</dt>
+        <dd>TSK-{{ station.station_code }}</dd>
+      </div>
+      <div>
+        <dt>Work Order</dt>
+        <dd>{{ previewWorkOrderNumber }}</dd>
+      </div>
+      <div>
+        <dt>Station</dt>
+        <dd>{{ station.station_code }} - {{ station.station_name }}</dd>
+      </div>
+      <div>
+        <dt>Operator</dt>
+        <dd>Operator / Technician</dd>
+      </div>
+      <div>
+        <dt>Sample</dt>
+        <dd>{{ station.sample_mode }}</dd>
+      </div>
+      <div>
+        <dt>Report</dt>
+        <dd>{{ station.report_mode }}</dd>
+      </div>
+      <div>
+        <dt>Status</dt>
+        <dd><span class="status-pill in-progress">In Progress</span></dd>
+      </div>
+    </dl>
+
+    <div class="station-task-section">
+      <h4>Task Steps</h4>
+      <div
+        class="station-task-row"
+        *ngFor="let task of previewTaskLabels; let taskIndex = index"
+        [class.completed]="getPreviewTaskStatus(taskIndex) === 'Completed'"
+        [class.in-progress]="getPreviewTaskStatus(taskIndex) === 'In Progress'"
+        [class.pending]="getPreviewTaskStatus(taskIndex) === 'Pending'"
+      >
+        <span class="material-symbols-outlined" aria-hidden="true">
+          {{ getPreviewTaskStatus(taskIndex) === 'Completed' ? 'check_circle' : (getPreviewTaskStatus(taskIndex) === 'In Progress' ? 'settings' : 'hourglass_empty') }}
+        </span>
+        <strong>{{ task }}</strong>
+        <small>{{ getPreviewTaskStatus(taskIndex) }}</small>
+      </div>
+    </div>
+
+    <div class="station-rules-section">
+      <h4>Rules / Remarks</h4>
+      <div class="station-rule-list" *ngIf="activePreviewStationRules.length > 0; else noStationRules">
+        <p *ngFor="let rule of activePreviewStationRules">{{ rule }}</p>
+      </div>
+      <ng-template #noStationRules>
+        <p class="station-note">Station ready for {{ previewPartNumber }}.</p>
+      </ng-template>
+    </div>
+
+    <div class="station-modal-actions">
+      <button type="button" class="secondary-button" (click)="closePreviewStationDetails()">
+        <span class="material-symbols-outlined" aria-hidden="true">pause</span>
+        Pause
+      </button>
+      <button type="button" class="save-button" (click)="closePreviewStationDetails()">
+        <span class="material-symbols-outlined" aria-hidden="true">check</span>
+        Complete Task
+      </button>
+    </div>
+  </div>
+</div>
+
+<div *ngIf="isStationRulesModalOpen" class="rules-backdrop">
+  <div class="rules-modal" role="dialog" aria-modal="true" aria-labelledby="stationRulesTitle">
+    <div class="rules-header">
+      <div>
+        <h3 id="stationRulesTitle">Station Rules</h3>
+        <p>{{ activeRulesStationCode }} - {{ activeRulesStationName }}</p>
+      </div>
+      <button type="button" class="secondary-button" (click)="closeStationRulesModal()">Close</button>
+    </div>
+
+    <div class="rules-body" *ngIf="!isEditingStationRules">
+      <div class="rules-empty" *ngIf="activeStationRules.length === 0">
+        No rules set for this station.
+      </div>
+
+      <ol class="rules-list" *ngIf="activeStationRules.length > 0">
+        <li *ngFor="let rule of activeStationRules">{{ rule }}</li>
+      </ol>
+    </div>
+
+    <div class="rules-editor" *ngIf="isEditingStationRules">
+      <label for="stationRulesDraft">Rules</label>
+      <textarea id="stationRulesDraft" [(ngModel)]="stationRulesDraft" rows="7" placeholder="One rule per line"></textarea>
+    </div>
+
+    <div class="rules-actions">
+      <button *ngIf="!isEditingStationRules" type="button" class="secondary-button" (click)="openRulesEditor()">
+        Edit Rules
+      </button>
+      <button *ngIf="isEditingStationRules" type="button" class="save-button" (click)="saveStationRules()">
+        Save Rules
+      </button>
+    </div>
+  </div>
+</div>
