@@ -27,7 +27,9 @@
           class="pane-signal"
           [class.saved]="isPaneSaved(i)"
           [attr.aria-label]="isPaneSaved(i) ? tab.label + ' saved' : tab.label + ' not saved'"
-        ></span>
+        >
+          <span *ngIf="isPaneSaved(i)" class="material-symbols-outlined" aria-hidden="true">check</span>
+        </span>
       </button>
     </div>
 
@@ -119,13 +121,16 @@
               </fieldset>
 
               <div class="form-field">
-                <label for="workflowSnType">SN Type</label>
-                <input
+                <label for="workflowSnType">Serial Pattern</label>
+                <select
                   id="workflowSnType"
-                  type="text"
                   formControlName="sn_type_name"
-                  placeholder="Enter SN Type (must exist)"
-                />
+                >
+                  <option value="">Select Serial Pattern</option>
+                  <option *ngFor="let snType of snTypes" [value]="snType.sn_type_name">
+                    {{ snType.sn_type_name }} ({{ snType.number_of_fields || snType.field_count || 0 }} fields)
+                  </option>
+                </select>
               </div>
 
               <div class="form-field">
@@ -189,9 +194,9 @@
 
               <div class="form-field">
                 <label for="workflowSite">Site</label>
-                <select id="workflowSite" formControlName="site_id">
+                <select id="workflowSite" formControlName="site_id" [disabled]="!workOrderForm.get('plant')?.value">
                   <option [ngValue]="null">Select Site</option>
-                  <option *ngFor="let site of sites" [ngValue]="site.id">{{ site.name }}</option>
+                  <option *ngFor="let site of getSiteOptionsForSelectedPlant()" [ngValue]="site.id">{{ site.name }}</option>
                 </select>
                 <small
                   class="field-error"
@@ -203,18 +208,26 @@
 
               <div class="form-field">
                 <label for="workflowDueDate">Due Date</label>
-                <input id="workflowDueDate" type="date" formControlName="due_date" />
+                <input id="workflowDueDate" type="date" formControlName="due_date" [attr.min]="minDueDate" />
                 <small
                   class="field-error"
                   *ngIf="workOrderForm.get('due_date')?.touched && workOrderForm.get('due_date')?.invalid"
                 >
-                  Required
+                  {{ workOrderForm.get('due_date')?.hasError('futureDate') ? 'Select a future date' : 'Required' }}
                 </small>
               </div>
 
               <div class="form-field">
                 <label for="workflowQuantity">Quantity</label>
-                <input id="workflowQuantity" type="number" min="1" formControlName="qty" />
+                <input
+                  id="workflowQuantity"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  formControlName="qty"
+                  (keydown)="allowNumberOnly($event)"
+                  (input)="sanitizeNumberControl(workOrderForm, 'qty')"
+                />
                 <small
                   class="field-error"
                   *ngIf="workOrderForm.get('qty')?.touched && workOrderForm.get('qty')?.invalid"
@@ -238,7 +251,7 @@
 
               <div class="form-field">
                 <label for="workflowWorkOrderPn">PN</label>
-                <input id="workflowWorkOrderPn" type="text" formControlName="pn" />
+                <input id="workflowWorkOrderPn" type="text" formControlName="pn" readonly />
                 <small class="field-error" *ngIf="workOrderForm.get('pn')?.touched && workOrderForm.get('pn')?.invalid">
                   Required
                 </small>
@@ -277,7 +290,8 @@
         <div *ngIf="i === 2" class="routing-panel">
           <div class="routing-panel-body">
             <div class="routing-heading">
-              Route for PN: {{ routingPartNumber || '-' }}, Description:- {{ routingDescription || '-' }}
+              Route for PN: {{ routingPartNumber || '-' }}, Description:- {{ routingDescription || '-' }},
+              Work Order:- {{ previewWorkOrderNumber }}
             </div>
 
             <p *ngIf="routingErrorMessage" class="message error">{{ routingErrorMessage }}</p>
@@ -291,6 +305,7 @@
                     <th>Station</th>
                     <th>Sample</th>
                     <th>Report</th>
+                    <th>Station Rule</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -308,36 +323,32 @@
                     <td>{{ step.station_name }}</td>
                     <td>{{ step.sample_mode }}</td>
                     <td>{{ step.report_mode }}</td>
+                    <td>
+                      <button type="button" class="rule-link-button" (click)="openRoutingStationRules(step)">
+                        {{ getStationRuleLabel(step) }}
+                      </button>
+                    </td>
                     <td class="routing-actions-cell">
                       <button type="button" class="secondary-button" (click)="editRoutingStep(step)">Edit</button>
                       <button type="button" class="danger-button" (click)="deleteRoutingStep(step)">Delete</button>
                     </td>
                   </tr>
                   <tr *ngIf="routeSteps.length === 0">
-                    <td colspan="6" class="routing-empty">No route stations found.</td>
+                    <td colspan="7" class="routing-empty">No route stations found.</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
 
-          <div class="routing-footer" [class.editor-open]="isRoutingStepEditorOpen">
+          <div class="routing-footer">
             <div class="routing-footer-left">
-              <button
-                *ngIf="!isRoutingStepEditorOpen"
-                type="button"
-                class="primary-button"
-                (click)="openRoutingStepEditor()"
-              >
-                Add New
-              </button>
-
-              <form *ngIf="isRoutingStepEditorOpen" class="routing-step-form" [formGroup]="routingStepForm">
+              <form class="routing-step-form" [formGroup]="routingStepForm">
                 <div class="form-field">
                   <label for="workflowRoutingStation">Station</label>
                   <select id="workflowRoutingStation" formControlName="station_code">
                     <option value="" disabled>Select station</option>
-                    <option *ngFor="let station of stations" [value]="station.station_code">
+                    <option *ngFor="let station of getAvailableRoutingStations()" [value]="station.station_code">
                       {{ station.station_code }} - {{ station.station_desc }}
                     </option>
                   </select>
@@ -356,12 +367,20 @@
                     <option *ngFor="let mode of reportModeOptions" [value]="mode">{{ mode }}</option>
                   </select>
                 </div>
+
+                <button
+                  type="button"
+                  class="primary-button inline-add-button"
+                  [disabled]="isRoutingSaving"
+                  (click)="saveRoutingStep()"
+                >
+                  {{ isRoutingEditMode ? 'Update' : 'Add' }}
+                </button>
               </form>
             </div>
 
             <div class="routing-footer-actions">
               <button
-                *ngIf="!isRoutingStepEditorOpen"
                 type="button"
                 class="save-childs-button"
                 [class.saved]="isRoutingChildrenSaved"
@@ -371,21 +390,11 @@
                 {{ isRoutingChildrenSaved ? 'Saved' : 'Save Routing' }}
               </button>
               <button
-                *ngIf="!isRoutingStepEditorOpen"
                 type="button"
                 class="secondary-button"
                 (click)="toggleRoutingHistory()"
               >
                 {{ includeRoutingHistory ? 'Hide History' : 'Show History' }}
-              </button>
-              <button
-                *ngIf="isRoutingStepEditorOpen"
-                type="button"
-                class="save-button"
-                [disabled]="isRoutingSaving"
-                (click)="saveRoutingStep()"
-              >
-                {{ isRoutingSaving ? 'Saving...' : 'Save' }}
               </button>
             </div>
           </div>
@@ -437,7 +446,7 @@
                   <tr>
                     <th>PN</th>
                     <th>Description</th>
-                    <th>Station</th>
+                    <th>Assembly Station</th>
                     <th>Item Type</th>
                     <th>PN Type</th>
                     <th>Qty</th>
@@ -448,7 +457,7 @@
                   <tr *ngFor="let child of bomChildren">
                     <td>{{ child.son_pn }}</td>
                     <td>{{ child.son_description }}</td>
-                    <td>{{ child.station_code }} - {{ child.station_name }}</td>
+                    <td>{{ child.station_code ? child.station_code + ' - ' + child.station_name : '-' }}</td>
                     <td>{{ child.item_type }}</td>
                     <td>{{ child.pn_type }}</td>
                     <td>{{ child.qty }}</td>
@@ -464,18 +473,9 @@
             </div>
           </div>
 
-          <div class="bom-footer" [class.editor-open]="isBomChildEditorOpen">
+          <div class="bom-footer">
             <div class="bom-footer-left">
-              <button
-                *ngIf="!isBomChildEditorOpen"
-                type="button"
-                class="primary-button"
-                (click)="openBomChildEditor()"
-              >
-                Add New Son
-              </button>
-
-              <form *ngIf="isBomChildEditorOpen" class="bom-child-form" [formGroup]="bomChildForm">
+              <form class="bom-child-form" [formGroup]="bomChildForm">
                 <div class="form-field">
                   <label for="workflowBomSonPn">Son Part Number</label>
                   <input id="workflowBomSonPn" type="text" formControlName="son_pn" placeholder="Type son PN" />
@@ -483,52 +483,57 @@
 
                 <div class="form-field">
                   <label for="workflowBomQty">Qty</label>
-                  <input id="workflowBomQty" type="number" min="1" formControlName="qty" />
+                  <input
+                    id="workflowBomQty"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    formControlName="qty"
+                    (keydown)="allowNumberOnly($event)"
+                    (input)="sanitizeNumberControl(bomChildForm, 'qty')"
+                  />
                 </div>
 
                 <div class="form-field">
-                  <label for="workflowBomStation">Station</label>
-                  <select
-                    id="workflowBomStation"
-                    formControlName="station_code"
-                    (change)="onBomStationChange($any($event.target).value)"
-                  >
-                    <option value="" disabled>Select station</option>
-                    <option *ngFor="let station of stations" [value]="station.station_code">
-                      {{ station.station_code }} - {{ station.station_desc }}
+                  <label for="workflowBomStation">Assembly Station</label>
+                  <select id="workflowBomStation" formControlName="station_code">
+                    <option value="">Optional</option>
+                    <option *ngFor="let station of getAssemblyStationOptions()" [value]="station.station_code">
+                      {{ station.station_code }} - {{ station.station_name }}
                     </option>
                   </select>
+                  <small class="field-hint" *ngIf="getAssemblyStationOptions().length === 0">
+                    Save routing to use assembly stations.
+                  </small>
                 </div>
+
+                <button
+                  type="button"
+                  class="primary-button inline-add-button"
+                  [disabled]="isBomChildSaving"
+                  (click)="saveBomChild()"
+                >
+                  {{ isBomEditMode ? 'Update' : 'Add' }}
+                </button>
               </form>
             </div>
 
             <div class="bom-footer-actions">
               <button
-                *ngIf="!isBomChildEditorOpen"
                 type="button"
                 class="save-childs-button"
                 [class.saved]="isBomChildrenSaved"
                 [disabled]="bomChildren.length === 0"
                 (click)="saveBomChildren()"
               >
-                {{ isBomChildrenSaved ? 'Saved' : 'Save Childs' }}
+                {{ isBomChildrenSaved ? 'Saved' : 'Save BOM' }}
               </button>
               <button
-                *ngIf="!isBomChildEditorOpen"
                 type="button"
                 class="secondary-button"
                 (click)="toggleBomHistory()"
               >
                 {{ includeBomHistory ? 'Hide History' : 'Show History' }}
-              </button>
-              <button
-                *ngIf="isBomChildEditorOpen"
-                type="button"
-                class="save-button"
-                [disabled]="isBomChildSaving"
-                (click)="saveBomChild()"
-              >
-                {{ isBomChildSaving ? 'Saving...' : 'Save' }}
               </button>
             </div>
           </div>
@@ -639,13 +644,13 @@
                 <div class="preview-node hierarchy-node box-node">
                   <span class="preview-node-icon box-icon material-symbols-outlined" aria-hidden="true">inventory_2</span>
                   <span class="preview-node-copy">
-                    <strong>Box</strong>
+                    <strong>SN Values</strong>
                     <small>{{ previewBoxLeft }}</small>
                   </span>
                 </div>
 
                 <div class="preview-node hierarchy-node product-node">
-                  <span class="product-title">Product Photo</span>
+                  <span class="product-title">Product</span>
                   <span class="product-visual" aria-hidden="true">
                     <span class="product-shaft"></span>
                     <span class="product-hub left"></span>
@@ -658,7 +663,7 @@
                 <div class="preview-node hierarchy-node box-node">
                   <span class="preview-node-icon box-icon material-symbols-outlined" aria-hidden="true">inventory_2</span>
                   <span class="preview-node-copy">
-                    <strong>Box</strong>
+                    <strong>Assembled parts</strong>
                     <small>{{ previewBoxRight }}</small>
                   </span>
                 </div>
@@ -712,15 +717,18 @@
                           [attr.data-flow-id]="node.id"
                           [class.station-diamond]="node.station?.sample_mode === 'Sample'"
                           [class.station-square]="node.station?.sample_mode !== 'Sample'"
-                          [class.in-progress]="node.station?.status === 'In Progress'"
+                          [class.selected]="activePreviewStation?.id === node.station?.id"
+                          [class.completed]="node.station?.status === 'Completed'"
+                          [class.paused]="node.station?.status === 'Paused'"
                           [class.pending]="node.station?.status === 'Pending'"
-                          (click)="node.station ? openPreviewStationDetails(node.station) : null"
+                          (pointerdown)="openPreviewStationDetails($event, node.station)"
+                          (click)="openPreviewStationDetails($event, node.station)"
                         >
                           <span class="station-node-inner">
                             <span class="station-icon material-symbols-outlined" aria-hidden="true">
                               {{ node.station?.icon }}
                             </span>
-                            <strong>Station {{ node.station?.flowIndex }}</strong>
+                            <strong>{{ node.station?.station_name || node.station?.station_code }}</strong>
                             <small [class]="node.station ? getPreviewStatusClass(node.station.status) : ''">
                               {{ node.station?.status }}
                             </small>
@@ -784,26 +792,6 @@
 
           </div>
 
-          <div class="preview-footer">
-            <p
-              class="preview-action-message"
-              [class.error]="previewActionMessageType === 'error'"
-              *ngIf="previewActionMessage"
-            >
-              {{ previewActionMessage }}
-            </p>
-
-            <div class="preview-footer-actions">
-              <button type="button" class="secondary-button preview-save-button" (click)="savePreview()">
-                <span class="material-symbols-outlined" aria-hidden="true">save</span>
-                Save Preview
-              </button>
-              <button type="button" class="save-button preview-workflow-button" (click)="saveWorkflow()">
-                <span class="material-symbols-outlined" aria-hidden="true">task_alt</span>
-                Save Workflow
-              </button>
-            </div>
-          </div>
         </div>
       </section>
     </div>
@@ -865,10 +853,13 @@
 <div *ngIf="activePreviewStation as station" class="preview-popup-backdrop station-popup-backdrop">
   <div class="preview-station-modal" role="dialog" aria-modal="true" aria-labelledby="previewStationTitle">
     <div class="station-modal-top">
-      <span class="station-modal-icon material-symbols-outlined" aria-hidden="true">{{ station.icon }}</span>
+      <span class="station-modal-icon-wrap" aria-hidden="true">
+        <span class="station-modal-icon material-symbols-outlined">{{ station.icon }}</span>
+        <span class="station-modal-gear material-symbols-outlined">settings</span>
+      </span>
       <div>
         <h3 id="previewStationTitle">{{ station.station_name }}</h3>
-        <span class="status-pill in-progress">In Progress</span>
+        <span class="status-pill" [ngClass]="getPreviewStatusClass(station.status)">{{ station.status }}</span>
       </div>
       <button type="button" class="icon-close-button" aria-label="Close station details" (click)="closePreviewStationDetails()">
         <span class="material-symbols-outlined" aria-hidden="true">close</span>
@@ -883,7 +874,7 @@
     <dl class="station-detail-list">
       <div>
         <dt>Task ID</dt>
-        <dd>TSK-{{ station.station_code }}</dd>
+        <dd>{{ getPreviewTaskId(station) }}</dd>
       </div>
       <div>
         <dt>Work Order</dt>
@@ -895,7 +886,11 @@
       </div>
       <div>
         <dt>Operator</dt>
-        <dd>Operator / Technician</dd>
+        <dd>John Doe</dd>
+      </div>
+      <div>
+        <dt>Start Time</dt>
+        <dd>{{ previewStationStartTime }}</dd>
       </div>
       <div>
         <dt>Sample</dt>
@@ -907,7 +902,7 @@
       </div>
       <div>
         <dt>Status</dt>
-        <dd><span class="status-pill in-progress">In Progress</span></dd>
+        <dd><span class="status-pill" [ngClass]="getPreviewStatusClass(station.status)">{{ station.status }}</span></dd>
       </div>
     </dl>
 
@@ -929,21 +924,21 @@
     </div>
 
     <div class="station-rules-section">
-      <h4>Rules / Remarks</h4>
+      <h4>Notes / Remarks</h4>
       <div class="station-rule-list" *ngIf="activePreviewStationRules.length > 0; else noStationRules">
         <p *ngFor="let rule of activePreviewStationRules">{{ rule }}</p>
       </div>
       <ng-template #noStationRules>
-        <p class="station-note">Station ready for {{ previewPartNumber }}.</p>
+        <p class="station-note">{{ getActivePreviewStationNote() }}</p>
       </ng-template>
     </div>
 
     <div class="station-modal-actions">
-      <button type="button" class="secondary-button" (click)="closePreviewStationDetails()">
+      <button type="button" class="secondary-button pause-task-button" (click)="pausePreviewStation()">
         <span class="material-symbols-outlined" aria-hidden="true">pause</span>
         Pause
       </button>
-      <button type="button" class="save-button" (click)="closePreviewStationDetails()">
+      <button type="button" class="save-button complete-task-button" (click)="completePreviewStation()">
         <span class="material-symbols-outlined" aria-hidden="true">check</span>
         Complete Task
       </button>

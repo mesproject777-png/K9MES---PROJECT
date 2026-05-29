@@ -11,7 +11,7 @@ import {
   ViewChild,
   ViewChildren,
 } from '@angular/core';
-import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
 import { environment } from '../../../environments/environment';
 
 type WorkflowTab = {
@@ -27,9 +27,17 @@ type PnType = {
   status: string;
 };
 
+type SnType = {
+  id: number;
+  sn_type_name: string;
+  number_of_fields?: number;
+  field_count?: number;
+};
+
 type Site = {
   id: number;
   name: string;
+  plant?: string;
 };
 
 type StationOption = {
@@ -86,7 +94,7 @@ type BomHistoryRow = {
   changed_at: string;
 };
 
-type PreviewStatus = 'Completed' | 'In Progress' | 'Pending';
+type PreviewStatus = 'Completed' | 'In Progress' | 'Pending' | 'Paused';
 
 type PreviewStationNode = RoutingStepRow & {
   flowIndex: number;
@@ -127,6 +135,7 @@ type SavedWorkflowPreview = {
 })
 export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDestroy {
   private readonly pnTypesApiUrl = `${environment.apiUrl}/api/users/pn-types`;
+  private readonly snTypesApiUrl = `${environment.apiUrl}/api/sn-types`;
   private readonly sitesApiUrl = `${environment.apiUrl}/api/sites`;
   private readonly stationsApiUrl = `${environment.apiUrl}/api/stations`;
   private readonly bomChildrenStorageKey = 'k9:workflowBomChildren';
@@ -142,13 +151,23 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   ];
 
   readonly plantOptions = ['Tirupati', 'Bangalore', 'Hyderabad', 'Chennai', 'Pune', 'Mumbai'];
+  private readonly fallbackSitesByPlant: Record<string, string[]> = {
+    Tirupati: ['Tirupati Main Site', 'Tirupati Assembly Site', 'Tirupati Quality Site'],
+    Bangalore: ['Bangalore Main Site', 'Bangalore Assembly Site', 'Bangalore Quality Site'],
+    Hyderabad: ['Hyderabad Main Site', 'Hyderabad Assembly Site', 'Hyderabad Quality Site'],
+    Chennai: ['Chennai Main Site', 'Chennai Assembly Site', 'Chennai Quality Site'],
+    Pune: ['Pune Main Site', 'Pune Assembly Site', 'Pune Quality Site'],
+    Mumbai: ['Mumbai Main Site', 'Mumbai Assembly Site', 'Mumbai Quality Site'],
+  };
   readonly workOrderStatusOptions = ['Allocated', 'Planned', 'Released', 'Cancelled', 'Closed'];
   readonly sampleModeOptions: Array<'Full' | 'Sample'> = ['Full', 'Sample'];
   readonly reportModeOptions: Array<'Regular' | 'Auto Only'> = ['Regular', 'Auto Only'];
   readonly previewTaskLabels = ['Scan Part / Box', 'Connect Interface', 'Run Diagnostic Test', 'Verify Results', 'Save & Submit'];
+  readonly minDueDate = this.getDateInputValue(1);
 
   activeTabIndex = 0;
   pnTypes: PnType[] = [];
+  snTypes: SnType[] = [];
   sites: Site[] = [];
   stations: StationOption[] = [];
   partNumberForm: FormGroup;
@@ -180,6 +199,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   isBomEditMode = false;
   isBomChildrenSaved = false;
   isBomChildSaving = false;
+  isPreviewSaved = false;
   showSavePreviousWorkPopup = false;
   savePreviousWorkPopupLeft = 50;
   editingBomChildId: number | null = null;
@@ -189,6 +209,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   activeRulesStationName = '';
   stationRulesDraft = '';
   stationRulesByStation: Record<string, string[]> = {};
+  previewStationStatusById: Record<number, PreviewStatus> = {};
   isChildDetailsOpen = false;
   activePreviewStation: PreviewStationNode | null = null;
   previewActionMessage = '';
@@ -215,8 +236,6 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     private http: HttpClient,
     private cdr: ChangeDetectorRef
   ) {
-    const today = new Date().toISOString().slice(0, 10);
-
     this.partNumberForm = this.fb.group({
       pn: ['', Validators.required],
       description: ['', Validators.required],
@@ -230,8 +249,8 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       wo: ['', Validators.required],
       plant: [null, Validators.required],
       site_id: [null, Validators.required],
-      due_date: [today, Validators.required],
-      qty: [null, [Validators.required, Validators.min(1)]],
+      due_date: [this.minDueDate, [Validators.required, this.futureDateValidator.bind(this)]],
+      qty: [null, [Validators.required, Validators.min(1), Validators.pattern(/^[0-9]+$/)]],
       status: ['Released', Validators.required],
       pn: ['', Validators.required],
       revision: ['', Validators.required],
@@ -246,11 +265,12 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
 
     this.bomChildForm = this.fb.group({
       son_pn: ['', Validators.required],
-      qty: [1, [Validators.required, Validators.min(1)]],
-      station_code: ['', Validators.required],
+      qty: [1, [Validators.required, Validators.min(1), Validators.pattern(/^[0-9]+$/)]],
+      station_code: [''],
     });
 
     this.loadPnTypes();
+    this.loadSnTypes();
     this.loadSites();
     this.loadStations();
     this.loadStationRules();
@@ -275,6 +295,12 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.workOrderForm.valueChanges.subscribe(() => {
       if (!this.isRestoringSavedPreview) {
         this.isWorkOrderSaved = false;
+      }
+    });
+
+    this.workOrderForm.get('plant')?.valueChanges.subscribe((plant) => {
+      if (!this.isRestoringSavedPreview) {
+        this.syncSelectedSiteWithPlant(String(plant ?? ''));
       }
     });
   }
@@ -336,6 +362,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
 
     if (index === 4) {
+      this.isPreviewSaved = true;
       this.previewFlowCardsPerRow = this.getPreviewFlowCardsPerRow();
       this.queuePreviewConnectorRefresh();
     }
@@ -361,6 +388,8 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
         return this.isRoutingChildrenSaved;
       case 3:
         return this.isBomChildrenSaved;
+      case 4:
+        return this.isPreviewSaved;
       default:
         return false;
     }
@@ -419,6 +448,28 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.advanceToNextPane(2);
   }
 
+  allowNumberOnly(event: KeyboardEvent): void {
+    const allowedKeys = ['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+
+    if (allowedKeys.includes(event.key) || event.ctrlKey || event.metaKey) {
+      return;
+    }
+
+    if (!/^\d$/.test(event.key)) {
+      event.preventDefault();
+    }
+  }
+
+  sanitizeNumberControl(form: FormGroup, controlName: string): void {
+    const control = form.get(controlName);
+    const currentValue = String(control?.value ?? '');
+    const cleanedValue = currentValue.replace(/\D/g, '');
+
+    if (currentValue !== cleanedValue) {
+      control?.setValue(cleanedValue);
+    }
+  }
+
   get routingPartNumber(): string {
     return this.linkedRoutingPartNumber || String(this.partNumberForm.get('pn')?.value ?? '').trim();
   }
@@ -442,7 +493,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       return;
     }
 
-    if (!this.stations.length) {
+    if (!this.getAvailableRoutingStations().length) {
       this.routingErrorMessage = 'No active stations available.';
       this.scheduleClearMessages();
       return;
@@ -474,7 +525,9 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   saveRoutingStep(): void {
     this.routingErrorMessage = '';
 
-    if (!this.isRoutingStepEditorOpen) {
+    if (!this.routingPartNumber) {
+      this.routingErrorMessage = 'Please enter and save Part Number first.';
+      this.scheduleClearMessages();
       return;
     }
 
@@ -490,6 +543,17 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
 
     if (!selectedStation) {
       this.routingErrorMessage = 'Please select a valid station.';
+      this.scheduleClearMessages();
+      return;
+    }
+
+    const isDuplicateStation = this.routeSteps.some((step) =>
+      step.station_code === selectedStation.station_code &&
+      (!this.isRoutingEditMode || step.id !== this.editingRoutingStepId)
+    );
+
+    if (isDuplicateStation) {
+      this.routingErrorMessage = 'This station is already added to routing.';
       this.scheduleClearMessages();
       return;
     }
@@ -535,6 +599,28 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.closeRoutingStepEditor();
   }
 
+  getAvailableRoutingStations(): StationOption[] {
+    const selectedStationCodes = new Set(
+      this.routeSteps
+        .filter((step) => !this.isRoutingEditMode || step.id !== this.editingRoutingStepId)
+        .map((step) => step.station_code)
+    );
+
+    return this.stations.filter((station) => !selectedStationCodes.has(station.station_code));
+  }
+
+  getStationRuleLabel(step: RoutingStepRow): string {
+    return this.getStationRuleText(step.station_code);
+  }
+
+  openRoutingStationRules(step: RoutingStepRow): void {
+    this.activeRulesStationCode = step.station_code;
+    this.activeRulesStationName = step.station_name;
+    this.stationRulesDraft = (this.stationRulesByStation[step.station_code] || [this.getStationRuleText(step.station_code)]).join('\n');
+    this.isEditingStationRules = false;
+    this.isStationRulesModalOpen = true;
+  }
+
   deleteRoutingStep(step: RoutingStepRow): void {
     this.isRoutingChildrenSaved = false;
     this.routeSteps = this.routeSteps.filter((routeStep) => routeStep.id !== step.id);
@@ -569,10 +655,6 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   saveRoutingChildren(): void {
     this.routingErrorMessage = '';
 
-    if (this.isRoutingStepEditorOpen) {
-      return;
-    }
-
     if (this.routeSteps.length === 0) {
       this.routingErrorMessage = 'Please add at least one station before saving routing.';
       this.scheduleClearMessages();
@@ -593,7 +675,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
 
   get previewSiteName(): string {
     const siteId = Number(this.workOrderForm.get('site_id')?.value);
-    const selectedSite = this.sites.find((site) => Number(site.id) === siteId);
+    const selectedSite = this.getSiteOptionsForSelectedPlant().find((site) => Number(site.id) === siteId);
     return selectedSite?.name || 'Select Site';
   }
 
@@ -633,12 +715,22 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     return Number.isFinite(qty) && qty > 0 ? `Qty ${qty}` : 'BX-50002';
   }
 
+  get previewStationStartTime(): string {
+    return new Date().toLocaleString([], {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
   get previewStations(): PreviewStationNode[] {
     return this.routeSteps.map((step, index) => ({
       ...step,
       flowIndex: index + 1,
       icon: this.getPreviewStationIcon(index, step),
-      status: this.getPreviewStationStatus(index),
+      status: this.getPreviewStationStatus(index, step),
     }));
   }
 
@@ -719,9 +811,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       return 0;
     }
 
-    const stationIndex = Math.max(this.activePreviewStation.flowIndex, 1);
-    const totalStations = Math.max(this.previewStations.length, 1);
-    return Math.min(95, Math.max(35, Math.round((stationIndex / totalStations) * 100)));
+    return 60;
   }
 
   get activePreviewStationRules(): string[] {
@@ -732,6 +822,27 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     return this.stationRulesByStation[this.activePreviewStation.station_code] || [];
   }
 
+  getActivePreviewStationNote(): string {
+    if (!this.activePreviewStation) {
+      return '';
+    }
+
+    return `Running ${this.activePreviewStation.station_name || 'interface'} communication test...`;
+  }
+
+  getPreviewTaskId(station: PreviewStationNode): string {
+    return `TSK-${String(station.flowIndex).padStart(4, '0')}`;
+  }
+
+  getSiteOptionsForSelectedPlant(): Site[] {
+    const selectedPlant = String(this.workOrderForm.get('plant')?.value ?? '');
+    return this.getSiteOptionsForPlant(selectedPlant);
+  }
+
+  getAssemblyStationOptions(): RoutingStepRow[] {
+    return this.isRoutingChildrenSaved ? this.routeSteps : [];
+  }
+
   openChildDetails(): void {
     this.isChildDetailsOpen = true;
   }
@@ -740,12 +851,27 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.isChildDetailsOpen = false;
   }
 
-  openPreviewStationDetails(station: PreviewStationNode): void {
+  openPreviewStationDetails(event: Event, station?: PreviewStationNode | null): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!station) {
+      return;
+    }
+
     this.activePreviewStation = station;
   }
 
   closePreviewStationDetails(): void {
     this.activePreviewStation = null;
+  }
+
+  pausePreviewStation(): void {
+    this.setPreviewStationStatus('Paused');
+  }
+
+  completePreviewStation(): void {
+    this.setPreviewStationStatus('Completed');
   }
 
   getPreviewTaskStatus(index: number): PreviewStatus {
@@ -843,10 +969,6 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   saveBomChild(): void {
     this.bomErrorMessage = '';
 
-    if (!this.isBomChildEditorOpen) {
-      return;
-    }
-
     if (this.bomChildForm.invalid) {
       this.bomChildForm.markAllAsTouched();
       this.bomErrorMessage = 'Please fill all required BOM fields.';
@@ -855,10 +977,11 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
 
     const formValue = this.bomChildForm.value;
-    const selectedStation = this.stations.find((station) => station.station_code === formValue.station_code);
+    const stationCode = String(formValue.station_code ?? '').trim();
+    const selectedStation = this.getAssemblyStationOptions().find((station) => station.station_code === stationCode);
 
-    if (!selectedStation) {
-      this.bomErrorMessage = 'Please select a valid station.';
+    if (stationCode && !selectedStation) {
+      this.bomErrorMessage = 'Please select a valid assembly station.';
       this.scheduleClearMessages();
       return;
     }
@@ -875,8 +998,8 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
           ...previousChild,
           son_pn: String(formValue.son_pn).trim(),
           son_description: String(formValue.son_pn).trim(),
-          station_code: selectedStation.station_code,
-          station_name: selectedStation.station_desc,
+          station_code: selectedStation?.station_code || '',
+          station_name: selectedStation?.station_name || '',
           qty: Number(formValue.qty),
         };
         this.addBomHistory('Child updated', 'BOM child', previousChild.son_pn, String(formValue.son_pn).trim());
@@ -886,8 +1009,8 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
         id: this.nextBomChildId,
         son_pn: String(formValue.son_pn).trim(),
         son_description: String(formValue.son_pn).trim(),
-        station_code: selectedStation.station_code,
-        station_name: selectedStation.station_desc,
+        station_code: selectedStation?.station_code || '',
+        station_name: selectedStation?.station_name || '',
         item_type: 'Manufactured',
         pn_type: '-',
         qty: Number(formValue.qty),
@@ -921,12 +1044,8 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   saveBomChildren(): void {
     this.bomErrorMessage = '';
 
-    if (this.isBomChildEditorOpen) {
-      return;
-    }
-
     if (this.bomChildren.length === 0) {
-      this.bomErrorMessage = 'Please add at least one BOM child before saving childs.';
+      this.bomErrorMessage = 'Please add at least one BOM child before saving BOM.';
       this.scheduleClearMessages();
       return;
     }
@@ -938,15 +1057,16 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   onBomStationChange(stationCode: string): void {
     const selectedStation = this.stations.find((station) => station.station_code === stationCode);
 
-    if (!selectedStation) {
-      return;
+    if (selectedStation) {
+      this.openStationRulesModal(selectedStation);
     }
-
-    this.openStationRulesModal(selectedStation);
   }
 
   get activeStationRules(): string[] {
-    return this.stationRulesByStation[this.activeRulesStationCode] || [];
+    const configuredRules = this.stationRulesByStation[this.activeRulesStationCode] || [];
+    return configuredRules.length
+      ? configuredRules
+      : (this.activeRulesStationCode ? [this.getStationRuleText(this.activeRulesStationCode)] : []);
   }
 
   openRulesEditor(): void {
@@ -989,10 +1109,25 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     });
   }
 
+  private loadSnTypes(): void {
+    this.http.get<{ data: SnType[] } | SnType[]>(this.snTypesApiUrl).subscribe({
+      next: (response) => {
+        const types = Array.isArray(response) ? response : (response.data || []);
+        this.snTypes = types || [];
+      },
+      error: () => {
+        this.snTypes = [];
+        this.partNumberErrorMessage = 'Unable to load Serial Pattern values.';
+        this.scheduleClearMessages();
+      }
+    });
+  }
+
   private loadSites(): void {
     this.http.get<Site[]>(this.sitesApiUrl).subscribe({
       next: (sites) => {
         this.sites = sites || [];
+        this.syncSelectedSiteWithPlant(String(this.workOrderForm.get('plant')?.value ?? ''));
       },
       error: () => {
         this.sites = [];
@@ -1059,8 +1194,30 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.loadBomChildrenForCurrentPart();
   }
 
-  private getPreviewStationStatus(index: number): PreviewStatus {
+  private getPreviewStationStatus(index: number, step: RoutingStepRow): PreviewStatus {
+    const savedStatus = this.previewStationStatusById[step.id];
+    if (savedStatus) {
+      return savedStatus;
+    }
+
     return index === 0 ? 'In Progress' : 'Pending';
+  }
+
+  private setPreviewStationStatus(status: PreviewStatus): void {
+    if (!this.activePreviewStation) {
+      return;
+    }
+
+    this.previewStationStatusById = {
+      ...this.previewStationStatusById,
+      [this.activePreviewStation.id]: status,
+    };
+    this.activePreviewStation = {
+      ...this.activePreviewStation,
+      status,
+    };
+    this.queuePreviewConnectorRefresh();
+    this.closePreviewStationDetails();
   }
 
   private buildPreviewConnectorSignature(): string {
@@ -1255,6 +1412,55 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     });
   }
 
+  private getSiteOptionsForPlant(plant: string): Site[] {
+    if (!plant) {
+      return [];
+    }
+
+    const normalizedPlant = this.normalizeLookupValue(plant);
+    const matchedSites = this.sites.filter((site) =>
+      this.normalizeLookupValue(site.plant || site.name).includes(normalizedPlant)
+    );
+
+    if (matchedSites.length) {
+      return matchedSites;
+    }
+
+    return (this.fallbackSitesByPlant[plant] || []).map((name, index) => ({
+      id: this.getFallbackSiteId(plant, index),
+      name,
+      plant,
+    }));
+  }
+
+  private syncSelectedSiteWithPlant(plant: string): void {
+    const siteControl = this.workOrderForm.get('site_id');
+    const selectedSiteId = siteControl?.value;
+
+    if (selectedSiteId === null || selectedSiteId === undefined || selectedSiteId === '') {
+      return;
+    }
+
+    const hasValidSite = this.getSiteOptionsForPlant(plant).some((site) => Number(site.id) === Number(selectedSiteId));
+
+    if (!hasValidSite) {
+      siteControl?.setValue(null);
+    }
+  }
+
+  private getFallbackSiteId(plant: string, index: number): number {
+    const plantIndex = Math.max(this.plantOptions.indexOf(plant), 0);
+    return -(((plantIndex + 1) * 100) + index + 1);
+  }
+
+  private normalizeLookupValue(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  private getStationRuleText(stationCode: string): string {
+    return `${stationCode} Rule`;
+  }
+
   private openStationRulesModal(station: StationOption): void {
     this.activeRulesStationCode = station.station_code;
     this.activeRulesStationName = station.station_desc;
@@ -1305,7 +1511,6 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   private resetWorkflowForNewPartNumber(): void {
-    const today = new Date().toISOString().slice(0, 10);
     this.isRestoringSavedPreview = true;
 
     this.partNumberForm.reset({
@@ -1321,7 +1526,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       wo: '',
       plant: null,
       site_id: null,
-      due_date: today,
+      due_date: this.minDueDate,
       qty: null,
       status: 'Released',
       pn: '',
@@ -1345,6 +1550,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.isWorkOrderSaved = false;
     this.isRoutingChildrenSaved = false;
     this.isBomChildrenSaved = false;
+    this.isPreviewSaved = false;
     this.isRoutingStepEditorOpen = false;
     this.isRoutingEditMode = false;
     this.isBomChildEditorOpen = false;
@@ -1359,6 +1565,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.activeRulesStationCode = '';
     this.activeRulesStationName = '';
     this.stationRulesDraft = '';
+    this.previewStationStatusById = {};
     this.linkedRoutingPartNumber = '';
     this.linkedRoutingDescription = '';
     this.linkedBomPartNumber = '';
@@ -1468,5 +1675,22 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       this.previewActionMessage = '';
       this.clearMessageTimer = null;
     }, 3500);
+  }
+
+  private futureDateValidator(control: AbstractControl): ValidationErrors | null {
+    const value = String(control.value ?? '');
+
+    if (!value) {
+      return null;
+    }
+
+    return value >= this.minDueDate ? null : { futureDate: true };
+  }
+
+  private getDateInputValue(daysFromToday: number): string {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromToday);
+    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    return date.toISOString().slice(0, 10);
   }
 }

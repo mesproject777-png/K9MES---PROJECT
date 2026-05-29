@@ -160,6 +160,9 @@
   width: 11px;
   height: 11px;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
   background: #f87171;
   border: 2px solid rgba(255, 255, 255, 0.86);
@@ -169,10 +172,19 @@
 }
 
 .pane-signal.saved {
-  background: #34d399;
-  box-shadow:
-    0 0 0 1px rgba(14, 95, 62, 0.2),
-    0 2px 6px rgba(5, 40, 68, 0.18);
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #22c55e;
+  box-shadow: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 75, 35, 0.4));
+}
+
+.pane-signal.saved .material-symbols-outlined {
+  font-size: 22px;
+  font-variation-settings: 'FILL' 1, 'wght' 800, 'GRAD' 0, 'opsz' 24;
 }
 
 .workflow-panes {
@@ -272,6 +284,12 @@
   color: #17283c;
   font-size: 0.96rem;
   font-weight: 600;
+}
+
+.form-field input[readonly] {
+  background: #f4f7fb;
+  color: #52627a;
+  cursor: not-allowed;
 }
 
 .form-field input::placeholder {
@@ -427,6 +445,24 @@
   border-bottom: 0;
 }
 
+.rule-link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #0b57d0;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.rule-link-button:hover,
+.rule-link-button:focus-visible {
+  color: #073f9f;
+  outline: none;
+}
+
 .move-cell {
   width: 112px;
   white-space: nowrap;
@@ -547,9 +583,33 @@
 .routing-step-form,
 .bom-child-form {
   display: grid;
-  grid-template-columns: 280px 150px 180px;
+  grid-template-columns: repeat(4, 220px);
   gap: 14px;
   align-items: end;
+}
+
+.bom-child-form {
+  grid-template-columns: repeat(4, 220px);
+}
+
+.inline-add-button {
+  width: 220px;
+  min-width: 220px;
+  min-height: 46px;
+  height: 46px;
+  align-self: end;
+  justify-self: stretch;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.field-hint {
+  min-height: 15px;
+  color: #5d7086;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .routing-footer-actions,
@@ -572,7 +632,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding-bottom: 74px;
+  padding-bottom: 0;
   overflow: hidden;
   background:
     linear-gradient(135deg, rgba(248, 252, 255, 0.96), rgba(255, 255, 255, 0.92)),
@@ -647,6 +707,22 @@ button.preview-node:focus-visible {
 
 .work-order-node {
   border-color: #7eaeff;
+}
+
+.plant-node,
+.site-node,
+.work-order-node {
+  grid-template-columns: 56px minmax(0, max-content);
+  justify-content: center;
+  justify-items: center;
+  column-gap: 16px;
+}
+
+.plant-node .preview-node-copy,
+.site-node .preview-node-copy,
+.work-order-node .preview-node-copy {
+  align-items: start;
+  text-align: left;
 }
 
 .part-side-node,
@@ -1009,16 +1085,18 @@ button.preview-node:focus-visible {
 .station-node {
   flex: 0 0 auto;
   position: relative;
-  width: 128px;
-  height: 148px;
+  width: 140px;
+  height: 160px;
   display: grid;
   place-items: center;
   padding: 12px;
-  border: 1.5px solid #79aaff;
+  border: 1.5px solid #dfebfb;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
   color: #061437;
   box-shadow: 0 12px 28px rgba(15, 58, 110, 0.13);
   cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
 }
 
 .station-node:hover,
@@ -1035,10 +1113,10 @@ button.preview-node:focus-visible {
 }
 
 .station-diamond {
-  width: 128px;
-  height: 128px;
+  width: 140px;
+  height: 140px;
   margin: 10px 14px;
-  border-color: #7eacff;
+  border-color: #dfebfb;
   border-radius: 0;
   transform: rotate(45deg);
 }
@@ -1080,10 +1158,12 @@ button.preview-node:focus-visible {
 }
 
 .station-node strong {
+  max-width: 108px;
   color: #061437;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 900;
   line-height: 1.12;
+  overflow-wrap: anywhere;
 }
 
 .station-node small {
@@ -1115,15 +1195,47 @@ button.preview-node:focus-visible {
   color: #e76600;
 }
 
-.station-node.in-progress {
+.station-node small.paused {
+  background: #fee2e2;
+  color: #b42318;
+}
+
+.station-node.selected {
   border-color: #0e6bf0;
   box-shadow:
     0 16px 34px rgba(15, 96, 218, 0.18),
     0 0 0 3px rgba(14, 107, 240, 0.08);
 }
 
+.station-node.completed {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.station-node.completed .station-icon {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.station-node.paused {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.station-node.paused .station-icon {
+  background: #fee2e2;
+  color: #b42318;
+}
+
 .station-node.pending {
   border-color: #dfebfb;
+}
+
+.station-node.selected {
+  border-color: #0e6bf0;
+  box-shadow:
+    0 16px 34px rgba(15, 96, 218, 0.18),
+    0 0 0 3px rgba(14, 107, 240, 0.08);
 }
 
 .preview-empty-station {
@@ -1252,7 +1364,7 @@ button.preview-node:focus-visible {
 .preview-popup-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1300;
+  z-index: 12000;
   display: grid;
   place-items: center;
   padding: 28px;
@@ -1263,6 +1375,9 @@ button.preview-node:focus-visible {
 .station-popup-backdrop {
   place-items: center end;
   padding-right: 64px;
+  background: transparent;
+  backdrop-filter: none;
+  pointer-events: none;
 }
 
 .preview-child-modal,
@@ -1414,18 +1529,31 @@ button.preview-node:focus-visible {
 }
 
 .preview-station-modal {
-  width: min(510px, calc(100vw - 48px));
+  width: min(520px, calc(100vw - 48px));
   max-height: calc(100vh - 72px);
   overflow: auto;
+  border-radius: 14px;
+  pointer-events: auto;
+  box-shadow: 0 24px 64px rgba(8, 31, 61, 0.22);
 }
 
 .station-modal-top {
   align-items: flex-start;
+  padding: 22px 26px 14px;
+  border-bottom: 0;
+  background: #ffffff;
 }
 
 .station-modal-top > div {
   min-width: 0;
   flex: 1 1 auto;
+}
+
+.station-modal-icon-wrap {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
 }
 
 .station-modal-icon {
@@ -1439,6 +1567,15 @@ button.preview-node:focus-visible {
   font-size: 40px;
   font-variation-settings: 'FILL' 1, 'wght' 700, 'GRAD' 0, 'opsz' 40;
   box-shadow: inset 0 -4px 0 rgba(13, 90, 185, 0.12);
+}
+
+.station-modal-gear {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  color: #06155a;
+  font-size: 25px;
+  font-variation-settings: 'FILL' 1, 'wght' 800, 'GRAD' 0, 'opsz' 24;
 }
 
 .status-pill {
@@ -1456,12 +1593,27 @@ button.preview-node:focus-visible {
   color: #0d61d8;
 }
 
+.status-pill.completed {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-pill.paused {
+  background: #fee2e2;
+  color: #b42318;
+}
+
+.status-pill.pending {
+  background: #fff2e5;
+  color: #e76600;
+}
+
 .station-progress {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
-  padding: 16px 22px 6px;
+  padding: 0 26px 12px;
 }
 
 .station-progress::before {
@@ -1489,9 +1641,9 @@ button.preview-node:focus-visible {
 
 .station-detail-list {
   display: grid;
-  gap: 11px;
-  margin: 10px 22px 16px;
-  padding-bottom: 16px;
+  gap: 9px;
+  margin: 0 26px 16px;
+  padding: 0 0 16px;
   border-bottom: 1px solid #e1e8f2;
 }
 
@@ -1503,9 +1655,17 @@ button.preview-node:focus-visible {
 }
 
 .station-detail-list dt {
+  position: relative;
+  padding-right: 12px;
   color: #132446;
   font-size: 0.92rem;
   font-weight: 800;
+}
+
+.station-detail-list dt::after {
+  content: ':';
+  position: absolute;
+  right: 0;
 }
 
 .station-detail-list dd {
@@ -1520,7 +1680,7 @@ button.preview-node:focus-visible {
 .station-rules-section {
   display: grid;
   gap: 12px;
-  margin: 0 22px 18px;
+  margin: 0 26px 18px;
 }
 
 .station-task-section h4,
@@ -1578,7 +1738,7 @@ button.preview-node:focus-visible {
   padding: 12px;
   border: 1px solid #dce6f2;
   border-radius: 8px;
-  background: #fbfdff;
+  background: #ffffff;
   color: #162543;
   font-size: 0.9rem;
   font-weight: 700;
@@ -1598,7 +1758,7 @@ button.preview-node:focus-visible {
   display: grid;
   grid-template-columns: 1fr 1.2fr;
   gap: 12px;
-  padding: 0 22px 22px;
+  padding: 0 26px 24px;
 }
 
 .station-modal-actions button {
@@ -1777,6 +1937,11 @@ button.preview-node:focus-visible {
   .routing-step-form,
   .bom-child-form {
     grid-template-columns: 1fr;
+  }
+
+  .inline-add-button {
+    width: 100%;
+    min-width: 0;
   }
 
   .routing-footer-actions,
