@@ -1,83 +1,7 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { environment } from '../../../environments/environment';
-
-interface TraceSerial {
-  id: number;
-  sn: string;
-  rsn: string;
-  status: string;
-  condition: string;
-  current_station_code: string | null;
-  current_station_name: string | null;
-  current_station_order: number | null;
-  created_at: string;
-  updated_at: string;
-  last_moved_at: string | null;
-}
-
-interface TraceDevice {
-  product_line: string;
-  pn: string;
-  revision: string;
-  work_order: string;
-  work_order_status: string;
-  work_order_qty: number;
-  work_order_balance: number;
-  site: string;
-  description: string;
-}
-
-interface TraceProgress {
-  total: number;
-  completed: number;
-  current: number;
-  pending: number;
-  percent: number;
-}
-
-interface TraceRouteStep {
-  station_order: number;
-  station_code: string;
-  station_name: string;
-  sample_mode: string;
-  report_mode: string;
-  state: 'completed' | 'current' | 'pending';
-  is_current: boolean;
-}
-
-interface TraceHistoryRow {
-  id: number;
-  user_name: string;
-  date_time: string;
-  station: string;
-  length: string | null;
-  pc_name: string | null;
-  result: 'PASS' | 'FAIL' | string;
-  additional_info: string;
-  event_type?: string;
-  child_sn?: string;
-  child_rsn?: string;
-  child_pn?: string;
-  child_revision?: string;
-  parent_sn?: string;
-  parent_rsn?: string;
-  parent_pn?: string;
-  parent_revision?: string;
-}
-
-interface TraceSearchResponse {
-  query: string;
-  matched_by: 'SN' | 'RSN';
-  serial: TraceSerial;
-  device: TraceDevice;
-  progress: TraceProgress;
-  routing: TraceRouteStep[];
-  history: TraceHistoryRow[];
-  generated_at: string;
-}
+import { TraceabilityService, TraceHistoryRow, TraceRouteStep, TraceSearchResponse } from '../../services/traceability.service';
 
 @Component({
   selector: 'app-myroute',
@@ -86,8 +10,6 @@ interface TraceSearchResponse {
   styleUrls: ['./myroute.component.scss']
 })
 export class MyrouteComponent implements OnDestroy {
-  readonly traceabilityApi = `${environment.apiUrl}/api/traceability/search`;
-
   query = '';
   loading = false;
   errorMessage = '';
@@ -101,7 +23,7 @@ export class MyrouteComponent implements OnDestroy {
   private queryParamSub: Subscription | null = null;
 
   constructor(
-    private http: HttpClient,
+    private traceabilityService: TraceabilityService,
     private route: ActivatedRoute,
     private router: Router
   ) {
@@ -243,9 +165,7 @@ export class MyrouteComponent implements OnDestroy {
 
     this.errorMessage = '';
 
-    const params = new HttpParams().set('query', query);
-
-    this.http.get<TraceSearchResponse>(this.traceabilityApi, { params }).subscribe({
+    this.traceabilityService.search(query).subscribe({
       next: (response) => {
         this.searchResult = response;
         this.loading = false;

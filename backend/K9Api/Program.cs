@@ -2,10 +2,49 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Npgsql;
 
+LoadLocalEnvironmentFile();
+
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://localhost:5000");
 
 var app = builder.Build();
+
+static void LoadLocalEnvironmentFile()
+{
+    var directory = Directory.GetCurrentDirectory();
+    while (!string.IsNullOrWhiteSpace(directory))
+    {
+        var path = Path.Combine(directory, ".env.local");
+        if (File.Exists(path))
+        {
+            foreach (var rawLine in File.ReadAllLines(path))
+            {
+                var line = rawLine.Trim();
+                if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var separator = line.IndexOf('=');
+                if (separator <= 0)
+                {
+                    continue;
+                }
+
+                var key = line[..separator].Trim();
+                var value = line[(separator + 1)..].Trim().Trim('"');
+                if (Environment.GetEnvironmentVariable(key) is null)
+                {
+                    Environment.SetEnvironmentVariable(key, value);
+                }
+            }
+
+            return;
+        }
+
+        directory = Directory.GetParent(directory)?.FullName ?? string.Empty;
+    }
+}
 
 string GetConnectionString()
 {

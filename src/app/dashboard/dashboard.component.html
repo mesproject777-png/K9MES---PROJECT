@@ -8,10 +8,20 @@
         <span class="brand-name">K9MES</span>
       </div>
 
-      <label class="header-search" aria-label="Search">
-        <span class="material-symbols-outlined">search</span>
-        <input type="search" placeholder="Search..." />
-      </label>
+      <form class="header-search" aria-label="Search" (submit)="searchSerialNumber($event)">
+        <button type="submit" class="header-search-button" aria-label="Search serial number" (click)="searchSerialNumber($event)">
+          <span class="material-symbols-outlined">search</span>
+        </button>
+        <input
+          type="search"
+          [(ngModel)]="headerSearch"
+          name="headerSearch"
+          (keydown.enter)="searchSerialNumber($event)"
+          (search)="onHeaderSearchInput()"
+          placeholder="Search Serial Number..."
+          autocomplete="off"
+        />
+      </form>
 
       <div class="profile-menu">
         <button type="button" class="profile-button" (click)="toggleProfileMenu()">

@@ -11,6 +11,7 @@ import { AuthService, AuthUser } from '../services/auth.service';
 export class DashboardComponent {
   currentUser: AuthUser | null = null;
   isProfileMenuOpen = false;
+  headerSearch = '';
 
   constructor(
     private authService: AuthService,
@@ -40,5 +41,26 @@ export class DashboardComponent {
   logout(): void {
     this.isProfileMenuOpen = false;
     this.authService.logout();
+  }
+
+  searchSerialNumber(event?: Event): void {
+    event?.preventDefault();
+
+    const serialNumber = this.headerSearch.trim();
+    if (!serialNumber) {
+      return;
+    }
+
+    this.router.navigate(['/dashboard/sn-result'], {
+      queryParams: { q: serialNumber, t: Date.now() },
+    });
+  }
+
+  onHeaderSearchInput(): void {
+    if (!this.headerSearch.trim()) {
+      return;
+    }
+
+    this.searchSerialNumber();
   }
 }

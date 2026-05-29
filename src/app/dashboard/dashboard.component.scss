@@ -61,12 +61,30 @@
 	justify-self: center;
 }
 
-.header-search .material-symbols-outlined {
+.header-search-button {
 	position: absolute;
 	left: 16px;
+	z-index: 1;
+	width: 28px;
+	height: 28px;
+	display: grid;
+	place-items: center;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	cursor: pointer;
+}
+
+.header-search-button:hover,
+.header-search-button:focus-visible {
+	background: rgba(255, 255, 255, 0.14);
+	outline: none;
+}
+
+.header-search-button .material-symbols-outlined {
 	color: rgba(255, 255, 255, 0.88);
 	font-size: 24px;
-	pointer-events: none;
 }
 
 .header-search input {
