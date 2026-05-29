@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -10,6 +10,28 @@ interface GeneratedSerialRow {
   rsn: string;
 }
 
+interface WorkflowWoDetails {
+  wo: string;
+  qty: number;
+  balance: number;
+  generated_qty: number;
+  pn: string;
+  sn_type_name: string;
+  site_name: string;
+  plant?: string;
+  due_date?: string;
+  revision?: string;
+  serials?: GeneratedSerialRow[];
+}
+
+interface WorkflowWoSuggestion {
+  wo: string;
+  pn?: string;
+  qty?: number;
+  sn_type_name?: string;
+  site_name?: string;
+}
+
 @Component({
   selector: 'app-generatesn',
   standalone: true,
@@ -17,16 +39,18 @@ interface GeneratedSerialRow {
   templateUrl: './generatesn.component.html',
   styleUrls: ['./generatesn.component.scss']
 })
-export class GenerateSnComponent implements OnInit {
+export class GenerateSnComponent implements OnInit, OnDestroy {
   wo: string = '';
-  quantity: number = 0;
-  woDetails: any = null;
+  woDetails: WorkflowWoDetails | null = null;
   sns: string[] = [];
   serialRows: GeneratedSerialRow[] = [];
   loading = false;
   message = '';
   success = false;
   validating = false;
+  woSuggestions: WorkflowWoSuggestion[] = [];
+  private lookupTimer: number | null = null;
+  private lookupRequestId = 0;
 
   constructor(
     private http: HttpClient,
@@ -35,36 +59,99 @@ export class GenerateSnComponent implements OnInit {
 
   ngOnInit() {}
 
-  validateWo() {
-    if (!this.wo.trim()) {
-      this.woDetails = null;
+  ngOnDestroy() {
+    if (this.lookupTimer) {
+      window.clearTimeout(this.lookupTimer);
+    }
+  }
+
+  onWoInput(value: string) {
+    this.wo = value;
+    this.lookupRequestId++;
+    this.woDetails = null;
+    this.sns = [];
+    this.serialRows = [];
+
+    if (this.lookupTimer) {
+      window.clearTimeout(this.lookupTimer);
+    }
+
+    if (!value.trim()) {
+      this.message = '';
+      this.validating = false;
+      this.woSuggestions = [];
       return;
     }
 
+    this.lookupTimer = window.setTimeout(() => {
+      this.lookupTimer = null;
+      this.validateWo(false);
+    }, 350);
+  }
+
+  validateWo(showMissingMessage = true) {
+    if (this.lookupTimer) {
+      window.clearTimeout(this.lookupTimer);
+      this.lookupTimer = null;
+    }
+
+    const lookupWo = this.wo.trim();
+    if (!lookupWo) {
+      this.woDetails = null;
+      this.sns = [];
+      this.serialRows = [];
+      this.woSuggestions = [];
+      return;
+    }
+
+    const requestId = ++this.lookupRequestId;
     this.validating = true;
-    this.http.get(`${environment.apiUrl}/api/generate-sn/work-orders?wo=${encodeURIComponent(this.wo)}`).subscribe({
+    this.http.get(`${environment.apiUrl}/api/generate-sn/work-orders?wo=${encodeURIComponent(lookupWo)}`).subscribe({
       next: (response: any) => {
-        const data = response.data || response;
-        this.woDetails = data[0] || null;
+        if (!this.isCurrentLookup(requestId, lookupWo)) {
+          return;
+        }
+
+        const data = Array.isArray(response?.data)
+          ? response.data
+          : (Array.isArray(response) ? response : []);
+        const suggestions = Array.isArray(response?.suggestions) ? response.suggestions : data;
+        this.woSuggestions = suggestions
+          .filter((row: WorkflowWoSuggestion) => this.startsWithTypedWo(row.wo, lookupWo))
+          .slice(0, 10);
+
+        this.woDetails = data.find((row: WorkflowWoDetails) => this.isSameWo(row.wo, lookupWo)) || null;
         if (this.woDetails) {
-          this.quantity = this.woDetails.balance || this.woDetails.qty;
+          this.wo = this.woDetails.wo;
+          this.serialRows = this.woDetails.serials || [];
+          this.sns = this.serialRows.map((row) => row.sn);
           this.success = true;
-          this.message = 'WO valid. Qty set.';
+          this.message = this.getWoStatusMessage();
         } else {
           this.success = false;
-          this.message = 'WO not found or balance = 0';
+          this.message = showMissingMessage ? 'WO not found in workflow work orders.' : '';
+          this.sns = [];
+          this.serialRows = [];
         }
       },
       error: () => {
+        if (!this.isCurrentLookup(requestId, lookupWo)) {
+          return;
+        }
+
         this.success = false;
-        this.message = 'Validation failed';
+        this.message = showMissingMessage ? 'Validation failed' : '';
       },
-      complete: () => this.validating = false
+      complete: () => {
+        if (this.isCurrentLookup(requestId, lookupWo)) {
+          this.validating = false;
+        }
+      }
     });
   }
 
   get isValid(): boolean {
-    return !!this.woDetails && this.quantity === this.woDetails.balance && this.quantity > 0;
+    return !!this.woDetails && this.woDetails.balance > 0;
   }
 
   generate() {
@@ -72,8 +159,7 @@ export class GenerateSnComponent implements OnInit {
     this.message = '';
 
     this.http.post(`${environment.apiUrl}/api/generate-sn/generate`, {
-      wo: this.wo.trim(),
-      qty: this.quantity
+      wo: this.wo.trim()
     }).subscribe({
       next: (response: any) => {
         this.serialRows = response.serials || [];
@@ -84,6 +170,7 @@ export class GenerateSnComponent implements OnInit {
         this.message = `Generated ${this.sns.length} SNs!`;
         this.success = true;
         this.loading = false;
+        this.validateWo(false);
       },
       error: (err) => {
         this.message = err.error?.message || 'Generation failed';
@@ -134,5 +221,58 @@ export class GenerateSnComponent implements OnInit {
 
     return this.sns[0] || '';
   }
-}
 
+  selectWoSuggestion(suggestion: WorkflowWoSuggestion): void {
+    if (!suggestion?.wo) {
+      return;
+    }
+
+    this.wo = suggestion.wo;
+    this.woSuggestions = [];
+    this.validateWo(true);
+  }
+
+  clearForm(): void {
+    if (this.lookupTimer) {
+      window.clearTimeout(this.lookupTimer);
+      this.lookupTimer = null;
+    }
+
+    this.lookupRequestId++;
+    this.woDetails = null;
+    this.wo = '';
+    this.message = '';
+    this.sns = [];
+    this.serialRows = [];
+    this.woSuggestions = [];
+    this.validating = false;
+  }
+
+  private getWoStatusMessage(): string {
+    if (!this.woDetails) {
+      return '';
+    }
+
+    if (this.woDetails.generated_qty > 0 && this.woDetails.balance <= 0) {
+      return `All ${this.woDetails.generated_qty} SNs are already generated for this WO.`;
+    }
+
+    if (this.woDetails.generated_qty > 0) {
+      return `${this.woDetails.generated_qty} SNs already generated. ${this.woDetails.balance} SNs available to generate.`;
+    }
+
+    return `WO valid. ${this.woDetails.balance} SNs available to generate.`;
+  }
+
+  private isSameWo(left: string | undefined, right: string): boolean {
+    return String(left || '').trim().toUpperCase() === right.trim().toUpperCase();
+  }
+
+  private startsWithTypedWo(value: string | undefined, typedWo: string): boolean {
+    return String(value || '').trim().toUpperCase().startsWith(typedWo.trim().toUpperCase());
+  }
+
+  private isCurrentLookup(requestId: number, lookupWo: string): boolean {
+    return requestId === this.lookupRequestId && this.isSameWo(this.wo, lookupWo);
+  }
+}

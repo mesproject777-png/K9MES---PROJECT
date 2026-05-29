@@ -18,6 +18,7 @@ export class SidebarComponent {
   readonly sidebarItems: SidebarItem[] = [
     { label: 'Dashboard', route: '/dashboard/home', icon: 'dashboard', pageKey: 'dashboard/home' },
     { label: 'Work Flow', route: '/dashboard/workflow', icon: 'account_tree', pageKey: 'dashboard/home' },
+    { label: 'Work Order', route: '/dashboard/work-order', icon: 'assignment', pageKey: 'dashboard/home' },
     { label: 'Master', route: '/dashboard/master', icon: 'settings', pageKey: 'dashboard/master/menu' },
     { label: 'Manager', route: '/dashboard/manager/menu', icon: 'manage_accounts', pageKey: 'dashboard/manager/menu' },
     { label: 'Engineering', route: '/dashboard/engineering/menu', icon: 'engineering', pageKey: 'dashboard/engineering/menu' },

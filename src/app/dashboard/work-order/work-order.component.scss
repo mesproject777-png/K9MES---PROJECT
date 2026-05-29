@@ -1,0 +1,151 @@
+.wo-page {
+  padding: 16px;
+}
+
+.filters {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.filter-box {
+  display: grid;
+  gap: 6px;
+  min-width: 380px;
+  padding: 10px 12px;
+  border: 1px solid #e4ebf3;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.filter-box input {
+  padding: 8px 10px;
+  border: 1px solid #c8d2de;
+  border-radius: 8px;
+}
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+button {
+  border: 1px solid #c8d2de;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #f5f7fa;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e4ebf3;
+  border-radius: 10px;
+  background: #fbfcfe;
+  margin-bottom: 12px;
+}
+
+.table-toolbar input,
+.table-toolbar select {
+  padding: 6px 8px;
+  border: 1px solid #c8d2de;
+  border-radius: 8px;
+}
+
+.table-wrapper {
+  border: 1px solid #e4ebf3;
+  border-radius: 10px;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.message {
+  margin: 8px 0 12px;
+  color: #43566e;
+}
+
+.message.error {
+  color: #b42318;
+}
+
+table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: #f3f7fd;
+  text-align: left;
+  padding: 10px;
+  border-bottom: 1px solid #e4ebf3;
+  font-weight: 600;
+}
+
+tbody td {
+  padding: 10px;
+  border-bottom: 1px solid #eef3f9;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 18px;
+  color: #65758b;
+}
+
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.pager-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.pager-info {
+  padding: 0 8px;
+  color: #2c3c51;
+}
+
+@media (max-width: 720px) {
+  .filters,
+  .table-toolbar,
+  .pager {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .filter-box {
+    min-width: 0;
+  }
+
+  .filter-actions {
+    width: 100%;
+  }
+
+  .filter-actions button {
+    flex: 1;
+  }
+}

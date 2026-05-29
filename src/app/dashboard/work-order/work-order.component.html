@@ -1,0 +1,86 @@
+<div class="wo-page">
+  <div class="filters">
+    <div class="filter-box">
+      <label>WO:</label>
+      <input type="text" [value]="woFilter" (input)="onWoFilterChange($any($event.target).value)" />
+    </div>
+
+    <div class="filter-actions">
+      <button type="button" class="secondary" (click)="loadRows()">Refresh</button>
+      <button type="button" class="secondary" (click)="downloadFullList()">Download Full List</button>
+    </div>
+  </div>
+
+  <div class="table-toolbar">
+    <div class="left">
+      <label>
+        <select [(ngModel)]="limit" (change)="page = 1; loadRows()">
+          <option [value]="15">15</option>
+          <option [value]="25">25</option>
+          <option [value]="50">50</option>
+        </select>
+        entries per page
+      </label>
+    </div>
+
+    <div class="right">
+      <label>
+        Search PN
+        <input
+          type="text"
+          placeholder="Type part number..."
+          [value]="pnFilter"
+          (input)="onPnFilterChange($any($event.target).value)"
+        />
+      </label>
+    </div>
+  </div>
+
+  <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+  <p *ngIf="isLoading" class="message">Loading work orders...</p>
+
+  <div class="table-wrapper" *ngIf="!isLoading">
+    <table>
+      <thead>
+        <tr>
+          <th>WO</th>
+          <th>Part Number</th>
+          <th>SN Type</th>
+          <th>Due Date</th>
+          <th>Quantity</th>
+          <th>Station Count</th>
+          <th>BOM Count</th>
+          <th>Site</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let row of pagedRows">
+          <td>{{ row.wo || '-' }}</td>
+          <td>{{ row.partNumber || '-' }}</td>
+          <td>{{ row.snType || '-' }}</td>
+          <td>{{ row.dueDate ? (row.dueDate | date: 'yyyy-MM-dd') : '-' }}</td>
+          <td>{{ row.quantity ?? '-' }}</td>
+          <td>{{ row.stationCount }}</td>
+          <td>{{ row.bomCount }}</td>
+          <td>{{ row.site || '-' }}</td>
+        </tr>
+        <tr *ngIf="pagedRows.length === 0">
+          <td colspan="8" class="empty-state">No workflow work orders found.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pager" *ngIf="total > 0">
+    <div class="pager-left">
+      Showing {{ showingFrom }} to {{ showingTo }} of {{ total }} entries
+    </div>
+    <div class="pager-right">
+      <button type="button" class="pager-btn" (click)="changePage(1)" [disabled]="page === 1">&laquo;</button>
+      <button type="button" class="pager-btn" (click)="changePage(page - 1)" [disabled]="page === 1">&lsaquo;</button>
+      <span class="pager-info">{{ page }} / {{ totalPages || 1 }}</span>
+      <button type="button" class="pager-btn" (click)="changePage(page + 1)" [disabled]="page >= totalPages">&rsaquo;</button>
+      <button type="button" class="pager-btn" (click)="changePage(totalPages)" [disabled]="page >= totalPages">&raquo;</button>
+    </div>
+  </div>
+</div>

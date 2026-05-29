@@ -102,6 +102,7 @@ public static class ConvertedEndpoints
                 "/api/items",
                 "/api/item-revisions",
                 "/api/routing",
+                "/api/workflow",
                 "/api/stations",
                 "/api/work-orders",
                 "/api/sites",
@@ -120,6 +121,7 @@ public static class ConvertedEndpoints
         MapSgdPos(app);
         MapBom(app);
         MapRouting(app);
+        MapWorkflow(app);
         MapWorkOrders(app);
         MapGenerateSn(app);
         MapTraceability(app);
@@ -1604,6 +1606,94 @@ public static class ConvertedEndpoints
         });
     }
 
+    private static void MapWorkflow(WebApplication app)
+    {
+        app.MapGet("/api/workflow/by-pn", async (HttpRequest request) =>
+        {
+            var pn = request.Query["pn"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(pn))
+            {
+                return JsonMessage("pn is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+            var snapshot = await GetWorkflowSnapshotAsync(connection, pn);
+            return snapshot is null ? JsonMessage("Workflow not found", 404) : Results.Json(snapshot);
+        });
+
+        app.MapGet("/api/workflow/work-orders", async (HttpRequest request) =>
+        {
+            var page = ParsePositiveInt(request.Query["page"], 1);
+            var requestedLimit = request.Query["limit"].ToString();
+            var limit = string.Equals(requestedLimit, "all", StringComparison.OrdinalIgnoreCase)
+                ? 5000
+                : Math.Min(ParsePositiveInt(requestedLimit, 15), 500);
+            var wo = request.Query["wo"].ToString().Trim();
+            var pn = request.Query["pn"].ToString().Trim();
+            var offset = (page - 1) * limit;
+            var where = new List<string>();
+            var parameters = new List<(string Name, object? Value)>();
+
+            if (!string.IsNullOrWhiteSpace(wo))
+            {
+                where.Add("w.wo ILIKE @wo");
+                parameters.Add(("wo", $"%{wo}%"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(pn))
+            {
+                where.Add("p.pn ILIKE @pn");
+                parameters.Add(("pn", $"%{pn}%"));
+            }
+
+            parameters.Add(("limit", limit));
+            parameters.Add(("offset", offset));
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+            var rows = await QueryRowsAsync(
+                connection,
+                $"""
+                SELECT
+                  w.wo,
+                  p.pn AS part_number,
+                  COALESCE(st.sn_type_name, p.sn_type_name, '') AS sn_type,
+                  w.due_date,
+                  w.qty AS quantity,
+                  (
+                    SELECT COUNT(*)::int
+                    FROM workflow_routing_steps r
+                    WHERE r.workflow_part_id = p.id
+                  ) AS station_count,
+                  (
+                    SELECT COALESCE(SUM(b.qty), 0)::int
+                    FROM workflow_bom_children b
+                    WHERE b.workflow_part_id = p.id
+                  ) AS bom_count,
+                  COALESCE(w.site_name, '') AS site,
+                  w.updated_at,
+                  COUNT(*) OVER () AS total_count
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                LEFT JOIN sn_types st ON st.id = p.sn_type_id
+                {(where.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", where))}
+                ORDER BY w.updated_at DESC, w.id DESC
+                LIMIT @limit OFFSET @offset
+                """,
+                parameters.ToArray());
+            var total = rows.Count > 0 ? Convert.ToInt32(rows[0]["total_count"] ?? 0) : 0;
+            foreach (var row in rows)
+            {
+                row.Remove("total_count");
+            }
+
+            return Results.Json(new { data = rows, total, page, limit });
+        });
+
+        app.MapPost("/api/workflow/snapshot", async (HttpContext context) => await SaveWorkflowSnapshotAsync(context));
+    }
+
     private static void MapWorkOrders(WebApplication app)
     {
         app.MapGet("/api/work-orders/sites", async () =>
@@ -1798,39 +1888,106 @@ public static class ConvertedEndpoints
             }
 
             await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+            var suggestions = await QueryRowsAsync(
+                connection,
+                """
+                SELECT
+                  w.wo,
+                  p.pn,
+                  w.qty,
+                  COALESCE(st.sn_type_name, st_by_name.sn_type_name, p.sn_type_name, '') AS sn_type_name,
+                  w.site_name
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                LEFT JOIN sn_types st ON st.id = p.sn_type_id
+                LEFT JOIN sn_types st_by_name ON st_by_name.sn_type_name = p.sn_type_name
+                WHERE w.wo ILIKE @woPrefix
+                ORDER BY
+                  CASE WHEN UPPER(w.wo) = UPPER(@wo) THEN 0 ELSE 1 END,
+                  w.wo ASC
+                LIMIT 10
+                """,
+                ("wo", wo),
+                ("woPrefix", $"{wo}%"));
             var rows = await QueryRowsAsync(
                 connection,
                 """
-                SELECT w.id, w.wo, w.qty, w.balance, i.pn, i.sn_type_id, st.sn_type_name, s.name AS site_name
-                FROM work_orders w
-                JOIN items i ON i.id = w.item_id
-                LEFT JOIN sn_types st ON st.id = i.sn_type_id
-                JOIN sites s ON s.id = w.site_id
-                WHERE w.wo ILIKE @wo AND w.balance > 0
+                SELECT
+                  w.id,
+                  w.wo,
+                  w.qty,
+                  GREATEST(COALESCE(w.qty, 0) - COUNT(sn.id)::int, 0) AS balance,
+                  COUNT(sn.id)::int AS generated_qty,
+                  p.id AS workflow_part_id,
+                  p.pn,
+                  COALESCE(p.sn_type_id, st_by_name.id) AS sn_type_id,
+                  COALESCE(st.sn_type_name, st_by_name.sn_type_name, p.sn_type_name, '') AS sn_type_name,
+                  w.plant,
+                  w.site_name,
+                  w.due_date,
+                  w.revision,
+                  w.status
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                LEFT JOIN sn_types st ON st.id = p.sn_type_id
+                LEFT JOIN sn_types st_by_name ON st_by_name.sn_type_name = p.sn_type_name
+                LEFT JOIN workflow_serial_numbers sn ON sn.workflow_work_order_id = w.id
+                WHERE UPPER(w.wo) = UPPER(@wo)
+                GROUP BY w.id, p.id, st.id, st_by_name.id
                 ORDER BY w.created_at DESC
                 """,
-                ("wo", $"%{wo}%"));
-            return Results.Json(new { data = rows });
+                ("wo", wo));
+            foreach (var row in rows)
+            {
+                row["serials"] = await QueryRowsAsync(
+                    connection,
+                    """
+                    SELECT id, sn, rsn, generated_index, status, created_at
+                    FROM workflow_serial_numbers
+                    WHERE workflow_work_order_id = @workOrderId
+                    ORDER BY generated_index ASC, id ASC
+                    """,
+                    ("workOrderId", row["id"]));
+            }
+
+            return Results.Json(new { data = rows, suggestions });
         });
 
         app.MapPost("/api/generate-sn/generate", async (HttpContext context) =>
         {
             var payload = await ReadJsonBodyAsync(context.Request);
             var wo = ReadString(payload, "wo")?.Trim();
-            var qty = ReadInt(payload, "qty");
-            if (string.IsNullOrWhiteSpace(wo) || qty is null or <= 0)
+            if (string.IsNullOrWhiteSpace(wo))
             {
-                return JsonMessage("WO and valid positive qty required", 400);
+                return JsonMessage("WO is required", 400);
             }
 
             await using var connection = await OpenConnectionAsync();
-            await EnsureSerialTrackingSchemaAsync(connection);
+            await EnsureWorkflowSchemaAsync(connection);
             await using var transaction = await connection.BeginTransactionAsync();
             try
             {
                 var workOrders = await QueryRowsAsync(
                     connection,
-                    "SELECT id, qty, balance, item_id, item_revision_id, site_id FROM work_orders WHERE wo = @wo FOR UPDATE",
+                    """
+                    SELECT
+                      w.id,
+                      w.wo,
+                      w.qty,
+                      w.site_name,
+                      w.lot,
+                      p.id AS workflow_part_id,
+                      p.pn,
+                      COALESCE(p.sn_type_id, st_by_name.id) AS sn_type_id,
+                      COALESCE(st.sn_type_name, st_by_name.sn_type_name, p.sn_type_name, '') AS sn_type_name
+                    FROM workflow_work_orders w
+                    JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                    LEFT JOIN sn_types st ON st.id = p.sn_type_id
+                    LEFT JOIN sn_types st_by_name ON st_by_name.sn_type_name = p.sn_type_name
+                    WHERE UPPER(w.wo) = UPPER(@wo)
+                    FOR UPDATE OF w
+                    """,
                     ("wo", wo));
                 if (workOrders.Count == 0)
                 {
@@ -1839,64 +1996,96 @@ public static class ConvertedEndpoints
                 }
 
                 var workOrder = workOrders[0];
-                var balance = Convert.ToInt32(workOrder["balance"] ?? 0);
-                if (qty.Value > balance)
+                var canonicalWo = Convert.ToString(workOrder["wo"]) ?? wo;
+                var workOrderId = Convert.ToInt32(workOrder["id"]);
+                var workflowPartId = Convert.ToInt32(workOrder["workflow_part_id"]);
+                var workOrderQty = Convert.ToInt32(workOrder["qty"] ?? 0);
+                var generatedCount = await ScalarAsync<int>(
+                    connection,
+                    "SELECT COUNT(*)::int FROM workflow_serial_numbers WHERE workflow_work_order_id = @id",
+                    ("id", workOrderId));
+                var qtyToGenerate = Math.Max(workOrderQty - generatedCount, 0);
+                if (qtyToGenerate <= 0)
                 {
                     await transaction.RollbackAsync();
-                    return JsonMessage($"WO does not have enough space to generate SN (available: {balance})", 400);
+                    return JsonMessage("All SNs are already generated for this WO", 400);
                 }
 
-                var snTypeId = await ScalarAsync<int?>(connection, "SELECT sn_type_id FROM items WHERE id = @id", ("id", workOrder["item_id"]));
+                int? snTypeId = workOrder["sn_type_id"] is null ? null : Convert.ToInt32(workOrder["sn_type_id"]);
                 if (snTypeId is null)
                 {
                     await transaction.RollbackAsync();
-                    return JsonMessage("Item has no SN type defined", 400);
+                    return JsonMessage("Workflow part number has no Serial Pattern defined", 400);
                 }
 
                 var fields = await QueryRowsAsync(
                     connection,
                     "SELECT field_type, field_string, field_size FROM sn_type_fields WHERE sn_type_id = @id ORDER BY sort_order ASC",
                     ("id", snTypeId.Value));
+                if (fields.Count == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Serial Pattern has no fields configured", 400);
+                }
+
                 var firstRoute = await QueryRowsAsync(
                     connection,
-                    "SELECT station_order, station_code FROM item_routing_steps WHERE item_id = @itemId ORDER BY station_order ASC, id ASC LIMIT 1",
-                    ("itemId", workOrder["item_id"]));
+                    "SELECT station_order, station_code FROM workflow_routing_steps WHERE workflow_part_id = @partId ORDER BY station_order ASC, id ASC LIMIT 1",
+                    ("partId", workflowPartId));
 
                 var snList = new List<string>();
                 var serials = new List<Dictionary<string, object?>>();
-                for (var index = 0; index < qty.Value; index++)
+                for (var index = 0; index < qtyToGenerate; index++)
                 {
-                    var serial = BuildSerialNumber(fields, wo, index);
+                    var generatedIndex = generatedCount + index + 1;
+                    var serial = BuildSerialNumber(
+                        fields,
+                        canonicalWo,
+                        generatedIndex - 1,
+                        Convert.ToString(workOrder["site_name"]) ?? string.Empty,
+                        Convert.ToString(workOrder["lot"]) ?? string.Empty);
                     var inserted = await QueryRowsAsync(
                         connection,
                         """
-                        INSERT INTO serial_numbers
-                          (sn, work_order_id, item_id, item_revision_id, site_id, status, condition, current_station_code, current_station_order, last_moved_at)
+                        INSERT INTO workflow_serial_numbers
+                          (sn, workflow_work_order_id, workflow_part_id, sn_type_id, generated_index, status, condition, current_station_code, current_station_order, last_moved_at)
                         VALUES
-                          (@sn, @workOrderId, @itemId, @revisionId, @siteId, 'New', 'Good', @stationCode, @stationOrder, @lastMovedAt)
+                          (@sn, @workOrderId, @workflowPartId, @snTypeId, @generatedIndex, 'New', 'Good', @stationCode, @stationOrder, @lastMovedAt)
                         RETURNING id, sn, rsn, current_station_code, current_station_order, created_at
                         """,
-                        ("sn", serial),
-                        ("workOrderId", workOrder["id"]),
-                        ("itemId", workOrder["item_id"]),
-                        ("revisionId", workOrder["item_revision_id"]),
-                        ("siteId", workOrder["site_id"]),
+                        ("sn", (object?)serial),
+                        ("workOrderId", workOrderId),
+                        ("workflowPartId", workflowPartId),
+                        ("snTypeId", snTypeId.Value),
+                        ("generatedIndex", generatedIndex),
                         ("stationCode", firstRoute.Count > 0 ? firstRoute[0]["station_code"] : null),
                         ("stationOrder", firstRoute.Count > 0 ? firstRoute[0]["station_order"] : null),
-                        ("lastMovedAt", firstRoute.Count > 0 ? DateTime.Now : null));
+                        ("lastMovedAt", firstRoute.Count > 0 ? DateTime.Now : (DateTime?)null));
                     snList.Add(serial);
                     serials.Add(inserted[0]);
                 }
 
-                var updatedBalance = balance - qty.Value;
-                var updatedWo = await QueryRowsAsync(
-                    connection,
-                    "UPDATE work_orders SET balance = @balance, updated_at = NOW() WHERE id = @id RETURNING *",
-                    ("balance", updatedBalance),
-                    ("id", workOrder["id"]));
-                await InsertJsonHistoryAsync(connection, "work_order_history", "work_order_id", workOrder["id"]!, "SN_GENERATE", updatedWo[0], "system");
+                await ExecuteAsync(connection, "UPDATE workflow_work_orders SET updated_at = NOW() WHERE id = @id", ("id", workOrderId));
                 await transaction.CommitAsync();
-                return Results.Json(new { success = true, wo, qty = qty.Value, sn_type_id = snTypeId.Value, sns = snList, serials });
+                return Results.Json(new
+                {
+                    success = true,
+                    wo = canonicalWo,
+                    qty = qtyToGenerate,
+                    total_qty = workOrderQty,
+                    generated_qty = generatedCount + qtyToGenerate,
+                    remaining_qty = 0,
+                    part_number = workOrder["pn"],
+                    sn_type_id = snTypeId.Value,
+                    sn_type_name = workOrder["sn_type_name"],
+                    sns = snList,
+                    serials
+                });
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                await transaction.RollbackAsync();
+                return JsonMessage("Duplicate SN detected. Check the Serial Pattern sequence fields.", 409);
             }
             catch
             {
@@ -1936,12 +2125,19 @@ public static class ConvertedEndpoints
             await using var connection = await OpenConnectionAsync();
             await EnsureSerialTrackingSchemaAsync(connection);
             var serial = await GetSerialByQueryAsync(connection, query);
-            if (serial is null)
+            if (serial is not null)
+            {
+                return Results.Json(await BuildTracePayloadAsync(connection, query, serial));
+            }
+
+            await EnsureWorkflowSchemaAsync(connection);
+            var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
+            if (workflowSerial is null)
             {
                 return JsonMessage("SN/RSN not found", 404);
             }
 
-            return Results.Json(await BuildTracePayloadAsync(connection, query, serial));
+            return Results.Json(await BuildWorkflowTracePayloadAsync(connection, query, workflowSerial));
         });
 
         app.MapPost("/api/traceability/pass-fail", async (HttpContext context) =>
@@ -2886,10 +3082,19 @@ public static class ConvertedEndpoints
         await command.ExecuteNonQueryAsync();
     }
 
-    private static string BuildSerialNumber(List<Dictionary<string, object?>> fields, string wo, int zeroBasedIndex)
+    private static string BuildSerialNumber(
+        List<Dictionary<string, object?>> fields,
+        string wo,
+        int zeroBasedIndex,
+        string siteName = "",
+        string lot = "")
     {
         var now = DateTime.Now;
         var serial = string.Empty;
+        var twoDigitYear = now.Year.ToString()[^2..];
+        var twoDigitMonth = now.Month.ToString("00");
+        var weekOfYear = System.Globalization.ISOWeek.GetWeekOfYear(now).ToString("00");
+
         foreach (var field in fields)
         {
             var fieldType = field["field_type"]?.ToString() ?? string.Empty;
@@ -2897,15 +3102,24 @@ public static class ConvertedEndpoints
             var fieldSize = field["field_size"] is null ? 5 : Convert.ToInt32(field["field_size"]);
             serial += fieldType switch
             {
+                "RY" => GetRelianceYearCode(now.Year),
+                "RM" => GetRelianceMonthCode(now.Month),
                 "Y" => now.Year.ToString()[^1..],
-                "YY" => now.Year.ToString()[^2..],
+                "YY" => twoDigitYear,
                 "YYY" => now.Year.ToString(),
+                "M(hex)" => now.Month.ToString("X"),
                 "MM(dec)" => now.Month.ToString("00"),
+                "R_YY" => Reverse(twoDigitYear),
+                "R_MM(dec)" => Reverse(twoDigitMonth),
+                "R_WW" => Reverse(weekOfYear),
+                "DM" => ((int)now.DayOfWeek + 1).ToString(),
                 "DD" => now.Day.ToString("00"),
                 "DDD" => now.DayOfYear.ToString("000"),
-                "WW" => System.Globalization.ISOWeek.GetWeekOfYear(now).ToString("00"),
-                "String" or "Specific by PN" or "MACgen" or "Lot" or "Programmable" or "RMA" => fieldString,
+                "WW" => weekOfYear,
+                "String" or "Specific by PN" or "MACgen" or "Programmable" or "RMA" or "EPV" or "SNFromEPV" => fieldString,
+                "Lot" => string.IsNullOrWhiteSpace(fieldString) ? lot : fieldString,
                 "WO" => wo,
+                "SiteCode" => string.IsNullOrWhiteSpace(fieldString) ? BuildSiteCode(siteName, fieldSize) : fieldString,
                 "Sequence(dec)" or "Continuous sequence(dec)" => (zeroBasedIndex + 1).ToString().PadLeft(fieldSize, '0'),
                 "Sequence(hex)" or "Continuous sequence(hex)" => (zeroBasedIndex + 1).ToString("X").PadLeft(fieldSize, '0'),
                 "Sequence(alpha)" or "Continuous sequence(alpha)" => ToBase36(zeroBasedIndex + 1).PadLeft(fieldSize, '0'),
@@ -2914,6 +3128,35 @@ public static class ConvertedEndpoints
         }
 
         return serial;
+    }
+
+    private static string GetRelianceYearCode(int year)
+    {
+        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        var offset = year - 2014;
+        return offset >= 0 && offset < alphabet.Length ? alphabet[offset].ToString() : year.ToString()[^1..];
+    }
+
+    private static string GetRelianceMonthCode(int month)
+    {
+        const string alphabet = "ABCDEFGHIJKL";
+        return month >= 1 && month <= 12 ? alphabet[month - 1].ToString() : string.Empty;
+    }
+
+    private static string Reverse(string value)
+    {
+        return new string(value.Reverse().ToArray());
+    }
+
+    private static string BuildSiteCode(string siteName, int fieldSize)
+    {
+        var normalized = Regex.Replace(siteName.ToUpperInvariant(), "[^A-Z0-9]", string.Empty);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        return normalized.Length <= fieldSize ? normalized : normalized[..fieldSize];
     }
 
     private static string ToBase36(int value)
@@ -2961,6 +3204,36 @@ public static class ConvertedEndpoints
         return rows.Count == 0 ? null : rows[0];
     }
 
+    private static async Task<Dictionary<string, object?>?> GetWorkflowSerialByQueryAsync(NpgsqlConnection connection, string query)
+    {
+        var rows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT snr.id, snr.sn, snr.rsn, snr.status AS serial_status, snr.condition,
+                   snr.current_station_code, snr.current_station_order, snr.last_moved_at,
+                   snr.created_at, snr.updated_at,
+                   w.id AS workflow_work_order_id, w.wo, w.status AS wo_status, w.qty AS wo_qty,
+                   GREATEST(COALESCE(w.qty, 0) - (
+                     SELECT COUNT(*)::int
+                     FROM workflow_serial_numbers generated
+                     WHERE generated.workflow_work_order_id = w.id
+                   ), 0) AS wo_balance,
+                   p.id AS workflow_part_id, p.pn, p.description AS item_description,
+                   COALESCE(w.revision, '-') AS revision,
+                   COALESCE(w.site_name, '-') AS site_name,
+                   COALESCE(p.item_type, '-') AS product_line_name
+            FROM workflow_serial_numbers snr
+            JOIN workflow_work_orders w ON w.id = snr.workflow_work_order_id
+            JOIN workflow_part_numbers p ON p.id = snr.workflow_part_id
+            WHERE UPPER(snr.sn) = UPPER(@query)
+               OR UPPER(snr.rsn) = UPPER(@query)
+            ORDER BY snr.created_at DESC
+            LIMIT 1
+            """,
+            ("query", query));
+        return rows.Count == 0 ? null : rows[0];
+    }
+
     private static async Task<List<Dictionary<string, object?>>> GetRouteRowsForItemAsync(NpgsqlConnection connection, int itemId)
     {
         return await QueryRowsAsync(
@@ -2972,6 +3245,19 @@ public static class ConvertedEndpoints
             ORDER BY station_order ASC, id ASC
             """,
             ("itemId", itemId));
+    }
+
+    private static async Task<List<Dictionary<string, object?>>> GetWorkflowRouteRowsForPartAsync(NpgsqlConnection connection, int workflowPartId)
+    {
+        return await QueryRowsAsync(
+            connection,
+            """
+            SELECT station_order, station_code, station_name, sample_mode, report_mode
+            FROM workflow_routing_steps
+            WHERE workflow_part_id = @workflowPartId
+            ORDER BY station_order ASC, id ASC
+            """,
+            ("workflowPartId", workflowPartId));
     }
 
     private static int ResolveCurrentOrder(Dictionary<string, object?> serial, List<Dictionary<string, object?>> routeRows)
@@ -3061,6 +3347,69 @@ public static class ConvertedEndpoints
         };
     }
 
+    private static async Task<object> BuildWorkflowTracePayloadAsync(NpgsqlConnection connection, string query, Dictionary<string, object?> serial)
+    {
+        var routeRows = await GetWorkflowRouteRowsForPartAsync(connection, Convert.ToInt32(serial["workflow_part_id"]));
+        var currentOrder = routeRows.Count == 0 ? 0 : ResolveCurrentOrder(serial, routeRows);
+
+        var routing = routeRows.Select(step =>
+        {
+            var order = Convert.ToInt32(step["station_order"]);
+            var state = currentOrder == 0 ? "pending" : order < currentOrder ? "completed" : order == currentOrder ? "current" : "pending";
+            return new Dictionary<string, object?>
+            {
+                ["station_order"] = order,
+                ["station_code"] = step["station_code"],
+                ["station_name"] = step["station_name"],
+                ["sample_mode"] = step["sample_mode"],
+                ["report_mode"] = step["report_mode"],
+                ["state"] = state,
+                ["is_current"] = state == "current"
+            };
+        }).ToList();
+
+        var completed = routing.Count(row => row["state"]?.ToString() == "completed");
+        var current = routing.FirstOrDefault(row => row["is_current"] is true);
+        var pending = Math.Max(routing.Count - completed - (current is null ? 0 : 1), 0);
+        var percent = routing.Count > 0 ? (int)Math.Round(((completed + (current is null ? 0 : 1)) / (double)routing.Count) * 100) : 0;
+
+        return new
+        {
+            query,
+            matched_by = string.Equals(serial["sn"]?.ToString(), query, StringComparison.OrdinalIgnoreCase) ? "SN" : "RSN",
+            serial = new
+            {
+                id = serial["id"],
+                sn = serial["sn"],
+                rsn = serial["rsn"],
+                status = serial["serial_status"],
+                condition = serial["condition"],
+                current_station_code = current?["station_code"] ?? serial["current_station_code"],
+                current_station_name = current?["station_name"],
+                current_station_order = current?["station_order"] ?? (currentOrder == 0 ? null : currentOrder),
+                created_at = serial["created_at"],
+                updated_at = serial["updated_at"],
+                last_moved_at = serial["last_moved_at"]
+            },
+            device = new
+            {
+                product_line = serial["product_line_name"] ?? "-",
+                pn = serial["pn"],
+                revision = serial["revision"] ?? "-",
+                work_order = serial["wo"],
+                work_order_status = serial["wo_status"],
+                work_order_qty = serial["wo_qty"],
+                work_order_balance = serial["wo_balance"],
+                site = serial["site_name"] ?? "-",
+                description = serial["item_description"] ?? "-"
+            },
+            progress = new { total = routing.Count, completed, current = current is null ? 0 : 1, pending, percent },
+            routing,
+            history = Array.Empty<object>(),
+            generated_at = DateTime.UtcNow
+        };
+    }
+
     private static async Task<IResult> ListPackagesAsync(string status)
     {
         await using var connection = await OpenConnectionAsync();
@@ -3114,6 +3463,258 @@ public static class ConvertedEndpoints
             ("changedBy", changedBy),
             ("id", packageId));
         return Results.Json(new { message = nextStatus == "CLOSED" ? "Package closed successfully" : "Package shipped successfully" });
+    }
+
+    private static async Task<IResult> SaveWorkflowSnapshotAsync(HttpContext context)
+    {
+        var payload = await ReadJsonBodyAsync(context.Request);
+        if (payload is null)
+        {
+            return JsonMessage("Request body is required", 400);
+        }
+
+        var partNode = payload["partNumber"];
+        var workOrderNode = payload["workOrder"];
+        var pn = ReadString(partNode, "pn")?.Trim() ?? ReadString(payload, "pn")?.Trim();
+
+        if (string.IsNullOrWhiteSpace(pn))
+        {
+            return JsonMessage("Part number is required", 400);
+        }
+
+        var description = ReadString(partNode, "description")?.Trim() ?? string.Empty;
+        var sgdControl = ReadBool(partNode, "sgd_control") ?? false;
+        var itemType = ReadString(partNode, "item_type")?.Trim();
+        var snTypeName = ReadString(partNode, "sn_type_name")?.Trim();
+        var pnTypeId = ReadInt(partNode, "pn_type_id");
+
+        await using var connection = await OpenConnectionAsync();
+        await EnsureWorkflowSchemaAsync(connection);
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        try
+        {
+            int? snTypeId = null;
+            if (!string.IsNullOrWhiteSpace(snTypeName))
+            {
+                snTypeId = await ScalarAsync<int?>(
+                    connection,
+                    "SELECT id FROM sn_types WHERE sn_type_name = @name LIMIT 1",
+                    ("name", snTypeName));
+            }
+
+            var partRows = await QueryRowsAsync(
+                connection,
+                """
+                INSERT INTO workflow_part_numbers
+                  (pn, description, sgd_control, item_type, sn_type_id, sn_type_name, pn_type_id)
+                VALUES
+                  (@pn, @description, @sgdControl, @itemType, @snTypeId, @snTypeName, @pnTypeId)
+                ON CONFLICT (pn) DO UPDATE
+                SET description = EXCLUDED.description,
+                    sgd_control = EXCLUDED.sgd_control,
+                    item_type = EXCLUDED.item_type,
+                    sn_type_id = EXCLUDED.sn_type_id,
+                    sn_type_name = EXCLUDED.sn_type_name,
+                    pn_type_id = EXCLUDED.pn_type_id,
+                    updated_at = NOW()
+                RETURNING *
+                """,
+                ("pn", pn),
+                ("description", description),
+                ("sgdControl", sgdControl),
+                ("itemType", ToDbNullable(itemType)),
+                ("snTypeId", ToDbNullable(snTypeId)),
+                ("snTypeName", ToDbNullable(snTypeName)),
+                ("pnTypeId", ToDbNullable(pnTypeId)));
+
+            var workflowPartId = Convert.ToInt32(partRows[0]["id"]);
+
+            if (workOrderNode is not null)
+            {
+                var wo = ReadString(workOrderNode, "wo")?.Trim();
+                if (!string.IsNullOrWhiteSpace(wo))
+                {
+                    var dueDate = ReadString(workOrderNode, "due_date")?.Trim();
+                    var qty = ReadInt(workOrderNode, "qty");
+                    var status = ReadString(workOrderNode, "status")?.Trim() ?? "Released";
+                    var plant = ReadString(workOrderNode, "plant")?.Trim();
+                    var siteId = ReadInt(workOrderNode, "site_id");
+                    var siteName = ReadString(workOrderNode, "site_name")?.Trim();
+                    var revision = ReadString(workOrderNode, "revision")?.Trim();
+                    var lot = ReadString(workOrderNode, "lot")?.Trim();
+
+                    await QueryRowsAsync(
+                        connection,
+                        """
+                        INSERT INTO workflow_work_orders
+                          (workflow_part_id, wo, plant, site_id, site_name, due_date, qty, status, revision, lot)
+                        VALUES
+                          (@workflowPartId, @wo, @plant, @siteId, @siteName, NULLIF(@dueDate, '')::date, @qty, @status, @revision, @lot)
+                        ON CONFLICT (wo) DO UPDATE
+                        SET workflow_part_id = EXCLUDED.workflow_part_id,
+                            plant = EXCLUDED.plant,
+                            site_id = EXCLUDED.site_id,
+                            site_name = EXCLUDED.site_name,
+                            due_date = EXCLUDED.due_date,
+                            qty = EXCLUDED.qty,
+                            status = EXCLUDED.status,
+                            revision = EXCLUDED.revision,
+                            lot = EXCLUDED.lot,
+                            updated_at = NOW()
+                        RETURNING *
+                        """,
+                        ("workflowPartId", workflowPartId),
+                        ("wo", wo),
+                        ("plant", ToDbNullable(plant)),
+                        ("siteId", ToDbNullable(siteId)),
+                        ("siteName", ToDbNullable(siteName)),
+                        ("dueDate", dueDate ?? string.Empty),
+                        ("qty", ToDbNullable(qty)),
+                        ("status", status),
+                        ("revision", ToDbNullable(revision)),
+                        ("lot", ToDbNullable(lot)));
+                }
+            }
+
+            if (payload["routing"] is JsonArray routingRows)
+            {
+                await ExecuteAsync(connection, "DELETE FROM workflow_routing_steps WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
+                var routeOrder = 10;
+                foreach (var row in routingRows)
+                {
+                    if (row is null) continue;
+
+                    var stationCode = ReadString(row, "station_code")?.Trim();
+                    if (string.IsNullOrWhiteSpace(stationCode)) continue;
+
+                    var stationOrder = ReadInt(row, "station_order") ?? routeOrder;
+                    var stationName = ReadString(row, "station_name")?.Trim() ?? stationCode;
+                    var sampleMode = ReadString(row, "sample_mode")?.Trim() ?? "Full";
+                    var reportMode = ReadString(row, "report_mode")?.Trim() ?? "Regular";
+                    var previewStatus = ReadString(row, "preview_status")?.Trim();
+
+                    await ExecuteAsync(
+                        connection,
+                        """
+                        INSERT INTO workflow_routing_steps
+                          (workflow_part_id, station_order, station_code, station_name, sample_mode, report_mode, preview_status)
+                        VALUES
+                          (@workflowPartId, @stationOrder, @stationCode, @stationName, @sampleMode, @reportMode, @previewStatus)
+                        """,
+                        ("workflowPartId", workflowPartId),
+                        ("stationOrder", stationOrder),
+                        ("stationCode", stationCode),
+                        ("stationName", stationName),
+                        ("sampleMode", sampleMode),
+                        ("reportMode", reportMode),
+                        ("previewStatus", ToDbNullable(previewStatus)));
+
+                    routeOrder = stationOrder + 10;
+                }
+            }
+
+            if (payload["bom"] is JsonArray bomRows)
+            {
+                await ExecuteAsync(connection, "DELETE FROM workflow_bom_children WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
+                foreach (var row in bomRows)
+                {
+                    if (row is null) continue;
+
+                    var sonPn = ReadString(row, "son_pn")?.Trim();
+                    if (string.IsNullOrWhiteSpace(sonPn)) continue;
+
+                    await ExecuteAsync(
+                        connection,
+                        """
+                        INSERT INTO workflow_bom_children
+                          (workflow_part_id, son_pn, son_description, station_code, station_name, item_type, pn_type, qty)
+                        VALUES
+                          (@workflowPartId, @sonPn, @sonDescription, @stationCode, @stationName, @itemType, @pnType, @qty)
+                        """,
+                        ("workflowPartId", workflowPartId),
+                        ("sonPn", sonPn),
+                        ("sonDescription", ReadString(row, "son_description")?.Trim() ?? sonPn),
+                        ("stationCode", ToDbNullable(ReadString(row, "station_code")?.Trim())),
+                        ("stationName", ToDbNullable(ReadString(row, "station_name")?.Trim())),
+                        ("itemType", ToDbNullable(ReadString(row, "item_type")?.Trim())),
+                        ("pnType", ToDbNullable(ReadString(row, "pn_type")?.Trim())),
+                        ("qty", ReadInt(row, "qty") ?? 1));
+                }
+            }
+
+            if (payload["stationRules"] is JsonObject stationRules)
+            {
+                await ExecuteAsync(connection, "DELETE FROM workflow_station_rules WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
+                foreach (var ruleGroup in stationRules)
+                {
+                    var stationCode = ruleGroup.Key.Trim();
+                    if (string.IsNullOrWhiteSpace(stationCode)) continue;
+
+                    var rules = new List<string>();
+                    if (ruleGroup.Value is JsonArray ruleArray)
+                    {
+                        rules.AddRange(ruleArray.Select(rule => rule?.GetValue<string>()?.Trim() ?? string.Empty).Where(rule => !string.IsNullOrWhiteSpace(rule)));
+                    }
+                    else
+                    {
+                        var ruleText = ruleGroup.Value?.GetValue<string>()?.Trim();
+                        if (!string.IsNullOrWhiteSpace(ruleText))
+                        {
+                            rules.Add(ruleText);
+                        }
+                    }
+
+                    for (var index = 0; index < rules.Count; index++)
+                    {
+                        await ExecuteAsync(
+                            connection,
+                            """
+                            INSERT INTO workflow_station_rules
+                              (workflow_part_id, station_code, rule_order, rule_text)
+                            VALUES
+                              (@workflowPartId, @stationCode, @ruleOrder, @ruleText)
+                            """,
+                            ("workflowPartId", workflowPartId),
+                            ("stationCode", stationCode),
+                            ("ruleOrder", (index + 1) * 10),
+                            ("ruleText", rules[index]));
+                    }
+                }
+            }
+
+            if (payload["previewStatuses"] is JsonObject previewStatuses)
+            {
+                await ExecuteAsync(connection, "DELETE FROM workflow_preview_station_statuses WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
+                foreach (var status in previewStatuses)
+                {
+                    var stationCode = status.Key.Trim();
+                    var statusValue = status.Value?.GetValue<string>()?.Trim();
+                    if (string.IsNullOrWhiteSpace(stationCode) || string.IsNullOrWhiteSpace(statusValue)) continue;
+
+                    await ExecuteAsync(
+                        connection,
+                        """
+                        INSERT INTO workflow_preview_station_statuses
+                          (workflow_part_id, station_code, status)
+                        VALUES
+                          (@workflowPartId, @stationCode, @status)
+                        """,
+                        ("workflowPartId", workflowPartId),
+                        ("stationCode", stationCode),
+                        ("status", statusValue));
+                }
+            }
+
+            await transaction.CommitAsync();
+            var snapshot = await GetWorkflowSnapshotAsync(connection, pn);
+            return Results.Json(snapshot ?? new { message = "Workflow saved" });
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     private static async Task<IResult> SaveWorkOrderAsync(HttpContext context, int? workOrderId)
@@ -3583,6 +4184,252 @@ public static class ConvertedEndpoints
         }
     }
 
+    private static async Task<object?> GetWorkflowSnapshotAsync(NpgsqlConnection connection, string pn)
+    {
+        await EnsureWorkflowSchemaAsync(connection);
+
+        var partRows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT
+              p.id,
+              p.pn,
+              p.description,
+              p.sgd_control,
+              p.item_type,
+              COALESCE(st.sn_type_name, p.sn_type_name, '') AS sn_type_name,
+              p.pn_type_id,
+              p.created_at,
+              p.updated_at
+            FROM workflow_part_numbers p
+            LEFT JOIN sn_types st ON st.id = p.sn_type_id
+            WHERE p.pn = @pn
+            LIMIT 1
+            """,
+            ("pn", pn));
+
+        if (partRows.Count > 0)
+        {
+            var part = partRows[0];
+            var workflowPartId = Convert.ToInt32(part["id"]);
+            var workOrderRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT
+                  wo,
+                  plant,
+                  site_id,
+                  site_name,
+                  due_date,
+                  qty,
+                  status,
+                  @pn AS pn,
+                  revision,
+                  lot,
+                  created_at,
+                  updated_at
+                FROM workflow_work_orders
+                WHERE workflow_part_id = @workflowPartId
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """,
+                ("workflowPartId", workflowPartId),
+                ("pn", pn));
+
+            var routingRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT
+                  r.id,
+                  r.station_order,
+                  r.station_code,
+                  r.station_name,
+                  r.sample_mode,
+                  r.report_mode,
+                  COALESCE(ps.status, r.preview_status) AS preview_status
+                FROM workflow_routing_steps r
+                LEFT JOIN workflow_preview_station_statuses ps
+                  ON ps.workflow_part_id = r.workflow_part_id
+                 AND ps.station_code = r.station_code
+                WHERE r.workflow_part_id = @workflowPartId
+                ORDER BY r.station_order ASC, r.id ASC
+                """,
+                ("workflowPartId", workflowPartId));
+
+            var bomRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT id, son_pn, son_description, station_code, station_name, item_type, pn_type, qty
+                FROM workflow_bom_children
+                WHERE workflow_part_id = @workflowPartId
+                ORDER BY id ASC
+                """,
+                ("workflowPartId", workflowPartId));
+
+            var ruleRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT station_code, rule_text
+                FROM workflow_station_rules
+                WHERE workflow_part_id = @workflowPartId
+                ORDER BY station_code ASC, rule_order ASC, id ASC
+                """,
+                ("workflowPartId", workflowPartId));
+
+            var statusRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT station_code, status
+                FROM workflow_preview_station_statuses
+                WHERE workflow_part_id = @workflowPartId
+                """,
+                ("workflowPartId", workflowPartId));
+
+            return new
+            {
+                partNumber = new
+                {
+                    pn = part["pn"],
+                    description = part["description"],
+                    sgd_control = part["sgd_control"],
+                    item_type = part["item_type"],
+                    sn_type_name = part["sn_type_name"],
+                    pn_type_id = part["pn_type_id"]
+                },
+                workOrder = workOrderRows.Count > 0 ? workOrderRows[0] : null,
+                routing = routingRows,
+                bom = bomRows,
+                stationRules = GroupWorkflowRules(ruleRows),
+                previewStatuses = statusRows.ToDictionary(
+                    row => Convert.ToString(row["station_code"]) ?? string.Empty,
+                    row => Convert.ToString(row["status"]) ?? string.Empty)
+            };
+        }
+
+        var itemRows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT
+              i.id,
+              i.pn,
+              i.description,
+              i.sgd_control,
+              i.item_type,
+              COALESCE(st.sn_type_name, '') AS sn_type_name,
+              i.pn_type_id
+            FROM items i
+            LEFT JOIN sn_types st ON st.id = i.sn_type_id
+            WHERE i.pn = @pn
+            LIMIT 1
+            """,
+            ("pn", pn));
+
+        if (itemRows.Count == 0)
+        {
+            return null;
+        }
+
+        var item = itemRows[0];
+        var itemId = Convert.ToInt32(item["id"]);
+        var existingWorkOrderRows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT
+              w.wo,
+              '' AS plant,
+              w.site_id,
+              s.name AS site_name,
+              w.due_date,
+              w.qty,
+              w.status,
+              @pn AS pn,
+              ir.revision,
+              w.lot,
+              w.created_at,
+              w.updated_at
+            FROM work_orders w
+            JOIN sites s ON s.id = w.site_id
+            JOIN item_revisions ir ON ir.id = w.item_revision_id
+            WHERE w.item_id = @itemId
+            ORDER BY w.updated_at DESC, w.id DESC
+            LIMIT 1
+            """,
+            ("itemId", itemId),
+            ("pn", pn));
+
+        var existingRoutingRows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT id, station_order, station_code, station_name, sample_mode, report_mode, NULL::varchar AS preview_status
+            FROM item_routing_steps
+            WHERE item_id = @itemId
+            ORDER BY station_order ASC, id ASC
+            """,
+            ("itemId", itemId));
+
+        var existingBomRows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT
+              bl.id,
+              son.pn AS son_pn,
+              son.description AS son_description,
+              '' AS station_code,
+              '' AS station_name,
+              son.item_type AS item_type,
+              COALESCE(pt.code, '') AS pn_type,
+              bl.qty
+            FROM item_bom_lines bl
+            JOIN items son ON son.id = bl.son_item_id
+            LEFT JOIN pn_types pt ON pt.id = son.pn_type_id
+            WHERE bl.main_item_id = @itemId
+            ORDER BY bl.id ASC
+            """,
+            ("itemId", itemId));
+
+        return new
+        {
+            partNumber = new
+            {
+                pn = item["pn"],
+                description = item["description"],
+                sgd_control = item["sgd_control"],
+                item_type = item["item_type"],
+                sn_type_name = item["sn_type_name"],
+                pn_type_id = item["pn_type_id"]
+            },
+            workOrder = existingWorkOrderRows.Count > 0 ? existingWorkOrderRows[0] : null,
+            routing = existingRoutingRows,
+            bom = existingBomRows,
+            stationRules = new Dictionary<string, List<string>>(),
+            previewStatuses = new Dictionary<string, string>()
+        };
+    }
+
+    private static Dictionary<string, List<string>> GroupWorkflowRules(List<Dictionary<string, object?>> rows)
+    {
+        var grouped = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var stationCode = Convert.ToString(row["station_code"]) ?? string.Empty;
+            var ruleText = Convert.ToString(row["rule_text"]) ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(stationCode) || string.IsNullOrWhiteSpace(ruleText))
+            {
+                continue;
+            }
+
+            if (!grouped.TryGetValue(stationCode, out var rules))
+            {
+                rules = new List<string>();
+                grouped[stationCode] = rules;
+            }
+
+            rules.Add(ruleText);
+        }
+
+        return grouped;
+    }
+
     private sealed record BomPayload(
         Dictionary<string, object?> Item,
         Dictionary<string, object?>? Revision,
@@ -3813,6 +4660,142 @@ public static class ConvertedEndpoints
         var connection = new NpgsqlConnection(GetConnectionString());
         await connection.OpenAsync();
         return connection;
+    }
+
+    private static async Task EnsureWorkflowSchemaAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_part_numbers (
+              id SERIAL PRIMARY KEY,
+              pn VARCHAR(120) NOT NULL UNIQUE,
+              description TEXT NOT NULL DEFAULT '',
+              sgd_control BOOLEAN NOT NULL DEFAULT FALSE,
+              item_type VARCHAR(40),
+              sn_type_id INTEGER REFERENCES sn_types(id) ON DELETE SET NULL,
+              sn_type_name VARCHAR(160),
+              pn_type_id INTEGER REFERENCES pn_types(id) ON DELETE SET NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_work_orders (
+              id SERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              wo VARCHAR(120) NOT NULL UNIQUE,
+              plant VARCHAR(120),
+              site_id INTEGER,
+              site_name VARCHAR(160),
+              due_date DATE,
+              qty INTEGER CHECK (qty IS NULL OR qty > 0),
+              status VARCHAR(30) NOT NULL DEFAULT 'Released',
+              revision VARCHAR(80),
+              lot VARCHAR(120),
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_routing_steps (
+              id SERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              station_order INTEGER NOT NULL,
+              station_code VARCHAR(80) NOT NULL,
+              station_name VARCHAR(220) NOT NULL,
+              sample_mode VARCHAR(20) NOT NULL DEFAULT 'Full',
+              report_mode VARCHAR(20) NOT NULL DEFAULT 'Regular',
+              preview_status VARCHAR(30),
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_route_station UNIQUE (workflow_part_id, station_code)
+            )
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_bom_children (
+              id SERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              son_pn VARCHAR(120) NOT NULL,
+              son_description TEXT NOT NULL DEFAULT '',
+              station_code VARCHAR(80),
+              station_name VARCHAR(220),
+              item_type VARCHAR(40),
+              pn_type VARCHAR(80),
+              qty INTEGER NOT NULL CHECK (qty > 0),
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_station_rules (
+              id SERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              station_name VARCHAR(220),
+              rule_order INTEGER NOT NULL DEFAULT 10,
+              rule_text TEXT NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_station_rule UNIQUE (workflow_part_id, station_code, rule_order)
+            )
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_preview_station_statuses (
+              id SERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              status VARCHAR(30) NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_preview_status UNIQUE (workflow_part_id, station_code)
+            )
+            """);
+
+        await ExecuteAsync(connection, "CREATE SEQUENCE IF NOT EXISTS public.workflow_rsn_seq START WITH 1");
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_serial_numbers (
+              id BIGSERIAL PRIMARY KEY,
+              sn VARCHAR(220) NOT NULL UNIQUE,
+              rsn VARCHAR(40) NOT NULL UNIQUE DEFAULT ('RSN' || LPAD(nextval('workflow_rsn_seq')::text, 10, '0')),
+              workflow_work_order_id INTEGER NOT NULL REFERENCES workflow_work_orders(id) ON DELETE CASCADE,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              sn_type_id INTEGER REFERENCES sn_types(id) ON DELETE SET NULL,
+              generated_index INTEGER NOT NULL,
+              status VARCHAR(30) NOT NULL DEFAULT 'New',
+              condition VARCHAR(30) NOT NULL DEFAULT 'Good',
+              current_station_code VARCHAR(80),
+              current_station_order INTEGER,
+              last_moved_at TIMESTAMP,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_serial_index UNIQUE (workflow_work_order_id, generated_index)
+            )
+            """);
+
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_work_orders_part ON public.workflow_work_orders (workflow_part_id)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_route_part ON public.workflow_routing_steps (workflow_part_id, station_order)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_part ON public.workflow_bom_children (workflow_part_id)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_rules_part ON public.workflow_station_rules (workflow_part_id, station_code)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_wo ON public.workflow_serial_numbers (workflow_work_order_id)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_part ON public.workflow_serial_numbers (workflow_part_id)");
     }
 
     private static async Task EnsureSerialTrackingSchemaAsync(NpgsqlConnection connection)

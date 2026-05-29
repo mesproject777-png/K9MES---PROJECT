@@ -118,13 +118,31 @@ type PreviewFlowRow = {
   turnSide: 'left' | 'right';
 };
 
-type SavedWorkflowPreview = {
-  partNumber: string;
-  partNumberFormValue: Record<string, unknown>;
-  workOrderFormValue: Record<string, unknown>;
-  routeSteps: RoutingStepRow[];
-  bomChildren: BomChildRow[];
-  savedAt: string;
+type WorkflowSnapshot = {
+  partNumber?: {
+    pn?: string;
+    description?: string;
+    sgd_control?: boolean;
+    item_type?: string;
+    sn_type_name?: string;
+    pn_type_id?: number | null;
+  };
+  workOrder?: {
+    wo?: string;
+    plant?: string | null;
+    site_id?: number | null;
+    site_name?: string | null;
+    due_date?: string | null;
+    qty?: number | null;
+    status?: string | null;
+    pn?: string;
+    revision?: string | null;
+    lot?: string | null;
+  } | null;
+  routing?: Array<RoutingStepRow & { preview_status?: PreviewStatus | null }>;
+  bom?: BomChildRow[];
+  stationRules?: Record<string, string[]>;
+  previewStatuses?: Record<string, PreviewStatus>;
 };
 
 @Component({
@@ -138,9 +156,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   private readonly snTypesApiUrl = `${environment.apiUrl}/api/sn-types`;
   private readonly sitesApiUrl = `${environment.apiUrl}/api/sites`;
   private readonly stationsApiUrl = `${environment.apiUrl}/api/stations`;
-  private readonly bomChildrenStorageKey = 'k9:workflowBomChildren';
-  private readonly stationRulesStorageKey = 'k9:workflowStationRules';
-  private readonly savedWorkflowPreviewsStorageKey = 'k9:workflowSavedPreviews';
+  private readonly workflowApiUrl = `${environment.apiUrl}/api/workflow`;
 
   readonly tabs: WorkflowTab[] = [
     { id: 'part-number', label: 'Part Number', icon: 'inventory_2' },
@@ -228,6 +244,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   private clearMessageTimer: number | null = null;
   private advancePaneTimer: number | null = null;
   private savePreviousWorkPopupTimer: number | null = null;
+  private restoreWorkflowTimer: number | null = null;
   private previewConnectorFrame: number | null = null;
   private previewConnectorSignature = '';
 
@@ -273,7 +290,6 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.loadSnTypes();
     this.loadSites();
     this.loadStations();
-    this.loadStationRules();
 
     this.partNumberForm.get('pn')?.valueChanges.subscribe((value) => {
       if (this.isRestoringSavedPreview) {
@@ -281,7 +297,19 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       }
 
       this.isPartNumberSaved = false;
-      this.restoreSavedPreviewForPartNumber(String(value ?? '').trim());
+      const partNumber = String(value ?? '').trim();
+      if (this.restoreWorkflowTimer) {
+        window.clearTimeout(this.restoreWorkflowTimer);
+      }
+
+      if (partNumber.length < 2) {
+        return;
+      }
+
+      this.restoreWorkflowTimer = window.setTimeout(() => {
+        this.restoreWorkflowTimer = null;
+        this.restoreSavedPreviewForPartNumber(partNumber);
+      }, 350);
     });
 
     ['description', 'sgd_control', 'item_type', 'sn_type_name', 'pn_type_id'].forEach((controlName) => {
@@ -336,6 +364,10 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
 
     if (this.savePreviousWorkPopupTimer) {
       window.clearTimeout(this.savePreviousWorkPopupTimer);
+    }
+
+    if (this.restoreWorkflowTimer) {
+      window.clearTimeout(this.restoreWorkflowTimer);
     }
 
     if (this.previewConnectorFrame) {
@@ -428,10 +460,18 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       return;
     }
 
-    this.isPartNumberSaved = true;
     this.syncPartNumberToWorkOrder();
     this.syncPartNumberToRouting();
-    this.advanceToNextPane(1);
+    this.saveWorkflowSnapshot(
+      () => {
+        this.isPartNumberSaved = true;
+        this.advanceToNextPane(1);
+      },
+      (message) => {
+        this.partNumberErrorMessage = message;
+        this.scheduleClearMessages();
+      }
+    );
   }
 
   saveWorkOrder(): void {
@@ -444,8 +484,17 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       return;
     }
 
-    this.isWorkOrderSaved = true;
-    this.advanceToNextPane(2);
+    this.syncPartNumberToWorkOrder();
+    this.saveWorkflowSnapshot(
+      () => {
+        this.isWorkOrderSaved = true;
+        this.advanceToNextPane(2);
+      },
+      (message) => {
+        this.workOrderErrorMessage = message;
+        this.scheduleClearMessages();
+      }
+    );
   }
 
   allowNumberOnly(event: KeyboardEvent): void {
@@ -661,8 +710,16 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       return;
     }
 
-    this.isRoutingChildrenSaved = true;
-    this.advanceToNextPane(3);
+    this.saveWorkflowSnapshot(
+      () => {
+        this.isRoutingChildrenSaved = true;
+        this.advanceToNextPane(3);
+      },
+      (message) => {
+        this.routingErrorMessage = message;
+        this.scheduleClearMessages();
+      }
+    );
   }
 
   get bomPartNumber(): string {
@@ -901,37 +958,47 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.syncPartNumberToRouting();
     this.linkedBomPartNumber = partNumber;
 
-    const savedPreviews = this.readSavedWorkflowPreviews();
-    savedPreviews[partNumber] = {
-      partNumber,
-      partNumberFormValue: this.partNumberForm.getRawValue(),
-      workOrderFormValue: this.workOrderForm.getRawValue(),
-      routeSteps: this.routeSteps.map((step) => ({ ...step })),
-      bomChildren: this.bomChildren.map((child) => ({ ...child })),
-      savedAt: new Date().toISOString(),
-    };
+    this.saveWorkflowSnapshot(
+      () => {
+        this.isPreviewSaved = true;
+        this.previewActionMessageType = 'success';
+        this.previewActionMessage = 'Preview saved for this part number.';
+        this.scheduleClearMessages();
+      },
+      (message) => {
+        this.previewActionMessageType = 'error';
+        this.previewActionMessage = message;
+        this.scheduleClearMessages();
+      }
+    );
 
-    try {
-      localStorage.setItem(this.savedWorkflowPreviewsStorageKey, JSON.stringify(savedPreviews));
-      this.persistBomChildren();
-      this.previewActionMessageType = 'success';
-      this.previewActionMessage = 'Preview saved for this part number.';
-      this.scheduleClearMessages();
-      return true;
-    } catch {
-      this.previewActionMessageType = 'error';
-      this.previewActionMessage = 'Unable to save preview in this browser.';
-      this.scheduleClearMessages();
-      return false;
-    }
+    return true;
   }
 
   saveWorkflow(): void {
-    if (!this.savePreview()) {
+    this.previewActionMessage = '';
+    const partNumber = String(this.partNumberForm.get('pn')?.value ?? '').trim();
+
+    if (!partNumber) {
+      this.previewActionMessageType = 'error';
+      this.previewActionMessage = 'Enter a part number before saving workflow.';
+      this.scheduleClearMessages();
       return;
     }
 
-    this.resetWorkflowForNewPartNumber();
+    this.saveWorkflowSnapshot(
+      () => {
+        this.previewActionMessageType = 'success';
+        this.previewActionMessage = 'Workflow saved.';
+        this.scheduleClearMessages();
+        this.resetWorkflowForNewPartNumber();
+      },
+      (message) => {
+        this.previewActionMessageType = 'error';
+        this.previewActionMessage = message;
+        this.scheduleClearMessages();
+      }
+    );
   }
 
   openBomChildEditor(): void {
@@ -1021,7 +1088,6 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       this.addBomHistory('Child added', 'BOM child', '-', child.son_pn);
     }
 
-    this.persistBomChildren();
     this.isBomChildSaving = false;
     this.closeBomChildEditor();
   }
@@ -1029,7 +1095,6 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   deleteBomChild(child: BomChildRow): void {
     this.isBomChildrenSaved = false;
     this.bomChildren = this.bomChildren.filter((bomChild) => bomChild.id !== child.id);
-    this.persistBomChildren();
     this.addBomHistory('Child deleted', 'BOM child', child.son_pn, '-');
 
     if (this.editingBomChildId === child.id) {
@@ -1050,8 +1115,16 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       return;
     }
 
-    this.isBomChildrenSaved = true;
-    this.advanceToNextPane(4);
+    this.saveWorkflowSnapshot(
+      () => {
+        this.isBomChildrenSaved = true;
+        this.advanceToNextPane(4);
+      },
+      (message) => {
+        this.bomErrorMessage = message;
+        this.scheduleClearMessages();
+      }
+    );
   }
 
   onBomStationChange(stationCode: string): void {
@@ -1084,7 +1157,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       ...this.stationRulesByStation,
       [this.activeRulesStationCode]: rules,
     };
-    this.persistStationRules();
+    this.saveWorkflowSnapshot();
     this.isEditingStationRules = false;
   }
 
@@ -1191,7 +1264,6 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
 
   private syncPartNumberToBom(): void {
     this.linkedBomPartNumber = this.routingPartNumber;
-    this.loadBomChildrenForCurrentPart();
   }
 
   private getPreviewStationStatus(index: number, step: RoutingStepRow): PreviewStatus {
@@ -1217,6 +1289,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
       status,
     };
     this.queuePreviewConnectorRefresh();
+    this.saveWorkflowSnapshot();
     this.closePreviewStationDetails();
   }
 
@@ -1469,45 +1542,26 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.isStationRulesModalOpen = true;
   }
 
-  private restoreSavedPreviewForPartNumber(partNumber: string): boolean {
+  private restoreSavedPreviewForPartNumber(partNumber: string): void {
     if (!partNumber) {
-      return false;
+      return;
     }
 
-    const savedPreview = this.readSavedWorkflowPreviews()[partNumber];
-
-    if (!savedPreview) {
-      return false;
-    }
-
-    this.isRestoringSavedPreview = true;
-    this.partNumberForm.patchValue(savedPreview.partNumberFormValue, { emitEvent: false });
-    this.workOrderForm.patchValue(savedPreview.workOrderFormValue, { emitEvent: false });
-    this.routeSteps = (savedPreview.routeSteps || []).map((step) => ({ ...step }));
-    this.bomChildren = (savedPreview.bomChildren || []).map((child) => ({ ...child }));
-    this.nextRoutingStepId = Math.max(0, ...this.routeSteps.map((step) => step.id)) + 1;
-    this.nextBomChildId = Math.max(0, ...this.bomChildren.map((child) => child.id)) + 1;
-    this.linkedRoutingPartNumber = partNumber;
-    this.linkedRoutingDescription = String(this.partNumberForm.get('description')?.value ?? '').trim();
-    this.linkedBomPartNumber = partNumber;
-    this.isPartNumberSaved = true;
-    this.isWorkOrderSaved = true;
-    this.isRoutingChildrenSaved = this.routeSteps.length > 0;
-    this.isBomChildrenSaved = this.bomChildren.length > 0;
-    this.previewActionMessageType = 'success';
-    this.previewActionMessage = 'Saved preview loaded.';
-    this.isRestoringSavedPreview = false;
-    this.scheduleClearMessages();
-    return true;
-  }
-
-  private readSavedWorkflowPreviews(): Record<string, SavedWorkflowPreview> {
-    try {
-      const stored = localStorage.getItem(this.savedWorkflowPreviewsStorageKey);
-      return stored ? JSON.parse(stored) as Record<string, SavedWorkflowPreview> : {};
-    } catch {
-      return {};
-    }
+    const params = new HttpParams().set('pn', partNumber);
+    this.http.get<WorkflowSnapshot>(`${this.workflowApiUrl}/by-pn`, { params }).subscribe({
+      next: (snapshot) => {
+        this.applyWorkflowSnapshot(snapshot);
+        this.previewActionMessageType = 'success';
+        this.previewActionMessage = 'Saved workflow loaded from database.';
+        this.scheduleClearMessages();
+      },
+      error: (error) => {
+        if (error?.status && error.status !== 404) {
+          this.partNumberErrorMessage = this.getWorkflowErrorMessage(error);
+          this.scheduleClearMessages();
+        }
+      }
+    });
   }
 
   private resetWorkflowForNewPartNumber(): void {
@@ -1585,54 +1639,141 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.isRestoringSavedPreview = false;
   }
 
-  private loadBomChildrenForCurrentPart(): void {
-    const bomPartNumber = this.bomPartNumber;
+  private saveWorkflowSnapshot(onSuccess?: () => void, onError?: (message: string) => void): void {
+    const payload = this.buildWorkflowSnapshotPayload();
 
-    if (!bomPartNumber) {
-      this.bomChildren = [];
+    this.http.post<WorkflowSnapshot>(`${this.workflowApiUrl}/snapshot`, payload).subscribe({
+      next: (snapshot) => {
+        this.applyWorkflowSnapshot(snapshot);
+        onSuccess?.();
+      },
+      error: (error) => {
+        onError?.(this.getWorkflowErrorMessage(error));
+      }
+    });
+  }
+
+  private buildWorkflowSnapshotPayload(): object {
+    const partNumber = this.partNumberForm.getRawValue();
+    const workOrder = this.workOrderForm.getRawValue();
+    const siteName = this.previewSiteName === 'Select Site' ? '' : this.previewSiteName;
+
+    return {
+      partNumber,
+      workOrder: {
+        ...workOrder,
+        site_id: this.toNullableNumber(workOrder.site_id),
+        site_name: siteName,
+        qty: this.toNullableNumber(workOrder.qty),
+      },
+      routing: this.routeSteps.map((step) => ({
+        ...step,
+        preview_status: this.previewStationStatusById[step.id] || null,
+      })),
+      bom: this.bomChildren.map((child) => ({
+        ...child,
+        qty: this.toNullableNumber(child.qty) || 1,
+      })),
+      stationRules: this.stationRulesByStation,
+      previewStatuses: this.buildPreviewStatusesByStationCode(),
+    };
+  }
+
+  private applyWorkflowSnapshot(snapshot: WorkflowSnapshot): void {
+    if (!snapshot?.partNumber?.pn) {
       return;
     }
 
-    try {
-      const stored = localStorage.getItem(this.bomChildrenStorageKey);
-      const byPartNumber = stored ? JSON.parse(stored) as Record<string, BomChildRow[]> : {};
-      this.bomChildren = byPartNumber[bomPartNumber] || [];
-      this.nextBomChildId = Math.max(0, ...this.bomChildren.map((child) => child.id)) + 1;
-    } catch {
-      this.bomChildren = [];
-      this.nextBomChildId = 1;
-    }
+    const partNumber = snapshot.partNumber;
+    this.isRestoringSavedPreview = true;
+
+    this.partNumberForm.patchValue({
+      pn: partNumber.pn || '',
+      description: partNumber.description || '',
+      sgd_control: Boolean(partNumber.sgd_control),
+      item_type: partNumber.item_type || null,
+      sn_type_name: partNumber.sn_type_name || '',
+      pn_type_id: partNumber.pn_type_id ?? null,
+    }, { emitEvent: false });
+
+    this.workOrderForm.patchValue({
+      wo: snapshot.workOrder?.wo || '',
+      plant: snapshot.workOrder?.plant || null,
+      site_id: snapshot.workOrder?.site_id ?? null,
+      due_date: String(snapshot.workOrder?.due_date || this.minDueDate).slice(0, 10),
+      qty: snapshot.workOrder?.qty ?? null,
+      status: snapshot.workOrder?.status || 'Released',
+      pn: partNumber.pn || '',
+      revision: snapshot.workOrder?.revision || '',
+      lot: snapshot.workOrder?.lot || '',
+    }, { emitEvent: false });
+
+    this.routeSteps = (snapshot.routing || []).map((step, index) => ({
+      id: Number(step.id) || index + 1,
+      station_order: Number(step.station_order) || ((index + 1) * 10),
+      station_code: step.station_code,
+      station_name: step.station_name,
+      sample_mode: step.sample_mode,
+      report_mode: step.report_mode,
+    }));
+
+    this.bomChildren = (snapshot.bom || []).map((child, index) => ({
+      id: Number(child.id) || index + 1,
+      son_pn: child.son_pn,
+      son_description: child.son_description || child.son_pn,
+      station_code: child.station_code || '',
+      station_name: child.station_name || '',
+      item_type: child.item_type || 'Manufactured',
+      pn_type: child.pn_type || '-',
+      qty: Number(child.qty) || 1,
+    }));
+
+    const statusesByStation = snapshot.previewStatuses || {};
+    this.previewStationStatusById = this.routeSteps.reduce<Record<number, PreviewStatus>>((statuses, step) => {
+      const loadedStatus = statusesByStation[step.station_code] || (snapshot.routing || []).find((row) => row.station_code === step.station_code)?.preview_status || null;
+      if (loadedStatus) {
+        statuses[step.id] = loadedStatus;
+      }
+
+      return statuses;
+    }, {});
+
+    this.stationRulesByStation = snapshot.stationRules || {};
+    this.linkedRoutingPartNumber = partNumber.pn || '';
+    this.linkedRoutingDescription = partNumber.description || '';
+    this.linkedBomPartNumber = partNumber.pn || '';
+    this.nextRoutingStepId = Math.max(0, ...this.routeSteps.map((step) => step.id)) + 1;
+    this.nextBomChildId = Math.max(0, ...this.bomChildren.map((child) => child.id)) + 1;
+    this.isPartNumberSaved = true;
+    this.isWorkOrderSaved = Boolean(snapshot.workOrder?.wo);
+    this.isRoutingChildrenSaved = this.routeSteps.length > 0;
+    this.isBomChildrenSaved = this.bomChildren.length > 0;
+    this.isRestoringSavedPreview = false;
+    this.queuePreviewConnectorRefresh();
   }
 
-  private persistBomChildren(): void {
-    const bomPartNumber = this.bomPartNumber;
-    if (!bomPartNumber) return;
+  private buildPreviewStatusesByStationCode(): Record<string, PreviewStatus> {
+    return this.routeSteps.reduce<Record<string, PreviewStatus>>((statuses, step) => {
+      const status = this.previewStationStatusById[step.id];
+      if (status) {
+        statuses[step.station_code] = status;
+      }
 
-    try {
-      const stored = localStorage.getItem(this.bomChildrenStorageKey);
-      const byPartNumber = stored ? JSON.parse(stored) as Record<string, BomChildRow[]> : {};
-      byPartNumber[bomPartNumber] = this.bomChildren;
-      localStorage.setItem(this.bomChildrenStorageKey, JSON.stringify(byPartNumber));
-    } catch {
-      // Local storage can be unavailable in restricted browser modes.
-    }
+      return statuses;
+    }, {});
   }
 
-  private loadStationRules(): void {
-    try {
-      const stored = localStorage.getItem(this.stationRulesStorageKey);
-      this.stationRulesByStation = stored ? JSON.parse(stored) as Record<string, string[]> : {};
-    } catch {
-      this.stationRulesByStation = {};
+  private toNullableNumber(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') {
+      return null;
     }
+
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? numberValue : null;
   }
 
-  private persistStationRules(): void {
-    try {
-      localStorage.setItem(this.stationRulesStorageKey, JSON.stringify(this.stationRulesByStation));
-    } catch {
-      // Local storage can be unavailable in restricted browser modes.
-    }
+  private getWorkflowErrorMessage(error: any): string {
+    return error?.error?.message || error?.error?.error || 'Unable to save workflow data.';
   }
 
   private addBomHistory(description: string, changeField: string, oldValue: string, newValue: string): void {

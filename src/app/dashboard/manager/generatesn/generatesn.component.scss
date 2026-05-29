@@ -39,7 +39,7 @@
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(280px, 520px);
   gap: 16px;
 }
 
@@ -157,6 +157,7 @@ input.loading {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  position: relative;
 }
 
 .field label {
@@ -171,6 +172,45 @@ input {
   border-radius: 10px;
   font-size: 16px;
   background: #fff;
+}
+
+.wo-suggestions {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #c6d8eb;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 12px 24px rgba(31, 58, 85, 0.12);
+}
+
+.wo-suggestions button {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.6fr) minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #f7fbff;
+  color: #243d56;
+  text-align: left;
+}
+
+.wo-suggestions button:hover {
+  border-color: #9ec5f0;
+  background: #edf6ff;
+}
+
+.suggestion-wo {
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.suggestion-meta {
+  color: #5b7085;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
 }
 
 .actions {
