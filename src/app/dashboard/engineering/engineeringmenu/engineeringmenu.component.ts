@@ -17,13 +17,6 @@ type EngineeringActionCard = {
 export class EngineeringmenuComponent {
   readonly cards: EngineeringActionCard[] = [
     {
-      id: 'hlEngineering1',
-      title: 'Product Line',
-      description: 'Manage product lines used in build.',
-      icon: 'category',
-      route: '/dashboard/engineering/productline'
-    },
-    {
       id: 'hlEngineering4',
       title: 'Part Number',
       description: 'Create and manage part numbers.',

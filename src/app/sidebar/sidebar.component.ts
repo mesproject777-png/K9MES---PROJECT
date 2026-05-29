@@ -21,8 +21,6 @@ export class SidebarComponent {
     { label: 'Master', route: '/dashboard/master', icon: 'settings', pageKey: 'dashboard/master/menu' },
     { label: 'Manager', route: '/dashboard/manager/menu', icon: 'manage_accounts', pageKey: 'dashboard/manager/menu' },
     { label: 'Engineering', route: '/dashboard/engineering/menu', icon: 'engineering', pageKey: 'dashboard/engineering/menu' },
-    { label: 'BOM', route: '/dashboard/bom', icon: 'event_note', pageKey: 'dashboard/bom' },
-    { label: 'ECN', route: '/dashboard/ecn', icon: 'assignment', pageKey: 'dashboard/ecn' },
     { label: 'Labels', route: '/dashboard/label', icon: 'label', pageKey: 'dashboard/label' },
     { label: 'Operations', route: '/dashboard/operations', icon: 'precision_manufacturing', pageKey: 'dashboard/operations/assembly' },
     { label: 'Projects', route: '/dashboard/home', icon: 'folder', pageKey: 'dashboard/home' },
