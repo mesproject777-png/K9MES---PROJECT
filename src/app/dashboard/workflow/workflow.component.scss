@@ -157,33 +157,34 @@
 }
 
 .pane-signal {
-  width: 11px;
-  height: 11px;
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: #f87171;
-  border: 2px solid rgba(255, 255, 255, 0.86);
+  background: #ffffff;
+  border: 2px solid #ef4444;
   box-shadow:
+    inset 0 0 0 4px #ffffff,
     0 0 0 1px rgba(111, 21, 21, 0.18),
-    0 2px 6px rgba(5, 40, 68, 0.18);
+    0 2px 7px rgba(5, 40, 68, 0.18);
 }
 
 .pane-signal.saved {
   width: 22px;
   height: 22px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #22c55e;
-  box-shadow: none;
-  filter: drop-shadow(0 1px 1px rgba(0, 75, 35, 0.4));
+  border-color: #16a34a;
+  background: #16a34a;
+  color: #ffffff;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.72),
+    0 3px 8px rgba(0, 75, 35, 0.32);
 }
 
 .pane-signal.saved .material-symbols-outlined {
-  font-size: 22px;
+  font-size: 17px;
   font-variation-settings: 'FILL' 1, 'wght' 800, 'GRAD' 0, 'opsz' 24;
 }
 

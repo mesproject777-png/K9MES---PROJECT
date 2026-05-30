@@ -26,7 +26,7 @@
         <span
           class="pane-signal"
           [class.saved]="isPaneSaved(i)"
-          [attr.aria-label]="isPaneSaved(i) ? tab.label + ' saved' : tab.label + ' not saved'"
+          [attr.aria-label]="isPaneSaved(i) ? tab.label + ' completed' : tab.label + ' pending'"
         >
           <span *ngIf="isPaneSaved(i)" class="material-symbols-outlined" aria-hidden="true">check</span>
         </span>
