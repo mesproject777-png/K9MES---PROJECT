@@ -31,13 +31,6 @@ export class EngineeringmenuComponent {
       route: '/dashboard/engineering/itemrevisions'
     },
     {
-      id: 'hlEngineering6',
-      title: 'Routing',
-      description: 'Configure routing steps and flow.',
-      icon: 'route',
-      route: '/dashboard/engineering/routing'
-    },
-    {
       id: 'hlEngineering10',
       title: 'Assembly Definition',
       description: 'Define assembly structure and rules.',

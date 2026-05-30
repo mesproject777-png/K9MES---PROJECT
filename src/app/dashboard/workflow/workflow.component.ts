@@ -63,6 +63,10 @@ type RoutingStepRow = {
   station_name: string;
   sample_mode: 'Full' | 'Sample';
   report_mode: 'Regular' | 'Auto Only';
+  station_login_id?: string;
+  station_login_password?: string;
+  station_ip?: string;
+  printer_ip?: string;
 };
 
 type RoutingHistoryRow = {
@@ -226,6 +230,12 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   activeRulesStationName = '';
   stationRulesDraft = '';
   stationRulesByStation: Record<string, string[]> = {};
+  isStationLoginModalOpen = false;
+  isEditingStationLogin = true;
+  activeStationLoginStep: RoutingStepRow | null = null;
+  stationLoginForm: FormGroup;
+  stationLoginErrorMessage = '';
+  stationLoginSuccessMessage = '';
   previewStationStatusById: Record<number, PreviewStatus> = {};
   isChildDetailsOpen = false;
   activePreviewStation: PreviewStationNode | null = null;
@@ -282,6 +292,13 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       station_code: ['', Validators.required],
       sample_mode: ['Full', Validators.required],
       report_mode: ['Regular', Validators.required],
+    });
+
+    this.stationLoginForm = this.fb.group({
+      station_login_id: ['', Validators.required],
+      station_login_password: ['', Validators.required],
+      station_ip: ['', Validators.required],
+      printer_ip: ['', Validators.required],
     });
 
     this.bomChildForm = this.fb.group({
@@ -679,6 +696,10 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         station_name: selectedStation.station_desc,
         sample_mode: formValue.sample_mode,
         report_mode: formValue.report_mode,
+        station_login_id: '',
+        station_login_password: '',
+        station_ip: '',
+        printer_ip: '',
       };
 
       this.nextRoutingStepId += 1;
@@ -704,6 +725,11 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     return this.getStationRuleText(step.station_code);
   }
 
+  getStationLoginLabel(step: RoutingStepRow | null): string {
+    const stationCode = String(step?.station_code || '').trim();
+    return stationCode ? `${stationCode} Login` : 'Station Login';
+  }
+
   openRoutingStationRules(step: RoutingStepRow): void {
     this.activePreviewStation = null;
     this.activeRulesStationCode = step.station_code;
@@ -711,6 +737,89 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.stationRulesDraft = (this.stationRulesByStation[step.station_code] || []).join('\n');
     this.isEditingStationRules = false;
     this.isStationRulesModalOpen = true;
+  }
+
+  openStationLoginModal(step: RoutingStepRow): void {
+    this.activePreviewStation = null;
+    this.activeStationLoginStep = step;
+    this.stationLoginForm.reset({
+      station_login_id: step.station_login_id || '',
+      station_login_password: step.station_login_password || '',
+      station_ip: step.station_ip || '',
+      printer_ip: step.printer_ip || '',
+    });
+    this.isEditingStationLogin = !this.hasStationLoginDetails(step);
+    this.stationLoginErrorMessage = '';
+    this.stationLoginSuccessMessage = '';
+    this.isStationLoginModalOpen = true;
+  }
+
+  enableStationLoginEdit(): void {
+    this.isEditingStationLogin = true;
+    this.stationLoginErrorMessage = '';
+    this.stationLoginSuccessMessage = '';
+  }
+
+  saveStationLogin(): void {
+    this.stationLoginErrorMessage = '';
+    this.stationLoginSuccessMessage = '';
+
+    if (this.stationLoginForm.invalid) {
+      this.stationLoginForm.markAllAsTouched();
+      this.stationLoginErrorMessage = 'Please fill all station login fields.';
+      return;
+    }
+
+    if (!this.activeStationLoginStep) {
+      this.stationLoginErrorMessage = 'Please select a station.';
+      return;
+    }
+
+    const formValue = this.stationLoginForm.value;
+    const stationLoginId = String(formValue.station_login_id || '').trim();
+    const loginUsedByStep = this.routeSteps.find((step) =>
+      step.id !== this.activeStationLoginStep?.id &&
+      String(step.station_login_id || '').trim().toLowerCase() === stationLoginId.toLowerCase()
+    );
+    if (loginUsedByStep) {
+      this.stationLoginErrorMessage = `This login ID is already used for ${loginUsedByStep.station_code}.`;
+      return;
+    }
+
+    const updatedStep: RoutingStepRow = {
+      ...this.activeStationLoginStep,
+      station_login_id: stationLoginId,
+      station_login_password: String(formValue.station_login_password || '').trim(),
+      station_ip: String(formValue.station_ip || '').trim(),
+      printer_ip: String(formValue.printer_ip || '').trim(),
+    };
+
+    this.routeSteps = this.routeSteps.map((step) => step.id === updatedStep.id ? updatedStep : step);
+    this.activeStationLoginStep = updatedStep;
+    this.isEditingStationLogin = false;
+
+    this.saveWorkflowSnapshot(
+      () => {
+        this.stationLoginSuccessMessage = 'Station login saved successfully.';
+      },
+      (message) => {
+        this.stationLoginErrorMessage = message;
+      }
+    );
+  }
+
+  closeStationLoginModal(): void {
+    this.isStationLoginModalOpen = false;
+    this.isEditingStationLogin = true;
+    this.activeStationLoginStep = null;
+    this.stationLoginErrorMessage = '';
+    this.stationLoginSuccessMessage = '';
+    this.stationLoginForm.reset({
+      station_login_id: '',
+      station_login_password: '',
+      station_ip: '',
+      printer_ip: '',
+    });
   }
 
   deleteRoutingStep(step: RoutingStepRow): void {
@@ -1547,6 +1656,15 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     return `${stationCode} Rule`;
   }
 
+  private hasStationLoginDetails(step: RoutingStepRow): boolean {
+    return Boolean(
+      step.station_login_id &&
+      step.station_login_password &&
+      step.station_ip &&
+      step.printer_ip
+    );
+  }
+
   private openStationRulesModal(station: StationOption): void {
     this.activeRulesStationCode = station.station_code;
     this.activeRulesStationName = station.station_desc;
@@ -1627,6 +1745,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.showSavePreviousWorkPopup = false;
     this.isStationRulesModalOpen = false;
     this.isEditingStationRules = false;
+    this.closeStationLoginModal();
     this.isChildDetailsOpen = false;
     this.activePreviewStation = null;
     this.activeRulesStationCode = '';
@@ -1728,6 +1847,10 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       station_name: step.station_name,
       sample_mode: step.sample_mode,
       report_mode: step.report_mode,
+      station_login_id: step.station_login_id || '',
+      station_login_password: step.station_login_password || '',
+      station_ip: step.station_ip || '',
+      printer_ip: step.printer_ip || '',
     }));
 
     this.bomChildren = (snapshot.bom || []).map((child, index) => ({

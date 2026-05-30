@@ -24,7 +24,6 @@ import { PntypeComponent } from './dashboard/engineering/pntype/pntype.component
 import { SnTypeComponent } from './dashboard/engineering/sntype/sntype.component';
 import { PartnumberComponent } from './dashboard/engineering/partnumber/partnumber.component';
 import { ItemrevisionsComponent } from './dashboard/engineering/itemrevisions/itemrevisions.component';
-import { RoutingComponent } from './dashboard/engineering/routing/routing.component';
 import { StationsComponent } from './dashboard/engineering/stations/stations.component';
 import { EpvuploadComponent } from './dashboard/engineering/epvupload/epvupload.component';
 import { AssemblydefinitionComponent } from './dashboard/engineering/assemblydefinition/assemblydefinition.component';
@@ -112,7 +111,6 @@ const routes: Routes = [
           { path: 'itemrevisions', component: ItemrevisionsComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/itemrevisions' } },
           { path: 'bom', component: BomComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/bom' } },
           { path: 'stations', component: StationsComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/menu' } },
-          { path: 'routing', component: RoutingComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/routing' } },
           { path: 'five-step-wizard', redirectTo: '/dashboard/workflow', pathMatch: 'full' },
           { path: 'epv-upload', component: EpvuploadComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/sntype' } },
           { path: 'assembly-definition', component: AssemblydefinitionComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/menu' } },

@@ -1,7 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Router } from '@angular/router';
 
 type WizardStep = {
   label: string;
@@ -116,8 +115,7 @@ export class FivestepwizardComponent implements OnInit {
 
   constructor(
     private fb: FormBuilder,
-    private http: HttpClient,
-    private router: Router
+    private http: HttpClient
   ) {
     this.partNumberForm = this.fb.group({
       type: ['', Validators.required],
@@ -166,9 +164,7 @@ export class FivestepwizardComponent implements OnInit {
       return;
     }
 
-    // navigate to the existing Routing page and pass PN so it loads there with history
-    this.closeRoutingModal();
-    this.router.navigate(['/dashboard/engineering/routing'], { queryParams: { pn } });
+    this.routingError = 'Engineering Routing was removed. Please use the Workflow Routing panel.';
   }
 
   ngOnInit(): void {

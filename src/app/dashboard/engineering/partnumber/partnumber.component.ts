@@ -1,7 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
 import { environment } from '../../../../environments/environment';
 
 interface ProductLine {
@@ -59,7 +58,6 @@ export class PartnumberComponent implements OnInit {
   readonly productLinesApiUrl = `${environment.apiUrl}/api/users/product-lines`;
   readonly pnTypesApiUrl = `${environment.apiUrl}/api/users/pn-types`;
   readonly snTypesApiUrl = `${environment.apiUrl}/api/sn-types`;
-  private readonly lastRoutingPnKey = 'k9:lastRoutingPn';
 
   isLoading = false;
   isSaving = false;
@@ -83,8 +81,7 @@ export class PartnumberComponent implements OnInit {
 
   constructor(
     private fb: FormBuilder,
-    private http: HttpClient,
-    private router: Router
+    private http: HttpClient
   ) {
     this.pnForm = this.fb.group({
       pn: ['', Validators.required],
@@ -192,13 +189,6 @@ export class PartnumberComponent implements OnInit {
       product_line_id: row.product_line_id ?? null,
       sn_type_name: row.sn_type_name || '',
       pn_type_id: row.pn_type_id ?? null,
-    });
-  }
-
-  openRouting(row: ItemRow): void {
-    this.rememberRoutingPn(row.pn);
-    this.router.navigate(['/dashboard/engineering/routing'], {
-      queryParams: { pn: row.pn }
     });
   }
 
@@ -331,17 +321,6 @@ export class PartnumberComponent implements OnInit {
       return `"${safe.replaceAll('"', '""')}"`;
     }
     return safe;
-  }
-
-  private rememberRoutingPn(pn: string): void {
-    const cleanPn = pn.trim();
-    if (!cleanPn) return;
-
-    try {
-      localStorage.setItem(this.lastRoutingPnKey, cleanPn);
-    } catch {
-      // Local storage can be unavailable in restricted browser modes.
-    }
   }
 
   private scheduleClearMessages(): void {

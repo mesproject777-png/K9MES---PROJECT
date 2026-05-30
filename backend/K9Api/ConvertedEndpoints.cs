@@ -2717,6 +2717,10 @@ public static class ConvertedEndpoints
         var stationCode = ReadString(payload, "station_code")?.Trim();
         var sampleMode = ReadString(payload, "sample_mode")?.Trim();
         var reportMode = ReadString(payload, "report_mode")?.Trim();
+        var stationLoginId = ReadString(payload, "station_login_id")?.Trim();
+        var stationLoginPassword = ReadString(payload, "station_login_password")?.Trim();
+        var stationIp = ReadString(payload, "station_ip")?.Trim();
+        var printerIp = ReadString(payload, "printer_ip")?.Trim();
         var changedBy = ReadString(payload, "changed_by") ?? "system";
 
         if (string.IsNullOrWhiteSpace(stationCode))
@@ -2735,6 +2739,7 @@ public static class ConvertedEndpoints
         }
 
         await using var connection = await OpenConnectionAsync();
+        await EnsureRoutingStepLoginColumnsAsync(connection);
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
@@ -2779,6 +2784,29 @@ public static class ConvertedEndpoints
                 stationOrder = await ScalarAsync<int>(connection, "SELECT COALESCE(MAX(station_order), 0) + 10 FROM item_routing_steps WHERE item_id = @itemId", ("itemId", itemId.Value));
             }
 
+            if (!string.IsNullOrWhiteSpace(stationLoginId))
+            {
+                var duplicateLoginRows = await QueryRowsAsync(
+                    connection,
+                    """
+                    SELECT station_code
+                    FROM item_routing_steps
+                    WHERE item_id = @itemId
+                      AND UPPER(station_login_id) = UPPER(@stationLoginId)
+                      AND (@stepId IS NULL OR id <> @stepId)
+                    LIMIT 1
+                    """,
+                    ("itemId", itemId.Value),
+                    ("stationLoginId", stationLoginId),
+                    ("stepId", stepId));
+
+                if (duplicateLoginRows.Count > 0)
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage($"Station login ID is already used for station {duplicateLoginRows[0]["station_code"]}", 400);
+                }
+            }
+
             try
             {
                 List<Dictionary<string, object?>> rows;
@@ -2787,8 +2815,12 @@ public static class ConvertedEndpoints
                     rows = await QueryRowsAsync(
                         connection,
                         """
-                        INSERT INTO item_routing_steps (item_id, station_order, station_code, station_name, sample_mode, report_mode)
-                        VALUES (@itemId, @stationOrder, @stationCode, @stationName, @sampleMode, @reportMode)
+                        INSERT INTO item_routing_steps
+                          (item_id, station_order, station_code, station_name, sample_mode, report_mode,
+                           station_login_id, station_login_password, station_ip, printer_ip)
+                        VALUES
+                          (@itemId, @stationOrder, @stationCode, @stationName, @sampleMode, @reportMode,
+                           @stationLoginId, @stationLoginPassword, @stationIp, @printerIp)
                         RETURNING *
                         """,
                         ("itemId", itemId.Value),
@@ -2796,7 +2828,11 @@ public static class ConvertedEndpoints
                         ("stationCode", stationRows[0]["masterstation_code"]),
                         ("stationName", stationRows[0]["masterstation_name"]),
                         ("sampleMode", sampleMode),
-                        ("reportMode", reportMode));
+                        ("reportMode", reportMode),
+                        ("stationLoginId", ToDbNullable(stationLoginId)),
+                        ("stationLoginPassword", ToDbNullable(stationLoginPassword)),
+                        ("stationIp", ToDbNullable(stationIp)),
+                        ("printerIp", ToDbNullable(printerIp)));
                     await InsertRoutingHistoryAsync(connection, itemId.Value, rows[0]["id"], "CREATE", $"Added station {stationCode}", "station_code", null, stationCode, changedBy);
                     await transaction.CommitAsync();
                     return Results.Json(rows[0], statusCode: 201);
@@ -2811,6 +2847,10 @@ public static class ConvertedEndpoints
                         station_name = @stationName,
                         sample_mode = @sampleMode,
                         report_mode = @reportMode,
+                        station_login_id = @stationLoginId,
+                        station_login_password = @stationLoginPassword,
+                        station_ip = @stationIp,
+                        printer_ip = @printerIp,
                         updated_at = NOW()
                     WHERE id = @stepId
                     RETURNING *
@@ -2820,6 +2860,10 @@ public static class ConvertedEndpoints
                     ("stationName", stationRows[0]["masterstation_name"]),
                     ("sampleMode", sampleMode),
                     ("reportMode", reportMode),
+                    ("stationLoginId", ToDbNullable(stationLoginId)),
+                    ("stationLoginPassword", ToDbNullable(stationLoginPassword)),
+                    ("stationIp", ToDbNullable(stationIp)),
+                    ("printerIp", ToDbNullable(printerIp)),
                     ("stepId", stepId.Value));
                 await InsertRoutingHistoryAsync(connection, itemId.Value, stepId.Value, "UPDATE", $"Updated station {stationCode}", null, JsonSerializer.Serialize(existing), JsonSerializer.Serialize(rows[0]), changedBy);
                 await transaction.CommitAsync();
@@ -3239,10 +3283,13 @@ public static class ConvertedEndpoints
 
     private static async Task<List<Dictionary<string, object?>>> GetRouteRowsForItemAsync(NpgsqlConnection connection, int itemId)
     {
+        await EnsureRoutingStepLoginColumnsAsync(connection);
+
         return await QueryRowsAsync(
             connection,
             """
-            SELECT station_order, station_code, station_name, sample_mode, report_mode
+            SELECT station_order, station_code, station_name, sample_mode, report_mode,
+                   station_login_id, station_login_password, station_ip, printer_ip
             FROM item_routing_steps
             WHERE item_id = @itemId
             ORDER BY station_order ASC, id ASC
@@ -3255,7 +3302,8 @@ public static class ConvertedEndpoints
         return await QueryRowsAsync(
             connection,
             """
-            SELECT station_order, station_code, station_name, sample_mode, report_mode
+            SELECT station_order, station_code, station_name, sample_mode, report_mode,
+                   station_login_id, station_login_password, station_ip, printer_ip
             FROM workflow_routing_steps
             WHERE workflow_part_id = @workflowPartId
             ORDER BY station_order ASC, id ASC
@@ -3584,6 +3632,25 @@ public static class ConvertedEndpoints
 
             if (payload["routing"] is JsonArray routingRows)
             {
+                var loginStations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in routingRows)
+                {
+                    if (row is null) continue;
+
+                    var stationCode = ReadString(row, "station_code")?.Trim();
+                    var stationLoginId = ReadString(row, "station_login_id")?.Trim();
+                    if (string.IsNullOrWhiteSpace(stationCode) || string.IsNullOrWhiteSpace(stationLoginId)) continue;
+
+                    if (loginStations.TryGetValue(stationLoginId, out var existingStationCode) &&
+                        !string.Equals(existingStationCode, stationCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await transaction.RollbackAsync();
+                        return JsonMessage($"Station login ID is already used for station {existingStationCode}", 400);
+                    }
+
+                    loginStations[stationLoginId] = stationCode;
+                }
+
                 await ExecuteAsync(connection, "DELETE FROM workflow_routing_steps WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
                 var routeOrder = 10;
                 foreach (var row in routingRows)
@@ -3598,14 +3665,20 @@ public static class ConvertedEndpoints
                     var sampleMode = ReadString(row, "sample_mode")?.Trim() ?? "Full";
                     var reportMode = ReadString(row, "report_mode")?.Trim() ?? "Regular";
                     var previewStatus = ReadString(row, "preview_status")?.Trim();
+                    var stationLoginId = ReadString(row, "station_login_id")?.Trim();
+                    var stationLoginPassword = ReadString(row, "station_login_password")?.Trim();
+                    var stationIp = ReadString(row, "station_ip")?.Trim();
+                    var printerIp = ReadString(row, "printer_ip")?.Trim();
 
                     await ExecuteAsync(
                         connection,
                         """
                         INSERT INTO workflow_routing_steps
-                          (workflow_part_id, station_order, station_code, station_name, sample_mode, report_mode, preview_status)
+                          (workflow_part_id, station_order, station_code, station_name, sample_mode, report_mode, preview_status,
+                           station_login_id, station_login_password, station_ip, printer_ip)
                         VALUES
-                          (@workflowPartId, @stationOrder, @stationCode, @stationName, @sampleMode, @reportMode, @previewStatus)
+                          (@workflowPartId, @stationOrder, @stationCode, @stationName, @sampleMode, @reportMode, @previewStatus,
+                           @stationLoginId, @stationLoginPassword, @stationIp, @printerIp)
                         """,
                         ("workflowPartId", workflowPartId),
                         ("stationOrder", stationOrder),
@@ -3613,7 +3686,11 @@ public static class ConvertedEndpoints
                         ("stationName", stationName),
                         ("sampleMode", sampleMode),
                         ("reportMode", reportMode),
-                        ("previewStatus", ToDbNullable(previewStatus)));
+                        ("previewStatus", ToDbNullable(previewStatus)),
+                        ("stationLoginId", ToDbNullable(stationLoginId)),
+                        ("stationLoginPassword", ToDbNullable(stationLoginPassword)),
+                        ("stationIp", ToDbNullable(stationIp)),
+                        ("printerIp", ToDbNullable(printerIp)));
 
                     routeOrder = stationOrder + 10;
                 }
@@ -4192,6 +4269,7 @@ public static class ConvertedEndpoints
     private static async Task<object?> GetWorkflowSnapshotAsync(NpgsqlConnection connection, string pn, string? wo = null)
     {
         await EnsureWorkflowSchemaAsync(connection);
+        await EnsureRoutingStepLoginColumnsAsync(connection);
 
         var partRows = await QueryRowsAsync(
             connection,
@@ -4253,6 +4331,10 @@ public static class ConvertedEndpoints
                   r.station_name,
                   r.sample_mode,
                   r.report_mode,
+                  r.station_login_id,
+                  r.station_login_password,
+                  r.station_ip,
+                  r.printer_ip,
                   COALESCE(ps.status, r.preview_status) AS preview_status
                 FROM workflow_routing_steps r
                 LEFT JOIN workflow_preview_station_statuses ps
@@ -4369,7 +4451,9 @@ public static class ConvertedEndpoints
         var existingRoutingRows = await QueryRowsAsync(
             connection,
             """
-            SELECT id, station_order, station_code, station_name, sample_mode, report_mode, NULL::varchar AS preview_status
+            SELECT id, station_order, station_code, station_name, sample_mode, report_mode,
+                   station_login_id, station_login_password, station_ip, printer_ip,
+                   NULL::varchar AS preview_status
             FROM item_routing_steps
             WHERE item_id = @itemId
             ORDER BY station_order ASC, id ASC
@@ -4499,6 +4583,8 @@ public static class ConvertedEndpoints
 
     private static async Task<RoutingPayload?> GetRoutingPayloadAsync(NpgsqlConnection connection, int itemId, bool includeHistory)
     {
+        await EnsureRoutingStepLoginColumnsAsync(connection);
+
         var item = await FindItemByIdAsync(connection, itemId);
         if (item is null)
         {
@@ -4508,7 +4594,9 @@ public static class ConvertedEndpoints
         var data = await QueryRowsAsync(
             connection,
             """
-            SELECT id, item_id, station_order, station_code, station_name, sample_mode, report_mode, created_at, updated_at
+            SELECT id, item_id, station_order, station_code, station_name, sample_mode, report_mode,
+                   station_login_id, station_login_password, station_ip, printer_ip,
+                   created_at, updated_at
             FROM item_routing_steps
             WHERE item_id = @itemId
             ORDER BY station_order ASC, id ASC
@@ -4722,11 +4810,20 @@ public static class ConvertedEndpoints
               sample_mode VARCHAR(20) NOT NULL DEFAULT 'Full',
               report_mode VARCHAR(20) NOT NULL DEFAULT 'Regular',
               preview_status VARCHAR(30),
+              station_login_id VARCHAR(160),
+              station_login_password VARCHAR(220),
+              station_ip VARCHAR(80),
+              printer_ip VARCHAR(80),
               created_at TIMESTAMP NOT NULL DEFAULT NOW(),
               updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
               CONSTRAINT uq_workflow_route_station UNIQUE (workflow_part_id, station_code)
             )
             """);
+
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_routing_steps ADD COLUMN IF NOT EXISTS station_login_id VARCHAR(160)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_routing_steps ADD COLUMN IF NOT EXISTS station_login_password VARCHAR(220)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_routing_steps ADD COLUMN IF NOT EXISTS station_ip VARCHAR(80)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_routing_steps ADD COLUMN IF NOT EXISTS printer_ip VARCHAR(80)");
 
         await ExecuteAsync(
             connection,
@@ -4805,6 +4902,14 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_rules_part ON public.workflow_station_rules (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_wo ON public.workflow_serial_numbers (workflow_work_order_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_part ON public.workflow_serial_numbers (workflow_part_id)");
+    }
+
+    private static async Task EnsureRoutingStepLoginColumnsAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(connection, "ALTER TABLE public.item_routing_steps ADD COLUMN IF NOT EXISTS station_login_id VARCHAR(160)");
+        await ExecuteAsync(connection, "ALTER TABLE public.item_routing_steps ADD COLUMN IF NOT EXISTS station_login_password VARCHAR(220)");
+        await ExecuteAsync(connection, "ALTER TABLE public.item_routing_steps ADD COLUMN IF NOT EXISTS station_ip VARCHAR(80)");
+        await ExecuteAsync(connection, "ALTER TABLE public.item_routing_steps ADD COLUMN IF NOT EXISTS printer_ip VARCHAR(80)");
     }
 
     private static async Task EnsureSerialTrackingSchemaAsync(NpgsqlConnection connection)

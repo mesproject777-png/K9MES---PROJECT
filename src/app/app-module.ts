@@ -29,7 +29,6 @@ import { PntypeComponent } from './dashboard/engineering/pntype/pntype.component
 import { SnTypeComponent } from './dashboard/engineering/sntype/sntype.component';
 import { PartnumberComponent } from './dashboard/engineering/partnumber/partnumber.component';
 import { ItemrevisionsComponent } from './dashboard/engineering/itemrevisions/itemrevisions.component';
-import { RoutingComponent } from './dashboard/engineering/routing/routing.component';
 import { StationsComponent } from './dashboard/engineering/stations/stations.component';
 import { EpvuploadComponent } from './dashboard/engineering/epvupload/epvupload.component';
 import { FivestepwizardComponent } from './dashboard/engineering/fivestepwizard/fivestepwizard.component';
@@ -77,7 +76,6 @@ import { ShippedPackagesComponent } from './dashboard/operations/packing/shipped
     PartnumberComponent,
     ItemrevisionsComponent,
     StationsComponent,
-    RoutingComponent,
     EpvuploadComponent,
     FivestepwizardComponent,
     AssemblydefinitionComponent,
