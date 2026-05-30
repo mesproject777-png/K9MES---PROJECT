@@ -100,7 +100,7 @@ type BomHistoryRow = {
   changed_at: string;
 };
 
-type PreviewStatus = 'Completed' | 'In Progress' | 'Pending' | 'Paused';
+type PreviewStatus = 'Passed' | 'In Progress' | 'Pending' | 'Skipped';
 
 type PreviewStationNode = RoutingStepRow & {
   flowIndex: number;
@@ -1057,11 +1057,11 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   }
 
   pausePreviewStation(): void {
-    this.setPreviewStationStatus('Paused');
+    this.setPreviewStationStatus('Skipped');
   }
 
   completePreviewStation(): void {
-    this.setPreviewStationStatus('Completed');
+    this.setPreviewStationStatus('Passed');
   }
 
   getPreviewStatusClass(status: PreviewStatus): string {

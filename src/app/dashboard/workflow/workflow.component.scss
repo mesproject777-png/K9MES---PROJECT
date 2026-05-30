@@ -1185,7 +1185,8 @@ button.preview-node:focus-visible {
   line-height: 1;
 }
 
-.station-node small.completed {
+.station-node small.completed,
+.station-node small.passed {
   background: #e0f5e9;
   color: #118344;
 }
@@ -1200,7 +1201,8 @@ button.preview-node:focus-visible {
   color: #e76600;
 }
 
-.station-node small.paused {
+.station-node small.paused,
+.station-node small.skipped {
   background: #fee2e2;
   color: #b42318;
 }

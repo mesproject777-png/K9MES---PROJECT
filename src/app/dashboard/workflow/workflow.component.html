@@ -724,8 +724,8 @@
                           [class.station-diamond]="node.station?.sample_mode === 'Sample'"
                           [class.station-square]="node.station?.sample_mode !== 'Sample'"
                           [class.selected]="activePreviewStation?.id === node.station?.id"
-                          [class.completed]="node.station?.status === 'Completed'"
-                          [class.paused]="node.station?.status === 'Paused'"
+                          [class.completed]="node.station?.status === 'Passed'"
+                          [class.paused]="node.station?.status === 'Skipped'"
                           [class.pending]="node.station?.status === 'Pending'"
                           (pointerdown)="openPreviewStationDetails($event, node.station)"
                           (click)="openPreviewStationDetails($event, node.station)"
@@ -878,8 +878,8 @@
         <dd>{{ station.station_code }} - {{ station.station_name }}</dd>
       </div>
       <div>
-        <dt>Operator</dt>
-        <dd>John Doe</dd>
+        <dt>Login ID</dt>
+        <dd>{{ station.station_login_id || '-' }}</dd>
       </div>
       <div>
         <dt>Start Time</dt>
@@ -907,12 +907,12 @@
 
     <div class="station-modal-actions">
       <button type="button" class="secondary-button pause-task-button" (click)="pausePreviewStation()">
-        <span class="material-symbols-outlined" aria-hidden="true">pause</span>
-        Pause
+        <span class="material-symbols-outlined" aria-hidden="true">skip_next</span>
+        Skip
       </button>
       <button type="button" class="save-button complete-task-button" (click)="completePreviewStation()">
         <span class="material-symbols-outlined" aria-hidden="true">check</span>
-        Complete Task
+        Passed
       </button>
     </div>
   </div>
