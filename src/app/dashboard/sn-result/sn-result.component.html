@@ -49,12 +49,6 @@
         aria-labelledby="preview-tab"
         *ngIf="activeTab === 'preview'"
       >
-        <div class="summary-grid" *ngIf="traceResult">
-          <div class="summary-item"><span>Serial Number</span><strong>{{ serialNumber }}</strong></div>
-          <div class="summary-item"><span>Work Order</span><strong>{{ workOrderNumber }}</strong></div>
-          <div class="summary-item"><span>Part Number</span><strong>{{ partNumber }}</strong></div>
-        </div>
-
         <p *ngIf="previewLoading" class="message">Loading preview data...</p>
         <p *ngIf="!previewLoading && previewMessage" class="message">{{ previewMessage }}</p>
 
@@ -100,8 +94,8 @@
               <div class="preview-node hierarchy-node part-side-node">
                 <span class="preview-node-icon parent-icon material-symbols-outlined" aria-hidden="true">deployed_code</span>
                 <span class="preview-node-copy">
-                  <strong>Serial Number</strong>
-                  <small>{{ serialNumber }}</small>
+                  <strong>Parent Part No</strong>
+                  <small>{{ parentPartNumber }}</small>
                 </span>
               </div>
 
@@ -113,13 +107,13 @@
                 </span>
               </div>
 
-              <div class="preview-node hierarchy-node child-node">
+              <button type="button" class="preview-node hierarchy-node child-node" (click)="openChildDetails()">
                 <span class="preview-node-icon child-icon material-symbols-outlined" aria-hidden="true">extension</span>
                 <span class="preview-node-copy">
                   <strong>Child</strong>
                   <small>{{ childSummary }}</small>
                 </span>
-              </div>
+              </button>
             </div>
 
             <span class="tree-link vertical product-drop" aria-hidden="true"></span>
@@ -129,7 +123,7 @@
                 <span class="preview-node-icon box-icon material-symbols-outlined" aria-hidden="true">inventory_2</span>
                 <span class="preview-node-copy">
                   <strong>SN Values</strong>
-                  <small>{{ snValueLabel }}</small>
+                  <small>{{ boxLeftLabel }}</small>
                 </span>
               </div>
 
@@ -148,7 +142,7 @@
                 <span class="preview-node-icon box-icon material-symbols-outlined" aria-hidden="true">inventory_2</span>
                 <span class="preview-node-copy">
                   <strong>Assembled parts</strong>
-                  <small>{{ assembledLabel }}</small>
+                  <small>{{ boxRightLabel }}</small>
                 </span>
               </div>
             </div>
@@ -160,7 +154,18 @@
             <span class="product-line-drop"></span>
           </div>
 
-          <div class="preview-process-flow">
+          <div class="preview-process-flow" #previewProcessFlow>
+            <svg
+              class="preview-flow-lines"
+              aria-hidden="true"
+              *ngIf="previewConnectorPath"
+              [attr.width]="previewConnectorWidth"
+              [attr.height]="previewConnectorHeight"
+              [attr.viewBox]="'0 0 ' + previewConnectorWidth + ' ' + previewConnectorHeight"
+            >
+              <path class="preview-flow-line-path" [attr.d]="previewConnectorPath"></path>
+            </svg>
+
             <ng-container *ngFor="let row of flowRows; let rowIndex = index">
               <div
                 class="preview-flow-row-wrap"
@@ -169,53 +174,69 @@
               >
                 <div class="preview-flow-row" [class.reverse-row]="row.isReversed">
                   <ng-container *ngFor="let node of row.nodes; let i = index; trackBy: trackByFlowNode">
-                    <div *ngIf="node.kind === 'operator'" class="operator-node flow-card">
-                      <span class="operator-avatar" aria-hidden="true">
-                        <span class="material-symbols-outlined">{{ node.icon }}</span>
-                      </span>
-                      <strong>{{ node.title }}</strong>
-                    </div>
+                    <ng-container [ngSwitch]="node.kind">
+                      <div
+                        *ngSwitchCase="'operator'"
+                        #previewFlowNode
+                        class="operator-node flow-card"
+                        [attr.data-flow-id]="node.id"
+                      >
+                        <span class="operator-avatar" aria-hidden="true">
+                          <span class="material-symbols-outlined">{{ node.icon }}</span>
+                        </span>
+                        <strong>{{ node.title }}</strong>
+                      </div>
 
-                    <div
-                      *ngIf="node.kind === 'station'"
-                      class="station-node flow-card"
-                      [class.station-diamond]="node.station?.sample_mode === 'Sample'"
-                      [class.station-square]="node.station?.sample_mode !== 'Sample'"
-                      [class.completed]="node.station?.status === 'Completed'"
-                      [class.in-progress]="node.station?.status === 'In Progress'"
-                      [class.paused]="node.station?.status === 'Paused'"
-                      [class.pending]="node.station?.status === 'Pending'"
-                    >
-                      <span class="station-node-inner">
-                        <span class="station-icon material-symbols-outlined" aria-hidden="true">{{ node.station?.icon }}</span>
-                        <strong>{{ node.station?.station_name || node.station?.station_code }}</strong>
-                        <small [class]="node.station ? getStatusClass(node.station.status) : ''">
-                          {{ node.station?.status }}
-                        </small>
-                      </span>
-                    </div>
+                      <button
+                        *ngSwitchCase="'station'"
+                        #previewFlowNode
+                        type="button"
+                        class="station-node flow-card"
+                        [attr.data-flow-id]="node.id"
+                        [class.station-diamond]="node.station?.sample_mode === 'Sample'"
+                        [class.station-square]="node.station?.sample_mode !== 'Sample'"
+                        [class.selected]="activePreviewStation?.id === node.station?.id"
+                        [class.completed]="node.station?.status === 'Completed'"
+                        [class.paused]="node.station?.status === 'Paused'"
+                        [class.pending]="node.station?.status === 'Pending'"
+                        (pointerdown)="openPreviewStationDetails($event, node.station)"
+                        (click)="openPreviewStationDetails($event, node.station)"
+                      >
+                        <span class="station-node-inner">
+                          <span class="station-icon material-symbols-outlined" aria-hidden="true">{{ node.station?.icon }}</span>
+                          <strong>{{ node.station?.station_name || node.station?.station_code }}</strong>
+                          <small [class]="node.station ? getStatusClass(node.station.status) : ''">
+                            {{ node.station?.status }}
+                          </small>
+                        </span>
+                      </button>
 
-                    <div *ngIf="node.kind === 'empty'" class="preview-empty-station flow-card">
-                      <span class="material-symbols-outlined" aria-hidden="true">{{ node.icon }}</span>
-                      <strong>{{ node.title }}</strong>
-                    </div>
+                      <div
+                        *ngSwitchCase="'empty'"
+                        #previewFlowNode
+                        class="preview-empty-station flow-card"
+                        [attr.data-flow-id]="node.id"
+                      >
+                        <span class="material-symbols-outlined" aria-hidden="true">{{ node.icon }}</span>
+                        <strong>{{ node.title }}</strong>
+                      </div>
 
-                    <div
-                      *ngIf="node.kind === 'logistics'"
-                      class="logistics-node flow-card"
-                      [class.cart-node]="node.variant === 'cart'"
-                      [class.pallet-node]="node.variant === 'pallet'"
-                      [class.truck-node]="node.variant === 'truck'"
-                    >
-                      <span *ngIf="node.variant !== 'pallet'" class="logistics-icon material-symbols-outlined" aria-hidden="true">
-                        {{ node.icon }}
-                      </span>
-                      <span *ngIf="node.variant === 'pallet'" class="pallet-crates" aria-hidden="true">
-                        <span></span><span></span><span></span><span></span><span></span>
-                      </span>
-                      <strong>{{ node.title }}</strong>
-                      <small *ngIf="node.subtitle">{{ node.subtitle }}</small>
-                    </div>
+                      <div
+                        *ngSwitchCase="'logistics'"
+                        #previewFlowNode
+                        class="logistics-node flow-card"
+                        [attr.data-flow-id]="node.id"
+                        [class.cart-node]="node.variant === 'cart'"
+                        [class.pallet-node]="node.variant === 'pallet'"
+                        [class.truck-node]="node.variant === 'truck'"
+                      >
+                        <span class="logistics-icon material-symbols-outlined" aria-hidden="true">
+                          {{ node.icon }}
+                        </span>
+                        <strong>{{ node.title }}</strong>
+                        <small *ngIf="node.subtitle">{{ node.subtitle }}</small>
+                      </div>
+                    </ng-container>
 
                     <span class="flow-line" *ngIf="i < row.nodes.length - 1" aria-hidden="true"></span>
                   </ng-container>
@@ -326,3 +347,124 @@
     </div>
   </div>
 </section>
+
+<div *ngIf="isChildDetailsOpen" class="preview-popup-backdrop">
+  <div class="preview-child-modal" role="dialog" aria-modal="true" aria-labelledby="previewChildTitle">
+    <div class="preview-popup-header">
+      <div>
+        <h3 id="previewChildTitle">Child Parts</h3>
+        <p>{{ partNumber }} BOM</p>
+      </div>
+      <button type="button" class="icon-close-button" aria-label="Close child details" (click)="closeChildDetails()">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+
+    <div class="preview-child-summary">
+      <span class="material-symbols-outlined" aria-hidden="true">extension</span>
+      <strong>{{ childSummary }}</strong>
+      <small>{{ workOrderNumber }}</small>
+    </div>
+
+    <div class="preview-child-table" *ngIf="bomChildren.length > 0; else noPreviewChildren">
+      <table>
+        <thead>
+          <tr>
+            <th>Child PN</th>
+            <th>Description</th>
+            <th>Station</th>
+            <th>Item Type</th>
+            <th>PN Type</th>
+            <th>Qty</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let child of bomChildren">
+            <td>{{ child.son_pn }}</td>
+            <td>{{ child.son_description || child.son_pn }}</td>
+            <td>{{ child.station_code }} - {{ child.station_name }}</td>
+            <td>{{ child.item_type || '-' }}</td>
+            <td>{{ child.pn_type || '-' }}</td>
+            <td>{{ child.qty }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ng-template #noPreviewChildren>
+      <div class="preview-empty-popup">
+        <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+        <strong>No BOM childs found.</strong>
+      </div>
+    </ng-template>
+  </div>
+</div>
+
+<div *ngIf="activePreviewStation as station" class="preview-popup-backdrop station-popup-backdrop">
+  <div class="preview-station-modal" role="dialog" aria-modal="true" aria-labelledby="previewStationTitle">
+    <div class="station-modal-top">
+      <span class="station-modal-icon-wrap" aria-hidden="true">
+        <span class="station-modal-icon material-symbols-outlined">{{ station.icon }}</span>
+        <span class="station-modal-gear material-symbols-outlined">settings</span>
+      </span>
+      <div>
+        <h3 id="previewStationTitle">{{ station.station_name }}</h3>
+      </div>
+      <button type="button" class="icon-close-button" aria-label="Close station details" (click)="closePreviewStationDetails()">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+
+    <dl class="station-detail-list">
+      <div>
+        <dt>Part Number</dt>
+        <dd>{{ partNumber }}</dd>
+      </div>
+      <div>
+        <dt>Work Order</dt>
+        <dd>{{ workOrderNumber }}</dd>
+      </div>
+      <div>
+        <dt>Station</dt>
+        <dd>{{ station.station_code }} - {{ station.station_name }}</dd>
+      </div>
+      <div>
+        <dt>Operator</dt>
+        <dd>John Doe</dd>
+      </div>
+      <div>
+        <dt>Start Time</dt>
+        <dd>{{ previewStationStartTime }}</dd>
+      </div>
+      <div>
+        <dt>Sample</dt>
+        <dd>{{ station.sample_mode }}</dd>
+      </div>
+      <div>
+        <dt>Report</dt>
+        <dd>{{ station.report_mode }}</dd>
+      </div>
+    </dl>
+
+    <div class="station-task-section">
+      <h4>Tasks</h4>
+      <ul class="station-task-list" *ngIf="activePreviewStationRules.length > 0; else noStationTasks">
+        <li *ngFor="let task of activePreviewStationRules">{{ task }}</li>
+      </ul>
+      <ng-template #noStationTasks>
+        <p class="station-empty-tasks">No Tasks are assigned yet</p>
+      </ng-template>
+    </div>
+
+    <div class="station-modal-actions">
+      <button type="button" class="secondary-button pause-task-button" (click)="pausePreviewStation()">
+        <span class="material-symbols-outlined" aria-hidden="true">pause</span>
+        Pause
+      </button>
+      <button type="button" class="save-button complete-task-button" (click)="completePreviewStation()">
+        <span class="material-symbols-outlined" aria-hidden="true">check</span>
+        Complete Task
+      </button>
+    </div>
+  </div>
+</div>

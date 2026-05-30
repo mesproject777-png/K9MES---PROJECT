@@ -25,6 +25,7 @@ export interface TraceDevice {
   work_order_status: string;
   work_order_qty: number;
   work_order_balance: number;
+  plant?: string;
   site: string;
   description: string;
 }

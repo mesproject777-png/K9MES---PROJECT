@@ -178,7 +178,6 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   readonly workOrderStatusOptions = ['Allocated', 'Planned', 'Released', 'Cancelled', 'Closed'];
   readonly sampleModeOptions: Array<'Full' | 'Sample'> = ['Full', 'Sample'];
   readonly reportModeOptions: Array<'Regular' | 'Auto Only'> = ['Regular', 'Auto Only'];
-  readonly previewTaskLabels = ['Scan Part / Box', 'Connect Interface', 'Run Diagnostic Test', 'Verify Results', 'Save & Submit'];
   readonly minDueDate = this.getDateInputValue(1);
 
   activeTabIndex = 0;
@@ -663,9 +662,10 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   openRoutingStationRules(step: RoutingStepRow): void {
+    this.activePreviewStation = null;
     this.activeRulesStationCode = step.station_code;
     this.activeRulesStationName = step.station_name;
-    this.stationRulesDraft = (this.stationRulesByStation[step.station_code] || [this.getStationRuleText(step.station_code)]).join('\n');
+    this.stationRulesDraft = (this.stationRulesByStation[step.station_code] || []).join('\n');
     this.isEditingStationRules = false;
     this.isStationRulesModalOpen = true;
   }
@@ -827,6 +827,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
         kind: 'logistics',
         variant: 'pallet',
         title: 'Pallet',
+        icon: 'inventory_2',
       },
       {
         id: 'truck',
@@ -863,32 +864,12 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     return childCount === 1 ? '1 Child' : `${childCount} Childs`;
   }
 
-  get activePreviewStationProgress(): number {
-    if (!this.activePreviewStation) {
-      return 0;
-    }
-
-    return 60;
-  }
-
   get activePreviewStationRules(): string[] {
     if (!this.activePreviewStation) {
       return [];
     }
 
     return this.stationRulesByStation[this.activePreviewStation.station_code] || [];
-  }
-
-  getActivePreviewStationNote(): string {
-    if (!this.activePreviewStation) {
-      return '';
-    }
-
-    return `Running ${this.activePreviewStation.station_name || 'interface'} communication test...`;
-  }
-
-  getPreviewTaskId(station: PreviewStationNode): string {
-    return `TSK-${String(station.flowIndex).padStart(4, '0')}`;
   }
 
   getSiteOptionsForSelectedPlant(): Site[] {
@@ -929,14 +910,6 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
 
   completePreviewStation(): void {
     this.setPreviewStationStatus('Completed');
-  }
-
-  getPreviewTaskStatus(index: number): PreviewStatus {
-    if (index < 2) {
-      return 'Completed';
-    }
-
-    return index === 2 ? 'In Progress' : 'Pending';
   }
 
   getPreviewStatusClass(status: PreviewStatus): string {
@@ -1136,10 +1109,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   get activeStationRules(): string[] {
-    const configuredRules = this.stationRulesByStation[this.activeRulesStationCode] || [];
-    return configuredRules.length
-      ? configuredRules
-      : (this.activeRulesStationCode ? [this.getStationRuleText(this.activeRulesStationCode)] : []);
+    return this.stationRulesByStation[this.activeRulesStationCode] || [];
   }
 
   openRulesEditor(): void {

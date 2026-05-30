@@ -754,15 +754,8 @@
                           [class.pallet-node]="node.variant === 'pallet'"
                           [class.truck-node]="node.variant === 'truck'"
                         >
-                          <span
-                            *ngIf="node.variant !== 'pallet'"
-                            class="logistics-icon material-symbols-outlined"
-                            aria-hidden="true"
-                          >
+                          <span class="logistics-icon material-symbols-outlined" aria-hidden="true">
                             {{ node.icon }}
-                          </span>
-                          <span *ngIf="node.variant === 'pallet'" class="pallet-crates" aria-hidden="true">
-                            <span></span><span></span><span></span><span></span><span></span>
                           </span>
                           <strong>{{ node.title }}</strong>
                           <small *ngIf="node.subtitle">{{ node.subtitle }}</small>
@@ -859,22 +852,16 @@
       </span>
       <div>
         <h3 id="previewStationTitle">{{ station.station_name }}</h3>
-        <span class="status-pill" [ngClass]="getPreviewStatusClass(station.status)">{{ station.status }}</span>
       </div>
       <button type="button" class="icon-close-button" aria-label="Close station details" (click)="closePreviewStationDetails()">
         <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
 
-    <div class="station-progress">
-      <span [style.width.%]="activePreviewStationProgress"></span>
-      <strong>{{ activePreviewStationProgress }}%</strong>
-    </div>
-
     <dl class="station-detail-list">
       <div>
-        <dt>Task ID</dt>
-        <dd>{{ getPreviewTaskId(station) }}</dd>
+        <dt>Part Number</dt>
+        <dd>{{ previewPartNumber }}</dd>
       </div>
       <div>
         <dt>Work Order</dt>
@@ -900,36 +887,15 @@
         <dt>Report</dt>
         <dd>{{ station.report_mode }}</dd>
       </div>
-      <div>
-        <dt>Status</dt>
-        <dd><span class="status-pill" [ngClass]="getPreviewStatusClass(station.status)">{{ station.status }}</span></dd>
-      </div>
     </dl>
 
     <div class="station-task-section">
-      <h4>Task Steps</h4>
-      <div
-        class="station-task-row"
-        *ngFor="let task of previewTaskLabels; let taskIndex = index"
-        [class.completed]="getPreviewTaskStatus(taskIndex) === 'Completed'"
-        [class.in-progress]="getPreviewTaskStatus(taskIndex) === 'In Progress'"
-        [class.pending]="getPreviewTaskStatus(taskIndex) === 'Pending'"
-      >
-        <span class="material-symbols-outlined" aria-hidden="true">
-          {{ getPreviewTaskStatus(taskIndex) === 'Completed' ? 'check_circle' : (getPreviewTaskStatus(taskIndex) === 'In Progress' ? 'settings' : 'hourglass_empty') }}
-        </span>
-        <strong>{{ task }}</strong>
-        <small>{{ getPreviewTaskStatus(taskIndex) }}</small>
-      </div>
-    </div>
-
-    <div class="station-rules-section">
-      <h4>Notes / Remarks</h4>
-      <div class="station-rule-list" *ngIf="activePreviewStationRules.length > 0; else noStationRules">
-        <p *ngFor="let rule of activePreviewStationRules">{{ rule }}</p>
-      </div>
-      <ng-template #noStationRules>
-        <p class="station-note">{{ getActivePreviewStationNote() }}</p>
+      <h4>Tasks</h4>
+      <ul class="station-task-list" *ngIf="activePreviewStationRules.length > 0; else noStationTasks">
+        <li *ngFor="let task of activePreviewStationRules">{{ task }}</li>
+      </ul>
+      <ng-template #noStationTasks>
+        <p class="station-empty-tasks">No Tasks are assigned yet</p>
       </ng-template>
     </div>
 

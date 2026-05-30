@@ -1611,6 +1611,7 @@ public static class ConvertedEndpoints
         app.MapGet("/api/workflow/by-pn", async (HttpRequest request) =>
         {
             var pn = request.Query["pn"].ToString().Trim();
+            var wo = request.Query["wo"].ToString().Trim();
             if (string.IsNullOrWhiteSpace(pn))
             {
                 return JsonMessage("pn is required", 400);
@@ -1618,7 +1619,7 @@ public static class ConvertedEndpoints
 
             await using var connection = await OpenConnectionAsync();
             await EnsureWorkflowSchemaAsync(connection);
-            var snapshot = await GetWorkflowSnapshotAsync(connection, pn);
+            var snapshot = await GetWorkflowSnapshotAsync(connection, pn, wo);
             return snapshot is null ? JsonMessage("Workflow not found", 404) : Results.Json(snapshot);
         });
 
@@ -1656,7 +1657,7 @@ public static class ConvertedEndpoints
                 connection,
                 $"""
                 SELECT
-                  w.wo,
+                  COALESCE(w.wo, '') AS wo,
                   p.pn AS part_number,
                   COALESCE(st.sn_type_name, p.sn_type_name, '') AS sn_type,
                   w.due_date,
@@ -1672,13 +1673,13 @@ public static class ConvertedEndpoints
                     WHERE b.workflow_part_id = p.id
                   ) AS bom_count,
                   COALESCE(w.site_name, '') AS site,
-                  w.updated_at,
+                  COALESCE(w.updated_at, p.updated_at) AS updated_at,
                   COUNT(*) OVER () AS total_count
-                FROM workflow_work_orders w
-                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                FROM workflow_part_numbers p
+                LEFT JOIN workflow_work_orders w ON w.workflow_part_id = p.id
                 LEFT JOIN sn_types st ON st.id = p.sn_type_id
                 {(where.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", where))}
-                ORDER BY w.updated_at DESC, w.id DESC
+                ORDER BY COALESCE(w.updated_at, p.updated_at) DESC, w.id DESC NULLS LAST, p.id DESC
                 LIMIT @limit OFFSET @offset
                 """,
                 parameters.ToArray());
@@ -2124,20 +2125,20 @@ public static class ConvertedEndpoints
 
             await using var connection = await OpenConnectionAsync();
             await EnsureSerialTrackingSchemaAsync(connection);
+            await EnsureWorkflowSchemaAsync(connection);
+            var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
+            if (workflowSerial is not null)
+            {
+                return Results.Json(await BuildWorkflowTracePayloadAsync(connection, query, workflowSerial));
+            }
+
             var serial = await GetSerialByQueryAsync(connection, query);
             if (serial is not null)
             {
                 return Results.Json(await BuildTracePayloadAsync(connection, query, serial));
             }
 
-            await EnsureWorkflowSchemaAsync(connection);
-            var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
-            if (workflowSerial is null)
-            {
-                return JsonMessage("SN/RSN not found", 404);
-            }
-
-            return Results.Json(await BuildWorkflowTracePayloadAsync(connection, query, workflowSerial));
+            return JsonMessage("SN/RSN not found", 404);
         });
 
         app.MapPost("/api/traceability/pass-fail", async (HttpContext context) =>
@@ -3188,7 +3189,8 @@ public static class ConvertedEndpoints
                    wo.id AS work_order_id, wo.wo, wo.status AS wo_status, wo.qty AS wo_qty, wo.balance AS wo_balance,
                    i.id AS item_id, i.pn, i.description AS item_description,
                    ir.revision, s.name AS site_name,
-                   pl.code AS product_line_code, pl.description AS product_line_name
+                   pl.code AS product_line_code, pl.description AS product_line_name,
+                   '' AS plant
             FROM serial_numbers snr
             JOIN work_orders wo ON wo.id = snr.work_order_id
             JOIN items i ON i.id = snr.item_id
@@ -3219,6 +3221,7 @@ public static class ConvertedEndpoints
                      WHERE generated.workflow_work_order_id = w.id
                    ), 0) AS wo_balance,
                    p.id AS workflow_part_id, p.pn, p.description AS item_description,
+                   COALESCE(w.plant, '') AS plant,
                    COALESCE(w.revision, '-') AS revision,
                    COALESCE(w.site_name, '-') AS site_name,
                    COALESCE(p.item_type, '-') AS product_line_name
@@ -3337,6 +3340,7 @@ public static class ConvertedEndpoints
                 work_order_status = serial["wo_status"],
                 work_order_qty = serial["wo_qty"],
                 work_order_balance = serial["wo_balance"],
+                plant = serial["plant"],
                 site = serial["site_name"] ?? "-",
                 description = serial["item_description"] ?? "-"
             },
@@ -3400,6 +3404,7 @@ public static class ConvertedEndpoints
                 work_order_status = serial["wo_status"],
                 work_order_qty = serial["wo_qty"],
                 work_order_balance = serial["wo_balance"],
+                plant = serial["plant"],
                 site = serial["site_name"] ?? "-",
                 description = serial["item_description"] ?? "-"
             },
@@ -4184,7 +4189,7 @@ public static class ConvertedEndpoints
         }
     }
 
-    private static async Task<object?> GetWorkflowSnapshotAsync(NpgsqlConnection connection, string pn)
+    private static async Task<object?> GetWorkflowSnapshotAsync(NpgsqlConnection connection, string pn, string? wo = null)
     {
         await EnsureWorkflowSchemaAsync(connection);
 
@@ -4230,11 +4235,13 @@ public static class ConvertedEndpoints
                   updated_at
                 FROM workflow_work_orders
                 WHERE workflow_part_id = @workflowPartId
+                  AND (@wo = '' OR UPPER(wo) = UPPER(@wo))
                 ORDER BY updated_at DESC, id DESC
                 LIMIT 1
                 """,
                 ("workflowPartId", workflowPartId),
-                ("pn", pn));
+                ("pn", pn),
+                ("wo", string.IsNullOrWhiteSpace(wo) ? string.Empty : wo.Trim()));
 
             var routingRows = await QueryRowsAsync(
                 connection,
@@ -4351,11 +4358,13 @@ public static class ConvertedEndpoints
             JOIN sites s ON s.id = w.site_id
             JOIN item_revisions ir ON ir.id = w.item_revision_id
             WHERE w.item_id = @itemId
+              AND (@wo = '' OR UPPER(w.wo) = UPPER(@wo))
             ORDER BY w.updated_at DESC, w.id DESC
             LIMIT 1
             """,
             ("itemId", itemId),
-            ("pn", pn));
+            ("pn", pn),
+            ("wo", string.IsNullOrWhiteSpace(wo) ? string.Empty : wo.Trim()));
 
         var existingRoutingRows = await QueryRowsAsync(
             connection,

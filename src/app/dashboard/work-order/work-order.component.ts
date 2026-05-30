@@ -15,15 +15,15 @@ type WorkflowWorkOrderSummary = {
 };
 
 type WorkflowWorkOrderApiRow = {
-  wo: string;
+  wo: string | null;
   part_number: string;
   sn_type: string;
-  due_date: string;
+  due_date: string | null;
   quantity: number | null;
   station_count: number;
   bom_count: number;
   site: string;
-  updated_at: string;
+  updated_at: string | null;
 };
 
 @Component({
@@ -135,15 +135,15 @@ export class WorkOrderComponent implements OnInit {
 
   private mapApiRow(row: WorkflowWorkOrderApiRow): WorkflowWorkOrderSummary {
     return {
-      wo: row.wo,
+      wo: row.wo || '',
       partNumber: row.part_number,
       snType: row.sn_type,
-      dueDate: row.due_date,
+      dueDate: row.due_date || '',
       quantity: row.quantity,
       stationCount: row.station_count,
       bomCount: row.bom_count,
       site: row.site,
-      updatedAt: row.updated_at,
+      updatedAt: row.updated_at || '',
     };
   }
 
