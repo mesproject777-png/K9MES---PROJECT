@@ -1,3 +1,308 @@
-
 <div class="label-page">
+  <section class="label-card label-master">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Label Master</p>
+        <h2>Create New Label</h2>
+      </div>
+      <p class="status-message" [class.success]="messageType === 'success'" [class.error]="messageType === 'error'">
+        {{ message }}
+      </p>
+    </div>
+
+    <div class="master-form">
+      <label>
+        <span>Label Code</span>
+        <input
+          type="text"
+          [(ngModel)]="labelCode"
+          placeholder="PRD-MOB-001"
+          autocomplete="off"
+        />
+      </label>
+
+      <label>
+        <span>Label Description</span>
+        <input
+          type="text"
+          [(ngModel)]="labelDescription"
+          placeholder="Product mobile label"
+          autocomplete="off"
+        />
+      </label>
+
+      <label>
+        <span>Label Type</span>
+        <select [(ngModel)]="labelType">
+          <option *ngFor="let type of labelTypes" [value]="type">{{ type }}</option>
+        </select>
+      </label>
+
+      <button type="button" class="primary-button" (click)="saveLabel()">
+        <span class="material-symbols-outlined">save</span>
+        Save
+      </button>
+
+      <button type="button" class="secondary-button" (click)="startNewLabel()">
+        <span class="material-symbols-outlined">add</span>
+        Add New
+      </button>
+
+      <button type="button" class="secondary-button" (click)="openLabelList()">
+        <span class="material-symbols-outlined">format_list_bulleted</span>
+        Label List
+      </button>
+    </div>
+  </section>
+
+  <section class="label-workspace">
+    <div class="label-card prn-panel">
+      <div class="section-heading compact">
+        <div>
+          <p class="eyebrow">Upload / Edit ZPL</p>
+          <h3>PRN Data</h3>
+        </div>
+        <label class="upload-button">
+          <span class="material-symbols-outlined">upload_file</span>
+          Upload PRN File
+          <input type="file" accept=".prn,.zpl,.txt" (change)="onPrnFileSelected($event)" />
+        </label>
+      </div>
+
+      <p class="file-name">{{ uploadedFileName || 'No PRN file uploaded' }}</p>
+
+      <div class="mes-grid">
+        <label class="rsn-field">
+          <span>RSN / Serial Number</span>
+          <div class="inline-search">
+            <input
+              type="text"
+              [(ngModel)]="rsnQuery"
+              (keyup.enter)="searchRsn()"
+              placeholder="Enter RSN or Serial Number"
+              autocomplete="off"
+            />
+            <button type="button" class="primary-button" (click)="searchRsn()" [disabled]="isSearchingRsn">
+              <span class="material-symbols-outlined">search</span>
+              {{ isSearchingRsn ? 'Searching' : 'Search' }}
+            </button>
+          </div>
+        </label>
+
+        <label>
+          <span>Station</span>
+          <select [(ngModel)]="selectedStationCode" (ngModelChange)="onStationChange()">
+            <option value="">Select Station</option>
+            <option *ngFor="let station of routingStations" [value]="station.station_code">
+              {{ station.station_code }} - {{ station.station_name }}
+            </option>
+          </select>
+        </label>
+      </div>
+
+      <div class="extracted-fields">
+        <div *ngFor="let field of fieldLabels">
+          <span>{{ field.label }}</span>
+          <strong>{{ extractedFields[field.key] || '-' }}</strong>
+        </div>
+      </div>
+
+      <div class="label-data-editor">
+        <div class="section-heading compact sub-heading">
+          <div>
+            <p class="eyebrow">Sticker Values</p>
+            <h3>Editable Label Data</h3>
+          </div>
+        </div>
+
+        <div class="sticker-grid">
+          <label *ngFor="let field of editableStickerFields">
+            <span>{{ field.label }}</span>
+            <input
+              type="text"
+              [(ngModel)]="stickerData[field.key]"
+              (ngModelChange)="onStickerDataChanged()"
+              autocomplete="off"
+            />
+          </label>
+        </div>
+      </div>
+
+      <button type="button" class="raw-toggle" (click)="isRawEditorOpen = !isRawEditorOpen">
+        <span class="material-symbols-outlined">{{ isRawEditorOpen ? 'expand_less' : 'expand_more' }}</span>
+        Original PRN Template
+      </button>
+
+      <textarea
+        *ngIf="isRawEditorOpen"
+        class="prn-editor"
+        [(ngModel)]="rawPrnText"
+        (ngModelChange)="onRawPrnChanged()"
+        spellcheck="false"
+        placeholder="Paste or upload ZPL/PRN content here"
+      ></textarea>
+
+      <div class="placeholder-panel" *ngIf="placeholderResolutions.length > 0">
+        <div
+          *ngFor="let placeholder of placeholderResolutions"
+          class="placeholder-chip"
+          [class.unresolved]="!placeholder.resolved"
+        >
+          <span>{{ placeholder.token }}</span>
+          <strong>{{ placeholder.resolved ? placeholder.value : 'No value found' }}</strong>
+        </div>
+      </div>
+
+      <button type="button" class="raw-toggle" (click)="isGeneratedEditorOpen = !isGeneratedEditorOpen">
+        <span class="material-symbols-outlined">{{ isGeneratedEditorOpen ? 'expand_less' : 'expand_more' }}</span>
+        Resolved / Generated PRN
+      </button>
+
+      <textarea
+        *ngIf="isGeneratedEditorOpen"
+        class="prn-editor generated"
+        [ngModel]="generatedPrnText"
+        readonly
+        spellcheck="false"
+        placeholder="Generated PRN will appear after placeholder replacement"
+      ></textarea>
+
+      <div class="action-row">
+        <button type="button" class="primary-button" (click)="generatePreview()">
+          <span class="material-symbols-outlined">visibility</span>
+          Generate Preview
+        </button>
+        <button type="button" class="secondary-button" (click)="savePrnData()">
+          <span class="material-symbols-outlined">save_as</span>
+          Save PRN Data
+        </button>
+        <button type="button" class="ghost-button" (click)="clearPrnData()">
+          <span class="material-symbols-outlined">backspace</span>
+          Clear
+        </button>
+      </div>
+    </div>
+
+    <div class="label-card preview-panel">
+      <div class="section-heading compact">
+        <div>
+          <p class="eyebrow">Physical Sticker</p>
+          <h3>Actual Sticker Preview</h3>
+        </div>
+        <span class="preview-mode">{{ previewMode === 'html' ? 'Local Preview' : 'Waiting for PRN' }}</span>
+      </div>
+
+      <div class="preview-shell">
+        <div *ngIf="previewMode === 'html'" class="print-label">
+          <div
+            *ngFor="let item of previewElements"
+            class="preview-item"
+            [class.preview-text]="item.kind === 'text'"
+            [class.preview-barcode]="item.kind === 'barcode'"
+            [class.preview-qr]="item.kind === 'qr'"
+            [class.preview-box]="item.kind === 'box'"
+            [style.left.px]="item.x"
+            [style.top.px]="item.y"
+            [style.width.px]="item.width"
+            [style.height.px]="item.height"
+            [style.fontSize.px]="item.fontSize"
+          >
+            <ng-container [ngSwitch]="item.kind">
+              <span *ngSwitchCase="'text'">{{ item.text }}</span>
+              <span *ngSwitchCase="'box'"></span>
+              <span *ngSwitchCase="'barcode'" class="barcode-wrap">
+                <img *ngIf="codeImageById[item.id]" [src]="codeImageById[item.id]" alt="Barcode" />
+                <span *ngIf="!codeImageById[item.id]" class="barcode-bars">
+                  <i *ngFor="let bar of getBarcodeBars(item.text)" [style.width.px]="bar"></i>
+                </span>
+              </span>
+              <span *ngSwitchCase="'qr'" class="qr-wrap">
+                <img *ngIf="codeImageById[item.id]" [src]="codeImageById[item.id]" alt="QR Code" />
+                <ng-container *ngIf="!codeImageById[item.id]">
+                  <i *ngFor="let cell of getQrCells(item.text)" [class.on]="cell"></i>
+                </ng-container>
+              </span>
+            </ng-container>
+          </div>
+        </div>
+
+        <div *ngIf="previewMode === 'empty'" class="empty-preview">
+          <span class="material-symbols-outlined">new_label</span>
+          <p>Upload PRN/ZPL data and preview the label.</p>
+        </div>
+      </div>
+
+      <div class="action-row preview-actions">
+        <button type="button" class="primary-button" (click)="printLabel()">
+          <span class="material-symbols-outlined">print</span>
+          Print Preview
+        </button>
+        <p class="print-warning" *ngIf="unresolvedPlaceholderNames.length > 0">
+          Resolve highlighted placeholders before printing.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <div class="label-list-overlay" *ngIf="isLabelListOpen" (click)="closeLabelList()">
+    <section class="label-card label-list-dialog" (click)="$event.stopPropagation()">
+      <div class="section-heading compact">
+        <div>
+          <p class="eyebrow">Existing Labels</p>
+          <h3>Label List</h3>
+        </div>
+        <label class="search-box">
+          <span class="material-symbols-outlined">search</span>
+          <input
+            type="search"
+            [(ngModel)]="searchCode"
+            (keyup.enter)="loadFirstSearchResult()"
+            placeholder="Search Label Code"
+            autocomplete="off"
+          />
+        </label>
+        <button type="button" class="icon-button" title="Close" (click)="closeLabelList()">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>S.No</th>
+              <th>Label Code</th>
+              <th>Label Description</th>
+              <th>Label Type</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let label of filteredLabels; let index = index" [class.selected]="label.id === selectedLabelId">
+              <td>{{ index + 1 }}</td>
+              <td>
+                <button type="button" class="code-link" (click)="selectLabel(label)">
+                  {{ label.code }}
+                </button>
+              </td>
+              <td>{{ label.description || '-' }}</td>
+              <td>{{ label.type || '-' }}</td>
+              <td>
+                <span class="status-pill" [class.draft]="label.status === 'Draft'">{{ label.status }}</span>
+              </td>
+              <td>
+                <button type="button" class="icon-button" title="Edit label" (click)="selectLabel(label)">
+                  <span class="material-symbols-outlined">edit</span>
+                </button>
+              </td>
+            </tr>
+            <tr *ngIf="filteredLabels.length === 0">
+              <td colspan="6" class="empty-table">No labels found.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
 </div>
