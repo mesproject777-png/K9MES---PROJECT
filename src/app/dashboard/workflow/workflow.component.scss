@@ -293,6 +293,13 @@
   cursor: not-allowed;
 }
 
+.form-field input:disabled {
+  background: #eef3f8;
+  color: #50647c;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
 .form-field input::placeholder {
   color: #8a96a5;
   font-weight: 500;
@@ -1086,11 +1093,11 @@ button.preview-node:focus-visible {
 .station-node {
   flex: 0 0 auto;
   position: relative;
-  width: 140px;
-  height: 160px;
+  width: 124px;
+  height: 128px;
   display: grid;
   place-items: center;
-  padding: 12px;
+  padding: 10px;
   border: 1.5px solid #dfebfb;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
   color: #061437;
@@ -1114,9 +1121,9 @@ button.preview-node:focus-visible {
 }
 
 .station-diamond {
-  width: 140px;
-  height: 140px;
-  margin: 10px 14px;
+  width: 116px;
+  height: 116px;
+  margin: 10px 12px;
   border-color: #dfebfb;
   border-radius: 0;
   transform: rotate(45deg);
@@ -1136,32 +1143,32 @@ button.preview-node:focus-visible {
 }
 
 .station-diamond .station-node-inner {
-  width: 108px;
+  width: 98px;
   transform: rotate(-45deg);
 }
 
 .station-diamond .station-icon {
-  width: 40px;
-  height: 40px;
-  font-size: 30px;
+  width: 36px;
+  height: 36px;
+  font-size: 27px;
 }
 
 .station-icon {
-  width: 46px;
-  height: 46px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
   border-radius: 8px;
   background: #eef5ff;
   color: #0d5ab9;
-  font-size: 34px;
+  font-size: 31px;
   font-variation-settings: 'FILL' 1, 'wght' 650, 'GRAD' 0, 'opsz' 36;
 }
 
 .station-node strong {
-  max-width: 108px;
+  max-width: 98px;
   color: #061437;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 900;
   line-height: 1.12;
   overflow-wrap: anywhere;
@@ -1169,11 +1176,11 @@ button.preview-node:focus-visible {
 
 .station-node small {
   display: inline-grid;
-  min-width: 78px;
+  min-width: 72px;
   place-items: center;
   padding: 4px 7px;
   border-radius: 6px;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 900;
   line-height: 1;
 }

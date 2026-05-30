@@ -1,27 +1,5 @@
 <section class="sn-result-page">
   <div class="sn-result-window">
-    <div class="sn-result-topbar">
-      <button type="button" class="back-button" (click)="goBack()" aria-label="Go back">
-        <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
-      </button>
-
-      <div class="sn-title">
-        <h2>Serial Number Result</h2>
-        <span>{{ serialNumber }}</span>
-      </div>
-
-      <label class="sn-inline-search" aria-label="Search serial number">
-        <span class="material-symbols-outlined" aria-hidden="true">search</span>
-        <input
-          type="search"
-          [(ngModel)]="query"
-          (keyup.enter)="onSearch()"
-          placeholder="Search Serial Number"
-          autocomplete="off"
-        />
-      </label>
-    </div>
-
     <div class="workflow-tabs sn-tabs" role="tablist" aria-label="Serial number result sections">
       <button
         type="button"
@@ -35,7 +13,7 @@
         (click)="selectTab(tab.id)"
       >
         <span class="material-symbols-outlined" aria-hidden="true">{{ tab.icon }}</span>
-        <span>{{ tab.label }}</span>
+        <span>{{ getSnResultTabLabel(tab.id) }}</span>
       </button>
     </div>
 
@@ -128,7 +106,7 @@
               </div>
 
               <div class="preview-node hierarchy-node product-node">
-                <span class="product-title">Product</span>
+                <span class="product-title">Product - {{ serialNumber }}</span>
                 <span class="product-visual" aria-hidden="true">
                   <span class="product-shaft"></span>
                   <span class="product-hub left"></span>
@@ -204,7 +182,7 @@
                       >
                         <span class="station-node-inner">
                           <span class="station-icon material-symbols-outlined" aria-hidden="true">{{ node.station?.icon }}</span>
-                          <strong>{{ node.station?.station_name || node.station?.station_code }}</strong>
+                          <strong>{{ node.station?.station_code || node.station?.station_name }}</strong>
                           <small [class]="node.station ? getStatusClass(node.station.status) : ''">
                             {{ node.station?.status }}
                           </small>

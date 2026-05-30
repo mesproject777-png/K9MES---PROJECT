@@ -60,7 +60,10 @@ const routes: Routes = [
       { path: '', redirectTo: 'home', pathMatch: 'full' },
       { path: 'home', component: HomeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
       { path: 'workflow', component: WorkflowComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
-      { path: 'work-order', component: WorkOrderComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
+      { path: 'workorder', component: WorkOrderComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
+      { path: 'workorder/SNList', component: GenerateSnComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/generatesn' } },
+      { path: 'work-order', redirectTo: 'workorder', pathMatch: 'full' },
+      { path: 'work-order/SNList', redirectTo: 'workorder/SNList', pathMatch: 'full' },
       { path: 'sn-result', component: SnResultComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
       { path: 'bom', component: BomComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/bom' } },
       { path: 'ecn', component: EcnComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/ecn' } },
@@ -82,7 +85,7 @@ const routes: Routes = [
         canActivate: [permissionGuard],
         data: { pageKey: 'dashboard/master/menu' },
         children: [
-          { path: '', redirectTo: 'menu', pathMatch: 'full' },
+          { path: '', component: MastermenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/menu' } },
           { path: 'menu', component: MastermenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/menu' } },
           { path: 'masterstation', component: MasterstationComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/masterstation' } },
           { path: 'masterusers', component: MasterusersComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/master/masterusers' } },
@@ -101,7 +104,7 @@ const routes: Routes = [
         canActivate: [permissionGuard],
         data: { pageKey: 'dashboard/engineering/menu' },
         children: [
-          { path: '', redirectTo: 'menu', pathMatch: 'full' },
+          { path: '', component: EngineeringmenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/menu' } },
           { path: 'menu', component: EngineeringmenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/menu' } },
           { path: 'productline', component: MasterproductlineComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/productline' } },
           { path: 'pntype', component: PntypeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/engineering/pntype' } },
@@ -121,7 +124,7 @@ const routes: Routes = [
         canActivate: [permissionGuard],
         data: { pageKey: 'dashboard/manager/menu' },
         children: [
-          { path: '', redirectTo: 'menu', pathMatch: 'full' },
+          { path: '', component: ManagermenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/menu' } },
           { path: 'menu', component: ManagermenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/menu' } },
 
           { path: 'workorders', component: WorkordersComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/workorders' } },

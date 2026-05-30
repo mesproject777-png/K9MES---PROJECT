@@ -1,5 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
+import { Router } from '@angular/router';
 import { environment } from '../../../environments/environment';
 
 type WorkflowWorkOrderSummary = {
@@ -44,7 +45,10 @@ export class WorkOrderComponent implements OnInit {
   isLoading = false;
   errorMessage = '';
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private router: Router
+  ) {}
 
   ngOnInit(): void {
     this.loadRows();
@@ -117,6 +121,23 @@ export class WorkOrderComponent implements OnInit {
     this.loadRows();
   }
 
+  editWorkOrder(row: WorkflowWorkOrderSummary): void {
+    this.router.navigate(['/dashboard/workflow'], {
+      queryParams: {
+        pn: row.partNumber,
+        wo: row.wo,
+      },
+    });
+  }
+
+  viewSnList(row: WorkflowWorkOrderSummary): void {
+    this.router.navigate(['/dashboard/workorder/SNList'], {
+      state: {
+        wo: row.wo,
+      },
+    });
+  }
+
   get pagedRows(): WorkflowWorkOrderSummary[] {
     return this.rows;
   }
@@ -148,7 +169,7 @@ export class WorkOrderComponent implements OnInit {
   }
 
   private downloadRows(rows: WorkflowWorkOrderSummary[]): void {
-    const header = ['WO', 'Part Number', 'SN Type', 'Due Date', 'Quantity', 'Station Count', 'BOM Count', 'Site'];
+    const header = ['WO', 'Part Number', 'SN Type', 'Due Date', 'Quantity', 'Station', 'BOM', 'Site'];
     const csvRows = [
       header.join(','),
       ...rows.map((row) => [

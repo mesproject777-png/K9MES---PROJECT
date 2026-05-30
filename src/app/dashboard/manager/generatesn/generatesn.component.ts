@@ -57,7 +57,13 @@ export class GenerateSnComponent implements OnInit, OnDestroy {
     private router: Router
   ) {}
 
-  ngOnInit() {}
+  ngOnInit() {
+    const selectedWo = String(history.state?.wo || '').trim();
+    if (selectedWo) {
+      this.wo = selectedWo;
+      this.validateWo(true);
+    }
+  }
 
   ngOnDestroy() {
     if (this.lookupTimer) {

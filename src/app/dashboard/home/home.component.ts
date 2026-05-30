@@ -21,21 +21,21 @@ export class HomeComponent {
       title: 'Manager',
       description: 'Work orders, SN generation, tracker.',
       icon: 'dashboard',
-      route: '/dashboard/manager/menu'
+      route: '/dashboard/manager'
     },
     {
       id: 'home-engineering',
       title: 'Engineering',
       description: 'Part numbers, SN types, routing.',
       icon: 'design_services',
-      route: '/dashboard/engineering/menu'
+      route: '/dashboard/engineering'
     },
     {
       id: 'home-master',
       title: 'Master',
       description: 'Users, stations, routing masters.',
       icon: 'settings',
-      route: '/dashboard/master/menu'
+      route: '/dashboard/master'
     },
     {
       id: 'home-assembly',

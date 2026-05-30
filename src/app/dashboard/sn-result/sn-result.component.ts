@@ -203,6 +203,14 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return `${index}-${node.id}`;
   }
 
+  getSnResultTabLabel(tabId: SnResultTab): string {
+    const rsnNumber = this.traceResult?.serial?.rsn || this.serialNumber;
+
+    return tabId === 'preview'
+      ? `SN Chart - ${rsnNumber}`
+      : `SN History - ${rsnNumber}`;
+  }
+
   get serialNumber(): string {
     return this.traceResult?.serial?.sn || this.query || '-';
   }
@@ -576,14 +584,15 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   private getPreviewFlowCardsPerRow(): number {
-    const width = typeof window === 'undefined' ? 1400 : window.innerWidth;
-    const availablePreviewWidth = Math.max(360, width - 260);
-    const estimatedCardWidth = width >= 1500 ? 144 : 156;
-    const estimatedLineWidth = width >= 1500 ? 34 : 40;
+    const containerWidth = this.previewProcessFlowRef?.nativeElement.clientWidth || 0;
+    const width = containerWidth || (typeof window === 'undefined' ? 1140 : Math.max(360, window.innerWidth - 300));
+    const availablePreviewWidth = Math.max(320, width - 24);
+    const estimatedCardWidth = width >= 1240 ? 144 : 156;
+    const estimatedLineWidth = width >= 1240 ? 30 : 36;
     const estimatedCards = Math.floor(
       (availablePreviewWidth + estimatedLineWidth) / (estimatedCardWidth + estimatedLineWidth)
     );
 
-    return Math.max(2, Math.min(10, estimatedCards));
+    return Math.max(2, Math.min(8, estimatedCards));
   }
 }

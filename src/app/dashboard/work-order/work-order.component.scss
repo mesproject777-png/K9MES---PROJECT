@@ -2,34 +2,12 @@
   padding: 16px;
 }
 
-.filters {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.filter-box {
-  display: grid;
-  gap: 6px;
-  min-width: 380px;
-  padding: 10px 12px;
-  border: 1px solid #e4ebf3;
-  border-radius: 10px;
-  background: #ffffff;
-}
-
-.filter-box input {
-  padding: 8px 10px;
-  border: 1px solid #c8d2de;
-  border-radius: 8px;
-}
-
 .filter-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
+  margin-bottom: 12px;
 }
 
 button {
@@ -61,6 +39,29 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+.table-toolbar .left,
+.table-toolbar .center,
+.table-toolbar .right {
+  flex: 1 1 0;
+}
+
+.table-toolbar .center {
+  display: flex;
+  justify-content: center;
+}
+
+.table-toolbar .right {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.table-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .table-toolbar input,
 .table-toolbar select {
   padding: 6px 8px;
@@ -86,7 +87,7 @@ button:disabled {
 
 table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1080px;
   border-collapse: collapse;
 }
 
@@ -103,6 +104,29 @@ thead th {
 tbody td {
   padding: 10px;
   border-bottom: 1px solid #eef3f9;
+}
+
+.actions-cell {
+  width: 96px;
+  white-space: nowrap;
+}
+
+.edit-button,
+.view-button {
+  min-width: 64px;
+  border-color: #b9c8dc;
+  background: #f7faff;
+  color: #15345c;
+  font-weight: 700;
+}
+
+.edit-button:hover,
+.edit-button:focus-visible,
+.view-button:hover,
+.view-button:focus-visible {
+  border-color: #7aa7e8;
+  background: #eaf3ff;
+  outline: none;
 }
 
 .empty-state {
@@ -130,15 +154,15 @@ tbody td {
 }
 
 @media (max-width: 720px) {
-  .filters,
   .table-toolbar,
   .pager {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .filter-box {
-    min-width: 0;
+  .table-toolbar .center,
+  .table-toolbar .right {
+    justify-content: flex-start;
   }
 
   .filter-actions {

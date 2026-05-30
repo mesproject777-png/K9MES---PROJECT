@@ -139,9 +139,9 @@
   top: 10px;
   bottom: 10px;
   left: 50%;
-  width: min(190px, calc(100% - 24px));
+  width: calc(100% - 24px);
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(13, 114, 223, 0.92), rgba(4, 87, 184, 0.92));
+  background: rgba(255, 255, 255, 0.18);
   opacity: 0;
   transform: translateX(-50%) translateY(8px);
   transition: opacity 0.24s ease, transform 0.24s ease, box-shadow 0.24s ease;
@@ -166,7 +166,7 @@
 .workflow-tab.active::before {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .workflow-tab.active::after {
@@ -193,7 +193,8 @@
 .sn-panel-shell {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 22px;
   background:
     linear-gradient(180deg, rgba(248, 251, 255, 0.96), rgba(236, 245, 255, 0.96));
@@ -220,7 +221,8 @@
   flex: 1 1 auto;
   width: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 22px 22px 34px;
   border: 1px solid #d7e4f2;
   border-radius: 8px;
@@ -309,6 +311,10 @@ button.preview-node:focus-visible {
   width: 278px;
 }
 
+.product-node {
+  width: 348px;
+}
+
 .preview-node-icon {
   width: 50px;
   height: 50px;
@@ -344,6 +350,13 @@ button.preview-node:focus-visible {
   font-size: 1.08rem;
   font-weight: 900;
   line-height: 1.15;
+}
+
+.product-title {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 .preview-node-copy small {
@@ -544,7 +557,8 @@ button.preview-node:focus-visible {
   width: 100%;
   min-width: 0;
   gap: 0;
-  padding: 0 12px 26px;
+  padding: 0 0 26px;
+  overflow: hidden;
 }
 
 .preview-flow-lines {
@@ -553,7 +567,7 @@ button.preview-node:focus-visible {
   z-index: 1;
   width: 100%;
   height: 100%;
-  overflow: visible;
+  overflow: hidden;
   pointer-events: none;
 }
 
@@ -580,7 +594,7 @@ button.preview-node:focus-visible {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   min-width: 0;
 }
@@ -599,7 +613,8 @@ button.preview-node:focus-visible {
 }
 
 .flow-line {
-  flex: 0 0 clamp(28px, 4vw, 46px);
+  flex: 1 1 clamp(18px, 3vw, 34px);
+  min-width: 12px;
   height: 0;
   border-top: 0;
 }
@@ -663,11 +678,11 @@ button.preview-node:focus-visible {
 .station-node {
   flex: 0 0 auto;
   position: relative;
-  width: 140px;
-  height: 160px;
+  width: 124px;
+  height: 128px;
   display: grid;
   place-items: center;
-  padding: 12px;
+  padding: 10px;
   border: 1.5px solid #dfebfb;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
   color: #061437;
@@ -691,9 +706,9 @@ button.preview-node:focus-visible {
 }
 
 .station-diamond {
-  width: 140px;
-  height: 140px;
-  margin: 10px 14px;
+  width: 116px;
+  height: 116px;
+  margin: 10px 12px;
   border-color: #dfebfb;
   border-radius: 0;
   transform: rotate(45deg);
@@ -713,32 +728,32 @@ button.preview-node:focus-visible {
 }
 
 .station-diamond .station-node-inner {
-  width: 108px;
+  width: 98px;
   transform: rotate(-45deg);
 }
 
 .station-diamond .station-icon {
-  width: 40px;
-  height: 40px;
-  font-size: 30px;
+  width: 36px;
+  height: 36px;
+  font-size: 27px;
 }
 
 .station-icon {
-  width: 46px;
-  height: 46px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
   border-radius: 8px;
   background: #eef5ff;
   color: #0d5ab9;
-  font-size: 34px;
+  font-size: 31px;
   font-variation-settings: 'FILL' 1, 'wght' 650, 'GRAD' 0, 'opsz' 36;
 }
 
 .station-node strong {
-  max-width: 108px;
+  max-width: 98px;
   color: #061437;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 900;
   line-height: 1.12;
   overflow-wrap: anywhere;
@@ -746,11 +761,11 @@ button.preview-node:focus-visible {
 
 .station-node small {
   display: inline-grid;
-  min-width: 78px;
+  min-width: 72px;
   place-items: center;
   padding: 4px 7px;
   border-radius: 6px;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 900;
   line-height: 1;
 }

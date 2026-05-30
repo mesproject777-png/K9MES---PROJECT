@@ -6,12 +6,14 @@ import {
   Component,
   ElementRef,
   HostListener,
+  OnInit,
   OnDestroy,
   QueryList,
   ViewChild,
   ViewChildren,
 } from '@angular/core';
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { environment } from '../../../environments/environment';
 
 type WorkflowTab = {
@@ -151,7 +153,7 @@ type WorkflowSnapshot = {
   templateUrl: './workflow.component.html',
   styleUrl: './workflow.component.scss'
 })
-export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDestroy {
+export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecked, OnDestroy {
   private readonly pnTypesApiUrl = `${environment.apiUrl}/api/users/pn-types`;
   private readonly snTypesApiUrl = `${environment.apiUrl}/api/sn-types`;
   private readonly sitesApiUrl = `${environment.apiUrl}/api/sites`;
@@ -236,6 +238,8 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   @ViewChild('previewProcessFlow') private previewProcessFlowRef?: ElementRef<HTMLElement>;
   @ViewChildren('previewFlowNode') private previewFlowNodeRefs?: QueryList<ElementRef<HTMLElement>>;
   private isRestoringSavedPreview = false;
+  private lockedEditPartNumber = '';
+  private lockedEditWorkOrder = '';
   private nextRoutingStepId = 1;
   private nextRoutingHistoryId = 1;
   private nextBomChildId = 1;
@@ -250,6 +254,7 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
   constructor(
     private fb: FormBuilder,
     private http: HttpClient,
+    private route: ActivatedRoute,
     private cdr: ChangeDetectorRef
   ) {
     this.partNumberForm = this.fb.group({
@@ -328,6 +333,32 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.workOrderForm.get('plant')?.valueChanges.subscribe((plant) => {
       if (!this.isRestoringSavedPreview) {
         this.syncSelectedSiteWithPlant(String(plant ?? ''));
+      }
+    });
+  }
+
+  ngOnInit(): void {
+    this.route.queryParamMap.subscribe((params) => {
+      const partNumber = String(params.get('pn') || '').trim();
+      const workOrder = String(params.get('wo') || '').trim();
+
+      if (!partNumber && !workOrder) {
+        this.clearWorkflowEditLocks();
+        return;
+      }
+
+      this.lockedEditPartNumber = partNumber;
+      this.lockedEditWorkOrder = workOrder;
+      this.applyWorkflowEditLocks();
+
+      if (partNumber) {
+        this.partNumberForm.patchValue({ pn: partNumber }, { emitEvent: false });
+        this.workOrderForm.patchValue({ pn: partNumber }, { emitEvent: false });
+        this.restoreSavedPreviewForPartNumber(partNumber);
+      }
+
+      if (workOrder) {
+        this.workOrderForm.patchValue({ wo: workOrder }, { emitEvent: false });
       }
     });
   }
@@ -426,12 +457,24 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
   }
 
+  getWorkflowActionLabel(isSaved: boolean, saveLabel = 'Save', updateLabel = 'Update'): string {
+    if (isSaved) {
+      return 'Saved';
+    }
+
+    return this.isWorkflowEditMode ? updateLabel : saveLabel;
+  }
+
   private canLeavePane(index: number): boolean {
     if (index === 4) {
       return true;
     }
 
     return this.isPaneSaved(index);
+  }
+
+  private get isWorkflowEditMode(): boolean {
+    return Boolean(this.lockedEditPartNumber || this.lockedEditWorkOrder);
   }
 
   private showSavePreviousWorkNotice(targetIndex: number): void {
@@ -1719,7 +1762,34 @@ export class WorkflowComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.isRoutingChildrenSaved = this.routeSteps.length > 0;
     this.isBomChildrenSaved = this.bomChildren.length > 0;
     this.isRestoringSavedPreview = false;
+    this.applyWorkflowEditLocks();
     this.queuePreviewConnectorRefresh();
+  }
+
+  private applyWorkflowEditLocks(): void {
+    const partNumberControl = this.partNumberForm.get('pn');
+    const workOrderControl = this.workOrderForm.get('wo');
+
+    if (this.lockedEditPartNumber) {
+      partNumberControl?.setValue(this.lockedEditPartNumber, { emitEvent: false });
+      this.workOrderForm.get('pn')?.setValue(this.lockedEditPartNumber, { emitEvent: false });
+      partNumberControl?.disable({ emitEvent: false });
+    } else {
+      partNumberControl?.enable({ emitEvent: false });
+    }
+
+    if (this.lockedEditWorkOrder) {
+      workOrderControl?.setValue(this.lockedEditWorkOrder, { emitEvent: false });
+      workOrderControl?.disable({ emitEvent: false });
+    } else {
+      workOrderControl?.enable({ emitEvent: false });
+    }
+  }
+
+  private clearWorkflowEditLocks(): void {
+    this.lockedEditPartNumber = '';
+    this.lockedEditWorkOrder = '';
+    this.applyWorkflowEditLocks();
   }
 
   private buildPreviewStatusesByStationCode(): Record<string, PreviewStatus> {

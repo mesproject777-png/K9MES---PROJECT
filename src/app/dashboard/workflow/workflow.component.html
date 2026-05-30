@@ -153,7 +153,7 @@
 
           <div class="workflow-pane-footer">
             <button type="submit" class="save-button" [class.saved]="isPartNumberSaved">
-              {{ isPartNumberSaved ? 'Saved' : 'Save' }}
+              {{ getWorkflowActionLabel(isPartNumberSaved) }}
             </button>
           </div>
         </form>
@@ -282,7 +282,7 @@
 
           <div class="workflow-pane-footer">
             <button type="submit" class="save-button" [class.saved]="isWorkOrderSaved">
-              {{ isWorkOrderSaved ? 'Saved' : 'Save' }}
+              {{ getWorkflowActionLabel(isWorkOrderSaved) }}
             </button>
           </div>
         </form>
@@ -387,7 +387,7 @@
                 [disabled]="routeSteps.length === 0"
                 (click)="saveRoutingChildren()"
               >
-                {{ isRoutingChildrenSaved ? 'Saved' : 'Save Routing' }}
+                {{ getWorkflowActionLabel(isRoutingChildrenSaved, 'Save Routing', 'Update Routing') }}
               </button>
               <button
                 type="button"
@@ -526,7 +526,7 @@
                 [disabled]="bomChildren.length === 0"
                 (click)="saveBomChildren()"
               >
-                {{ isBomChildrenSaved ? 'Saved' : 'Save BOM' }}
+                {{ getWorkflowActionLabel(isBomChildrenSaved, 'Save BOM', 'Update BOM') }}
               </button>
               <button
                 type="button"
@@ -728,7 +728,7 @@
                             <span class="station-icon material-symbols-outlined" aria-hidden="true">
                               {{ node.station?.icon }}
                             </span>
-                            <strong>{{ node.station?.station_name || node.station?.station_code }}</strong>
+                            <strong>{{ node.station?.station_code || node.station?.station_name }}</strong>
                             <small [class]="node.station ? getPreviewStatusClass(node.station.status) : ''">
                               {{ node.station?.status }}
                             </small>
