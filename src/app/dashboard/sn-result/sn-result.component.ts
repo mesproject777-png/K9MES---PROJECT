@@ -88,6 +88,14 @@ type PreviewFlowRow = {
   turnSide: 'left' | 'right';
 };
 
+type SnHistoryDisplayRow = {
+  stationCode: string;
+  stationLoginId: string;
+  date: string;
+  time: string;
+  actionDescription: string;
+};
+
 @Component({
   selector: 'app-sn-result',
   standalone: false,
@@ -263,6 +271,42 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return this.traceResult?.history || [];
   }
 
+  get snHistoryDisplayRows(): SnHistoryDisplayRow[] {
+    if (this.historyRows.length) {
+      return this.historyRows.map((history) => {
+        const dateTime = this.parseHistoryDate(history.date_time);
+
+        return {
+          stationCode: history.station || this.traceResult?.serial?.current_station_code || '-',
+          stationLoginId: history.user_name || '-',
+          date: dateTime.date,
+          time: dateTime.time,
+          actionDescription: this.buildHistoryActionDescription(history),
+        };
+      });
+    }
+
+    if (this.traceResult) {
+      const fallbackDateTime = this.parseHistoryDate(
+        this.traceResult.serial.last_moved_at || this.traceResult.serial.updated_at || this.traceResult.serial.created_at
+      );
+
+      return [
+        {
+          stationCode: this.traceResult.serial.current_station_code || 'Not started',
+          stationLoginId: 'system',
+          date: fallbackDateTime.date,
+          time: fallbackDateTime.time,
+          actionDescription: this.traceResult.serial.status
+            ? `Serial status: ${this.traceResult.serial.status}`
+            : 'Serial generated',
+        },
+      ];
+    }
+
+    return [];
+  }
+
   get bomChildren(): Array<NonNullable<WorkflowSnapshot['bom']>[number]> {
     return this.workflowSnapshot?.bom || [];
   }
@@ -346,6 +390,33 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
 
     return result || '-';
+  }
+
+  private parseHistoryDate(value: string | null | undefined): { date: string; time: string } {
+    const parsedDate = value ? new Date(value) : null;
+
+    if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
+      return { date: '-', time: '-' };
+    }
+
+    return {
+      date: parsedDate.toLocaleDateString('en-CA'),
+      time: parsedDate.toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+    };
+  }
+
+  private buildHistoryActionDescription(history: TraceHistoryRow): string {
+    const parts = [
+      history.event_type,
+      this.formatHistoryResult(history.result) !== '-' ? this.formatHistoryResult(history.result) : '',
+      history.additional_info,
+    ].filter((part) => String(part || '').trim());
+
+    return parts.length ? parts.join(' - ') : 'Station activity recorded';
   }
 
   getStatusClass(status: PreviewStatus): string {

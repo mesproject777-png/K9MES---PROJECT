@@ -241,82 +241,24 @@
       >
         <p *ngIf="loading" class="message">Loading SN history...</p>
 
-        <section class="history-snapshot" *ngIf="!loading && traceResult">
-          <h3>Device Snapshot</h3>
-          <div class="history-kv-grid">
-            <div class="history-kv-item">
-              <span>Serial Number (SN)</span>
-              <strong>{{ traceResult.serial.sn }}</strong>
-            </div>
-            <div class="history-kv-item">
-              <span>Routing Serial Number (RSN)</span>
-              <strong>{{ traceResult.serial.rsn }}</strong>
-            </div>
-            <div class="history-kv-item">
-              <span>Work Order</span>
-              <strong>{{ traceResult.device.work_order }}</strong>
-            </div>
-            <div class="history-kv-item">
-              <span>Status</span>
-              <strong>{{ traceResult.serial.status }}</strong>
-            </div>
-            <div class="history-kv-item">
-              <span>Date Created</span>
-              <strong>{{ traceResult.serial.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</strong>
-            </div>
-            <div class="history-kv-item">
-              <span>Current Site</span>
-              <strong>{{ traceResult.device.site }}</strong>
-            </div>
-            <div class="history-kv-item">
-              <span>Current Station</span>
-              <strong>{{ traceResult.serial.current_station_name || traceResult.serial.current_station_code || 'Not started' }}</strong>
-            </div>
-            <div class="history-kv-item">
-              <span>Revision</span>
-              <strong>{{ traceResult.device.revision }}</strong>
-            </div>
-            <div class="history-kv-item full">
-              <span>Description</span>
-              <strong>{{ traceResult.device.description }}</strong>
-            </div>
-          </div>
-        </section>
-
-        <p *ngIf="!loading && historyMessage" class="message history-empty-message">{{ historyMessage }}</p>
-
-        <div class="history-scroll" *ngIf="!loading && historyRows.length > 0">
+        <div class="history-scroll" *ngIf="!loading && snHistoryDisplayRows.length > 0">
           <table class="history-table">
             <thead>
               <tr>
-                <th>Id</th>
-                <th>User</th>
-                <th>Date Time</th>
-                <th>Station</th>
-                <th>Length</th>
-                <th>PC</th>
-                <th>Result</th>
-                <th>Additional Info</th>
+                <th>Station code</th>
+                <th>Station login id</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Desc of Action</th>
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let history of historyRows; trackBy: trackByHistory">
-                <td>{{ history.id }}</td>
-                <td>{{ history.user_name || '-' }}</td>
-                <td>{{ history.date_time | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
-                <td>{{ history.station || '-' }}</td>
-                <td>{{ history.length || '-' }}</td>
-                <td>{{ history.pc_name || '-' }}</td>
-                <td>
-                  <span
-                    class="result-chip"
-                    [class.pass]="formatHistoryResult(history.result) === 'PASS'"
-                    [class.fail]="formatHistoryResult(history.result) === 'FAIL'"
-                  >
-                    {{ formatHistoryResult(history.result) }}
-                  </span>
-                </td>
-                <td>{{ history.additional_info || '-' }}</td>
+              <tr *ngFor="let history of snHistoryDisplayRows">
+                <td>{{ history.stationCode }}</td>
+                <td>{{ history.stationLoginId }}</td>
+                <td>{{ history.date }}</td>
+                <td>{{ history.time }}</td>
+                <td>{{ history.actionDescription }}</td>
               </tr>
             </tbody>
           </table>
