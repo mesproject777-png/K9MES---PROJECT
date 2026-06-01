@@ -55,10 +55,6 @@
             <div class="workflow-messages" *ngIf="partNumberErrorMessage">
               <p *ngIf="partNumberErrorMessage" class="message error">{{ partNumberErrorMessage }}</p>
             </div>
-            <p *ngIf="isExistingPartNumberReadonly" class="message">
-              Existing part number loaded. Details are view-only.
-            </p>
-
             <div class="workflow-form-grid">
               <div class="form-field">
                 <label for="workflowPn">Part number</label>
@@ -86,7 +82,7 @@
                     <input
                       type="radio"
                       name="workflow_sgd_control"
-                      [disabled]="isExistingPartNumberReadonly"
+                      [disabled]="arePartNumberDetailsReadonly"
                       [checked]="partNumberForm.get('sgd_control')?.value === false"
                       (change)="partNumberForm.get('sgd_control')?.setValue(false)"
                     />
@@ -96,7 +92,7 @@
                     <input
                       type="radio"
                       name="workflow_sgd_control"
-                      [disabled]="isExistingPartNumberReadonly"
+                      [disabled]="arePartNumberDetailsReadonly"
                       [checked]="partNumberForm.get('sgd_control')?.value === true"
                       (change)="partNumberForm.get('sgd_control')?.setValue(true)"
                     />
@@ -286,7 +282,7 @@
           </div>
 
           <div class="workflow-pane-footer">
-            <button type="submit" class="save-button" [class.saved]="isWorkOrderSaved">
+            <button type="submit" class="save-button" [class.saved]="isWorkOrderSaved" [disabled]="isWorkOrderReadonly">
               {{ getWorkflowActionLabel(isWorkOrderSaved) }}
             </button>
           </div>
@@ -507,9 +503,6 @@
                       {{ station.station_code }} - {{ station.station_name }}
                     </option>
                   </select>
-                  <small class="field-hint" *ngIf="getAssemblyStationOptions().length === 0">
-                    Add ASM01-ASM15 or BOXING01 in routing to use assembly stations.
-                  </small>
                 </div>
 
                 <button
@@ -940,6 +933,25 @@
         <span class="material-symbols-outlined" aria-hidden="true">{{ tab.icon }}</span>
         {{ tab.label }}
       </button>
+    </div>
+
+    <div class="weighing-tab" *ngIf="activeStationRulesTab === 'weighing'" role="tabpanel">
+      <div class="weighing-fields" aria-label="Weighing limits">
+        <div class="weighing-field">
+          <label for="weighingMinimum">Minimum</label>
+          <input id="weighingMinimum" type="number" [(ngModel)]="weighingMinimum" />
+        </div>
+
+        <div class="weighing-field">
+          <label for="weighingMaximum">Maximum</label>
+          <input id="weighingMaximum" type="number" [(ngModel)]="weighingMaximum" />
+        </div>
+
+        <div class="weighing-field">
+          <label for="weighingTolerance">Tolerance</label>
+          <input id="weighingTolerance" type="number" [(ngModel)]="weighingTolerance" />
+        </div>
+      </div>
     </div>
 
     <div class="label-printing-tab" *ngIf="activeStationRulesTab === 'label-printing'" role="tabpanel">

@@ -208,7 +208,8 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   readonly workOrderStatusOptions = ['Allocated', 'Planned', 'Released', 'Cancelled', 'Closed'];
   readonly sampleModeOptions: Array<'Full' | 'Sample'> = ['Full', 'Sample'];
   readonly reportModeOptions: Array<'Regular' | 'Auto Only'> = ['Regular', 'Auto Only'];
-  readonly stationRuleTabs: Array<{ id: 'label-printing'; label: string; icon: string }> = [
+  readonly stationRuleTabs: Array<{ id: 'weighing' | 'label-printing'; label: string; icon: string }> = [
+    { id: 'weighing', label: 'Weighing', icon: 'scale' },
     { id: 'label-printing', label: 'Label Printing', icon: 'print' },
   ];
   readonly defaultPrinterOptions: PrinterOption[] = [
@@ -243,6 +244,8 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   routingErrorMessage = '';
   bomErrorMessage = '';
   isExistingPartNumberReadonly = false;
+  arePartNumberDetailsReadonly = false;
+  isWorkOrderReadonly = false;
   isPartNumberSaved = false;
   isWorkOrderSaved = false;
   isStationsLoading = false;
@@ -273,9 +276,12 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   activeRulesStationCode = '';
   activeRulesStationName = '';
   stationRulesDraft = '';
+  weighingMinimum = '';
+  weighingMaximum = '';
+  weighingTolerance = '';
   stationRulesByStation: Record<string, string[]> = {};
   stationLabelPrintingByStation: Record<string, StationLabelPrintingConfig> = {};
-  activeStationRulesTab: 'label-printing' = 'label-printing';
+  activeStationRulesTab: 'weighing' | 'label-printing' = 'weighing';
   labelPrintCode = '';
   selectedLabelDescription = '';
   labelPrintValidationMessage = '';
@@ -378,7 +384,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       }
 
       this.isPartNumberSaved = false;
-      this.setPartNumberDetailsReadonly(false);
+      this.setPartNumberReadonlyState(false, false);
       const partNumber = String(value ?? '').trim();
       if (this.restoreWorkflowTimer) {
         window.clearTimeout(this.restoreWorkflowTimer);
@@ -806,8 +812,9 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationCode = step.station_code;
     this.activeRulesStationName = step.station_name;
     this.stationRulesDraft = (this.stationRulesByStation[step.station_code] || []).join('\n');
+    this.resetWeighingFields();
     this.isEditingStationRules = false;
-    this.activeStationRulesTab = 'label-printing';
+    this.activeStationRulesTab = 'weighing';
     this.loadLabelPrintingDraft(step.station_code);
     this.isStationRulesModalOpen = true;
   }
@@ -1534,6 +1541,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.isTestPrintLoading = false;
     this.testPrintPreviewText = '';
     this.revokeTestPrintPreviewUrl();
+    this.resetWeighingFields();
   }
 
   private loadPnTypes(): void {
@@ -2193,8 +2201,15 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationCode = station.station_code;
     this.activeRulesStationName = station.station_desc;
     this.stationRulesDraft = this.activeStationRules.join('\n');
+    this.resetWeighingFields();
     this.isEditingStationRules = false;
     this.isStationRulesModalOpen = true;
+  }
+
+  private resetWeighingFields(): void {
+    this.weighingMinimum = '';
+    this.weighingMaximum = '';
+    this.weighingTolerance = '';
   }
 
   private restoreSavedPreviewForPartNumber(partNumber: string): void {
@@ -2206,13 +2221,13 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.http.get<WorkflowSnapshot>(`${this.workflowApiUrl}/by-pn`, { params }).subscribe({
       next: (snapshot) => {
         this.applyWorkflowSnapshot(snapshot);
-        this.setPartNumberDetailsReadonly(true);
+        this.setPartNumberReadonlyState(true, !this.lockedEditWorkOrder);
         this.previewActionMessageType = 'success';
         this.previewActionMessage = 'Saved workflow loaded from database.';
         this.scheduleClearMessages();
       },
       error: (error) => {
-        this.setPartNumberDetailsReadonly(false);
+        this.setPartNumberReadonlyState(false, false);
         if (error?.status && error.status !== 404) {
           this.partNumberErrorMessage = this.getWorkflowErrorMessage(error);
           this.scheduleClearMessages();
@@ -2259,6 +2274,8 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
     this.isPartNumberSaved = false;
     this.isExistingPartNumberReadonly = false;
+    this.arePartNumberDetailsReadonly = false;
+    this.setWorkOrderReadonlyState(false);
     this.isWorkOrderSaved = false;
     this.isRoutingChildrenSaved = false;
     this.isBomChildrenSaved = false;
@@ -2305,7 +2322,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.previewFlowCardsPerRow = this.getPreviewFlowCardsPerRow();
     this.activeTabIndex = 0;
     this.isRestoringSavedPreview = false;
-    this.setPartNumberDetailsReadonly(false);
+    this.setPartNumberReadonlyState(false, false);
   }
 
   private saveWorkflowSnapshot(onSuccess?: () => void, onError?: (message: string) => void): void {
@@ -2428,11 +2445,12 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.queuePreviewConnectorRefresh();
   }
 
-  private setPartNumberDetailsReadonly(readonly: boolean): void {
-    this.isExistingPartNumberReadonly = readonly;
+  private setPartNumberReadonlyState(isExistingPartNumber: boolean, lockDetails: boolean): void {
+    this.isExistingPartNumberReadonly = isExistingPartNumber;
+    this.arePartNumberDetailsReadonly = lockDetails;
     const partNumberControl = this.partNumberForm.get('pn');
 
-    if (readonly) {
+    if (isExistingPartNumber) {
       partNumberControl?.disable({ emitEvent: false });
     } else if (!this.lockedEditPartNumber) {
       partNumberControl?.enable({ emitEvent: false });
@@ -2440,12 +2458,30 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
     this.partNumberDetailControls.forEach((controlName) => {
       const control = this.partNumberForm.get(controlName);
-      if (readonly) {
+      if (lockDetails) {
         control?.disable({ emitEvent: false });
       } else {
         control?.enable({ emitEvent: false });
       }
     });
+
+    this.setWorkOrderReadonlyState(isExistingPartNumber && !this.lockedEditWorkOrder);
+  }
+
+  private setWorkOrderReadonlyState(readonly: boolean): void {
+    this.isWorkOrderReadonly = readonly;
+
+    if (readonly) {
+      this.workOrderForm.disable({ emitEvent: false });
+      return;
+    }
+
+    this.workOrderForm.enable({ emitEvent: false });
+    this.workOrderForm.get('pn')?.disable({ emitEvent: false });
+
+    if (this.lockedEditWorkOrder) {
+      this.workOrderForm.get('wo')?.disable({ emitEvent: false });
+    }
   }
 
   private applyWorkflowEditLocks(): void {
@@ -2460,7 +2496,9 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       partNumberControl?.enable({ emitEvent: false });
     }
 
-    if (this.lockedEditWorkOrder) {
+    if (this.isWorkOrderReadonly) {
+      this.workOrderForm.disable({ emitEvent: false });
+    } else if (this.lockedEditWorkOrder) {
       workOrderControl?.setValue(this.lockedEditWorkOrder, { emitEvent: false });
       workOrderControl?.disable({ emitEvent: false });
     } else {
@@ -2471,6 +2509,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   private clearWorkflowEditLocks(): void {
     this.lockedEditPartNumber = '';
     this.lockedEditWorkOrder = '';
+    this.setWorkOrderReadonlyState(false);
     this.applyWorkflowEditLocks();
   }
 

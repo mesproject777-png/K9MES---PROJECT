@@ -1751,18 +1751,19 @@ button.preview-node:focus-visible {
   z-index: 1200;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 18px;
   background: rgba(6, 25, 46, 0.42);
 }
 
 .rules-modal {
-  width: min(1040px, 96vw);
-  max-height: calc(100vh - 44px);
   display: flex;
   flex-direction: column;
+  width: min(1180px, 96vw);
+  min-height: min(760px, 90vh);
+  max-height: 92vh;
   overflow: hidden;
   border: 1px solid #bfd1e5;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #ffffff;
   box-shadow: 0 24px 70px rgba(4, 33, 63, 0.28);
 }
@@ -1772,9 +1773,12 @@ button.preview-node:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 18px 20px;
-  border-bottom: 1px solid #dce7f3;
-  background: #eef6ff;
+  padding: 18px 20px 10px;
+  background: #ffffff;
+}
+
+.rules-header > div:first-child {
+  min-width: 220px;
 }
 
 .rules-header h3 {
@@ -1791,9 +1795,48 @@ button.preview-node:focus-visible {
   font-weight: 700;
 }
 
+.weighing-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  padding: 22px 22px 4px;
+  background: #ffffff;
+}
+
+.weighing-field {
+  display: grid;
+  gap: 8px;
+}
+
+.weighing-field label {
+  color: #25364b;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.weighing-field input {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid #c4d2e2;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #102942;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.weighing-field input:focus {
+  border-color: #3439c5;
+  outline: 2px solid rgba(52, 57, 197, 0.14);
+}
+
 .rules-body,
 .rules-editor {
-  padding: 20px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 22px;
+  overflow: auto;
 }
 
 .rules-tabs {
@@ -2074,6 +2117,7 @@ button.preview-node:focus-visible {
 
 .rules-editor textarea {
   width: 100%;
+  min-height: 420px;
   resize: vertical;
   padding: 12px;
   border: 1px solid #c4d2e2;
@@ -2088,7 +2132,8 @@ button.preview-node:focus-visible {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  padding: 0 20px 20px;
+  padding: 14px 22px 22px;
+  border-top: 1px solid #e1ebf6;
 }
 
 .label-print-actions {
