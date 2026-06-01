@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
+    "start": "ng serve --host localhost --port 4400",
     "start:api": "dotnet run --project backend/K9Api",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",

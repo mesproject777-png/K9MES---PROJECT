@@ -54,6 +54,7 @@ export class StationLoginsComponent implements OnInit {
   errorMessage = '';
   successMessage = '';
   private nextLocalId = -1;
+  private originalRowsSnapshot = '';
 
   constructor(
     private http: HttpClient,
@@ -89,6 +90,7 @@ export class StationLoginsComponent implements OnInit {
         this.description = response.partNumber?.description || '';
         this.wo = response.partNumber?.wo || this.wo;
         this.rows = this.groupStationRows(response.stations || []);
+        this.originalRowsSnapshot = this.serializeRows(this.rows);
         this.isLoading = false;
       },
       error: (error) => {
@@ -103,6 +105,10 @@ export class StationLoginsComponent implements OnInit {
     this.errorMessage = '';
     this.successMessage = '';
 
+    if (!this.hasChanges()) {
+      return;
+    }
+
     const validationMessage = this.validateRows();
     if (validationMessage) {
       this.errorMessage = validationMessage;
@@ -115,7 +121,7 @@ export class StationLoginsComponent implements OnInit {
       wo: this.wo,
       stations: this.rows.flatMap((row) =>
         row.logins.filter((login) => this.hasLoginData(login)).map((login) => ({
-          id: login.login_row_id,
+          id: login.login_row_id || row.station_id,
           station_id: row.station_id,
           station_code: row.station_code,
           station_login_id: login.station_login_id.trim(),
@@ -139,9 +145,12 @@ export class StationLoginsComponent implements OnInit {
     this.router.navigate(['/dashboard/workorder']);
   }
 
-  editRow(row: StationLoginStation): void {
-    row.isEditing = true;
-    this.successMessage = '';
+  saveRow(row: StationLoginStation): void {
+    if (!this.hasRowChanges(row)) {
+      return;
+    }
+
+    this.saveRows();
   }
 
   addUser(row: StationLoginStation): void {
@@ -153,7 +162,6 @@ export class StationLoginsComponent implements OnInit {
       showPassword: false,
       isNew: true,
     });
-    row.isEditing = true;
     this.errorMessage = '';
     this.successMessage = '';
   }
@@ -168,6 +176,15 @@ export class StationLoginsComponent implements OnInit {
 
   trackByLogin(index: number, login: StationLoginEntry): string {
     return login.row_key || String(index);
+  }
+
+  hasChanges(): boolean {
+    return this.serializeRows(this.rows) !== this.originalRowsSnapshot;
+  }
+
+  hasRowChanges(row: StationLoginStation): boolean {
+    const originalRow = this.deserializeRows(this.originalRowsSnapshot).find((item) => item.station_id === row.station_id);
+    return this.serializeRow(row) !== JSON.stringify(originalRow || null);
   }
 
   private validateRows(): string {
@@ -238,5 +255,33 @@ export class StationLoginsComponent implements OnInit {
             isNew: false,
           }],
     }));
+  }
+
+  private serializeRows(rows: StationLoginStation[]): string {
+    return JSON.stringify(rows.map((row) => JSON.parse(this.serializeRow(row))));
+  }
+
+  private serializeRow(row: StationLoginStation): string {
+    return JSON.stringify({
+      station_id: row.station_id,
+      station_code: row.station_code,
+      logins: row.logins.map((login) => ({
+        id: login.login_row_id,
+        userId: login.station_login_id.trim(),
+        password: login.station_login_password.trim(),
+      })),
+    });
+  }
+
+  private deserializeRows(snapshot: string): Array<{ station_id: number; station_code: string; logins: unknown[] }> {
+    if (!snapshot) {
+      return [];
+    }
+
+    try {
+      return JSON.parse(snapshot);
+    } catch {
+      return [];
+    }
   }
 }

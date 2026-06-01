@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { HttpClient, HttpParams } from '@angular/common/http';
+import { environment } from '../../../../environments/environment';
 
 type WizardStep = {
   label: string;
@@ -65,7 +66,7 @@ export class FivestepwizardComponent implements OnInit {
   isPartNumberSubmitting = false;
   partNumberMessage = '';
   partNumberErrorMessage = '';
-  private readonly pnTypesApi = 'http://localhost:5000/api/users/pn-types';
+  private readonly pnTypesApi = `${environment.apiUrl}/api/users/pn-types`;
 
   // WorkOrder Modal
   showWorkOrderModal = false;
@@ -77,14 +78,14 @@ export class FivestepwizardComponent implements OnInit {
   pnSuggestions: any[] = [];
   pnQuery = '';
   private lookupTimer: number | null = null;
-  private readonly workOrdersApi = 'http://localhost:5000/api/work-orders';
-  private readonly itemRevisionsApi = 'http://localhost:5000/api/item-revisions';
-  private readonly sitesApi = 'http://localhost:5000/api/sites';
-  private readonly productLinesApi = 'http://localhost:5000/api/users/product-lines';
+  private readonly workOrdersApi = `${environment.apiUrl}/api/work-orders`;
+  private readonly itemRevisionsApi = `${environment.apiUrl}/api/item-revisions`;
+  private readonly sitesApi = `${environment.apiUrl}/api/sites`;
+  private readonly productLinesApi = `${environment.apiUrl}/api/users/product-lines`;
   plantOptions: string[] = [];
   // Routing
   showRoutingModal = false;
-  routingApiBase = 'http://localhost:5000/api/routing';
+  routingApiBase = `${environment.apiUrl}/api/routing`;
   stations: Array<{ id: number; station_code: string; station_desc: string; status: string }> = [];
   isStationsLoading = false;
   selectedRoutingItem: { id: number; pn: string; description?: string } | null = null;
