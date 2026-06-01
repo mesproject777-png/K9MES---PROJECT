@@ -93,6 +93,52 @@
               placeholder="Paste or upload original PRN/ZPL template content here"
             ></textarea>
 
+            <div class="labelary-settings" aria-label="Labelary preview settings">
+              <label>
+                <span>Print Density</span>
+                <select [(ngModel)]="printDensity" (ngModelChange)="onLabelarySettingsChanged()">
+                  <option *ngFor="let option of printDensityOptions" [ngValue]="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+
+              <label>
+                <span>Print Quality</span>
+                <select [(ngModel)]="printQuality" (ngModelChange)="onLabelarySettingsChanged()">
+                  <option *ngFor="let option of printQualityOptions" [ngValue]="option">
+                    {{ option }}
+                  </option>
+                </select>
+              </label>
+
+              <label class="label-size-field">
+                <span>Label Size</span>
+                <span class="size-inputs">
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.1"
+                    [(ngModel)]="labelWidth"
+                    (ngModelChange)="onLabelarySettingsChanged()"
+                    aria-label="Label width"
+                  />
+                  <b aria-hidden="true">x</b>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.1"
+                    [(ngModel)]="labelHeight"
+                    (ngModelChange)="onLabelarySettingsChanged()"
+                    aria-label="Label height"
+                  />
+                  <select [(ngModel)]="labelSizeUnit" (ngModelChange)="onLabelarySettingsChanged()">
+                    <option *ngFor="let unit of labelSizeUnits" [ngValue]="unit">{{ unit }}</option>
+                  </select>
+                </span>
+              </label>
+            </div>
+
             <div class="prn-action-row">
               <button type="button" class="primary-button small-button" (click)="generatePreview()">
                 <span class="material-symbols-outlined">visibility</span>

@@ -15,6 +15,7 @@ import {
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { environment } from '../../../environments/environment';
+import { LabelMasterDto, LabelService } from '../../services/label.service';
 
 type WorkflowTab = {
   id: string;
@@ -67,6 +68,28 @@ type RoutingStepRow = {
   station_login_password?: string;
   station_ip?: string;
   printer_ip?: string;
+};
+
+type PrinterStatus = 'Online' | 'Offline';
+
+type PrinterOption = {
+  id: string;
+  name: string;
+  status: PrinterStatus;
+  ipAddress: string;
+  port: string;
+};
+
+type StationLabelPrintingConfig = {
+  stationId: number | null;
+  stationName: string;
+  labelCode: string;
+  labelDescription: string;
+  printerId: string;
+  printerName: string;
+  ipAddress: string;
+  port: string;
+  status: PrinterStatus;
 };
 
 type RoutingHistoryRow = {
@@ -148,6 +171,7 @@ type WorkflowSnapshot = {
   routing?: Array<RoutingStepRow & { preview_status?: PreviewStatus | null }>;
   bom?: BomChildRow[];
   stationRules?: Record<string, string[]>;
+  stationLabelPrinting?: Record<string, StationLabelPrintingConfig>;
   previewStatuses?: Record<string, PreviewStatus>;
 };
 
@@ -184,6 +208,25 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   readonly workOrderStatusOptions = ['Allocated', 'Planned', 'Released', 'Cancelled', 'Closed'];
   readonly sampleModeOptions: Array<'Full' | 'Sample'> = ['Full', 'Sample'];
   readonly reportModeOptions: Array<'Regular' | 'Auto Only'> = ['Regular', 'Auto Only'];
+  readonly stationRuleTabs: Array<{ id: 'label-printing'; label: string; icon: string }> = [
+    { id: 'label-printing', label: 'Label Printing', icon: 'print' },
+  ];
+  readonly defaultPrinterOptions: PrinterOption[] = [
+    {
+      id: 'zebra-barcode-6101',
+      name: 'Zebra Barcode Printer',
+      status: 'Online',
+      ipAddress: '192.168.27.136',
+      port: '6101',
+    },
+    {
+      id: 'line-printer-9100',
+      name: 'Line Label Printer',
+      status: 'Offline',
+      ipAddress: '192.168.27.140',
+      port: '9100',
+    },
+  ];
   readonly minDueDate = this.getDateInputValue(1);
 
   activeTabIndex = 0;
@@ -230,6 +273,19 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   activeRulesStationName = '';
   stationRulesDraft = '';
   stationRulesByStation: Record<string, string[]> = {};
+  stationLabelPrintingByStation: Record<string, StationLabelPrintingConfig> = {};
+  activeStationRulesTab: 'label-printing' = 'label-printing';
+  labelPrintCode = '';
+  selectedLabelDescription = '';
+  labelPrintValidationMessage = '';
+  selectedPrinterId = '';
+  labelPrintStatusMessage = '';
+  labelPrintStatusType: 'success' | 'error' | 'info' = 'info';
+  isTestPrintLoading = false;
+  testPrintPreviewUrl = '';
+  testPrintPreviewText = '';
+  testPrintPageSize = { width: '4', height: '6' };
+  availableLabels: LabelMasterDto[] = [];
   isStationLoginModalOpen = false;
   isEditingStationLogin = true;
   activeStationLoginStep: RoutingStepRow | null = null;
@@ -265,6 +321,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     private fb: FormBuilder,
     private http: HttpClient,
     private route: ActivatedRoute,
+    private labelService: LabelService,
     private cdr: ChangeDetectorRef
   ) {
     this.partNumberForm = this.fb.group({
@@ -311,6 +368,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.loadSnTypes();
     this.loadSites();
     this.loadStations();
+    this.loadLabels();
 
     this.partNumberForm.get('pn')?.valueChanges.subscribe((value) => {
       if (this.isRestoringSavedPreview) {
@@ -420,6 +478,8 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     if (this.previewConnectorFrame) {
       window.cancelAnimationFrame(this.previewConnectorFrame);
     }
+
+    this.revokeTestPrintPreviewUrl();
   }
 
   selectTab(index: number): void {
@@ -736,6 +796,8 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationName = step.station_name;
     this.stationRulesDraft = (this.stationRulesByStation[step.station_code] || []).join('\n');
     this.isEditingStationRules = false;
+    this.activeStationRulesTab = 'label-printing';
+    this.loadLabelPrintingDraft(step.station_code);
     this.isStationRulesModalOpen = true;
   }
 
@@ -1264,6 +1326,156 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     return this.stationRulesByStation[this.activeRulesStationCode] || [];
   }
 
+  get labelCodeOptions(): LabelMasterDto[] {
+    const query = this.labelPrintCode.trim().toLowerCase();
+    if (!query) {
+      return this.availableLabels.slice(0, 20);
+    }
+
+    return this.availableLabels
+      .filter((label) =>
+        label.label_code.toLowerCase().includes(query) ||
+        (label.label_description || '').toLowerCase().includes(query)
+      )
+      .slice(0, 20);
+  }
+
+  get activeRulesStationStep(): RoutingStepRow | null {
+    return this.routeSteps.find((step) => step.station_code === this.activeRulesStationCode) || null;
+  }
+
+  get printerOptions(): PrinterOption[] {
+    const stepPrinterIp = String(this.activeRulesStationStep?.printer_ip || '').trim();
+    const options = [...this.defaultPrinterOptions];
+
+    if (stepPrinterIp && !options.some((printer) => printer.ipAddress === stepPrinterIp)) {
+      options.unshift({
+        id: `station-${this.activeRulesStationCode}`,
+        name: `${this.activeRulesStationCode} Printer`,
+        status: 'Online',
+        ipAddress: stepPrinterIp,
+        port: '9100',
+      });
+    }
+
+    return options;
+  }
+
+  get selectedPrinter(): PrinterOption | null {
+    return this.printerOptions.find((printer) => printer.id === this.selectedPrinterId) || null;
+  }
+
+  get selectedLabel(): LabelMasterDto | null {
+    const code = this.normalizeLabelCode(this.labelPrintCode);
+    return this.availableLabels.find((label) => this.normalizeLabelCode(label.label_code) === code) || null;
+  }
+
+  onLabelPrintCodeChange(): void {
+    const code = this.normalizeLabelCode(this.labelPrintCode);
+    this.labelPrintCode = code;
+    this.labelPrintStatusMessage = '';
+
+    if (!code) {
+      this.selectedLabelDescription = '';
+      this.labelPrintValidationMessage = '';
+      return;
+    }
+
+    const label = this.selectedLabel;
+    this.selectedLabelDescription = label ? (label.label_description || label.label_code) : '';
+    this.labelPrintValidationMessage = label ? '' : 'Label Code not found in Labels module.';
+  }
+
+  onPrinterSelectionChange(): void {
+    this.labelPrintStatusMessage = '';
+  }
+
+  testPrinterConnection(): void {
+    const printer = this.selectedPrinter;
+    if (!printer) {
+      this.setLabelPrintMessage('Select a printer before testing connection.', 'error');
+      return;
+    }
+
+    if (printer.status === 'Offline') {
+      this.setLabelPrintMessage(`Connection failed. ${printer.name} is offline.`, 'error');
+      return;
+    }
+
+    this.setLabelPrintMessage('Printer connection check is not configured on the backend yet.', 'error');
+  }
+
+  testPrintLabel(): void {
+    if (!this.validateLabelPrintingConfig()) {
+      return;
+    }
+
+    const label = this.selectedLabel;
+    if (!label) {
+      this.setLabelPrintMessage('Select an existing Label Code before test print.', 'error');
+      return;
+    }
+
+    this.isTestPrintLoading = true;
+    this.setLabelPrintMessage('Preparing test print preview...', 'info');
+
+    this.labelService.getLabel(label.id).subscribe({
+      next: (response) => {
+        const prnContent = response.prn_template?.prn_content || '';
+        if (!prnContent.trim()) {
+          this.isTestPrintLoading = false;
+          this.setLabelPrintMessage('Selected Label Code does not have a PRN template.', 'error');
+          return;
+        }
+
+        void this.prepareTestPrintPreview(prnContent);
+      },
+      error: () => {
+        this.isTestPrintLoading = false;
+        this.setLabelPrintMessage('Unable to load PRN template for selected Label Code.', 'error');
+      },
+    });
+  }
+
+  saveLabelPrintingConfig(): void {
+    if (!this.validateLabelPrintingConfig()) {
+      return;
+    }
+
+    const printer = this.selectedPrinter;
+    const label = this.selectedLabel;
+    const step = this.activeRulesStationStep;
+
+    if (!printer || !label || !step) {
+      this.setLabelPrintMessage('Unable to save label printing configuration.', 'error');
+      return;
+    }
+
+    this.stationLabelPrintingByStation = {
+      ...this.stationLabelPrintingByStation,
+      [step.station_code]: {
+        stationId: step.id,
+        stationName: step.station_name,
+        labelCode: label.label_code,
+        labelDescription: label.label_description || '',
+        printerId: printer.id,
+        printerName: printer.name,
+        ipAddress: printer.ipAddress,
+        port: printer.port,
+        status: printer.status,
+      },
+    };
+
+    this.saveWorkflowSnapshot(
+      () => {
+        this.setLabelPrintMessage('Station label printing configuration saved.', 'success');
+      },
+      (message) => {
+        this.setLabelPrintMessage(message, 'error');
+      }
+    );
+  }
+
   openRulesEditor(): void {
     this.stationRulesDraft = this.activeStationRules.join('\n');
     this.isEditingStationRules = true;
@@ -1289,6 +1501,14 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationCode = '';
     this.activeRulesStationName = '';
     this.stationRulesDraft = '';
+    this.labelPrintCode = '';
+    this.selectedLabelDescription = '';
+    this.labelPrintValidationMessage = '';
+    this.selectedPrinterId = '';
+    this.labelPrintStatusMessage = '';
+    this.isTestPrintLoading = false;
+    this.testPrintPreviewText = '';
+    this.revokeTestPrintPreviewUrl();
   }
 
   private loadPnTypes(): void {
@@ -1345,6 +1565,18 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         this.stations = [];
         this.isStationsLoading = false;
       }
+    });
+  }
+
+  private loadLabels(): void {
+    this.labelService.getLabels().subscribe({
+      next: (response) => {
+        this.availableLabels = (response.data || []).filter((label) => label.status !== 'Inactive');
+        this.onLabelPrintCodeChange();
+      },
+      error: () => {
+        this.availableLabels = [];
+      },
     });
   }
 
@@ -1652,6 +1884,264 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     return value.toLowerCase().replace(/[^a-z0-9]/g, '');
   }
 
+  private normalizeLabelCode(value: string): string {
+    return String(value || '').trim().toUpperCase();
+  }
+
+  private loadLabelPrintingDraft(stationCode: string): void {
+    const config = this.stationLabelPrintingByStation[stationCode];
+    const defaultPrinter = this.printerOptions[0];
+
+    this.labelPrintCode = config?.labelCode || '';
+    this.selectedLabelDescription = config?.labelDescription || '';
+    this.labelPrintValidationMessage = '';
+    this.selectedPrinterId = config?.printerId || defaultPrinter?.id || '';
+    this.labelPrintStatusMessage = '';
+    this.labelPrintStatusType = 'info';
+    this.onLabelPrintCodeChange();
+  }
+
+  private validateLabelPrintingConfig(): boolean {
+    const code = this.normalizeLabelCode(this.labelPrintCode);
+    const label = this.selectedLabel;
+
+    if (!this.activeRulesStationStep) {
+      this.setLabelPrintMessage('Select a routing station before saving label printing.', 'error');
+      return false;
+    }
+
+    if (!code) {
+      this.labelPrintValidationMessage = 'Label Code is required.';
+      this.setLabelPrintMessage('Label Code is required.', 'error');
+      return false;
+    }
+
+    if (!label) {
+      this.labelPrintValidationMessage = 'Label Code not found in Labels module.';
+      this.setLabelPrintMessage('Select an existing Label Code from Labels module.', 'error');
+      return false;
+    }
+
+    if (!this.selectedPrinter) {
+      this.setLabelPrintMessage('Default Printer is required.', 'error');
+      return false;
+    }
+
+    this.labelPrintValidationMessage = '';
+    return true;
+  }
+
+  private setLabelPrintMessage(message: string, type: 'success' | 'error' | 'info'): void {
+    this.labelPrintStatusMessage = message;
+    this.labelPrintStatusType = type;
+  }
+
+  private async prepareTestPrintPreview(prnContent: string): Promise<void> {
+    this.revokeTestPrintPreviewUrl();
+    this.testPrintPreviewText = '';
+
+    try {
+      const { width, height } = this.getTestPrintLabelarySize(prnContent);
+      this.testPrintPageSize = { width, height };
+      const response = await fetch(`http://api.labelary.com/v1/printers/8dpmm/labels/${width}x${height}/0/`, {
+        method: 'POST',
+        headers: {
+          Accept: 'image/png',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: prnContent,
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const blob = await response.blob();
+      this.testPrintPreviewUrl = URL.createObjectURL(blob);
+      this.setLabelPrintMessage('Test print preview prepared.', 'success');
+      this.printTestPrintPreview();
+    } catch {
+      this.testPrintPageSize = this.getTestPrintLabelarySize(prnContent);
+      this.testPrintPreviewText = this.buildTestPrintTextPreview(prnContent);
+      this.setLabelPrintMessage('Labelary preview unavailable. Local test print preview prepared.', 'success');
+      this.printTestPrintPreview();
+    } finally {
+      this.isTestPrintLoading = false;
+    }
+  }
+
+  private printTestPrintPreview(): void {
+    const markup = this.buildTestPrintPreviewMarkup();
+    if (!markup) {
+      this.setLabelPrintMessage('Unable to prepare test print preview.', 'error');
+      return;
+    }
+
+    const printFrame = document.createElement('iframe');
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    printFrame.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(printFrame);
+
+    const frameWindow = printFrame.contentWindow;
+    const frameDocument = printFrame.contentDocument || frameWindow?.document;
+    if (!frameWindow || !frameDocument) {
+      printFrame.remove();
+      this.setLabelPrintMessage('Unable to open test print preview.', 'error');
+      return;
+    }
+
+    frameDocument.open();
+    frameDocument.write(markup);
+    frameDocument.close();
+
+    const printAndCleanup = () => {
+      frameWindow.focus();
+      frameWindow.print();
+      window.setTimeout(() => printFrame.remove(), 800);
+    };
+
+    const image = frameDocument.querySelector('img');
+    if (image && !(image as HTMLImageElement).complete) {
+      image.addEventListener('load', printAndCleanup, { once: true });
+      image.addEventListener('error', printAndCleanup, { once: true });
+      return;
+    }
+
+    window.setTimeout(printAndCleanup, 100);
+  }
+
+  private buildTestPrintPreviewMarkup(): string {
+    const pageWidth = this.testPrintPageSize.width;
+    const pageHeight = this.testPrintPageSize.height;
+
+    if (this.testPrintPreviewUrl) {
+      return `<!doctype html>
+<html>
+<head>
+  <title>Test Label Print</title>
+  <style>
+    @page { size: ${pageWidth}in ${pageHeight}in; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+      width: ${pageWidth}in;
+      height: ${pageHeight}in;
+      overflow: hidden;
+    }
+    body {
+      display: block;
+      line-height: 0;
+    }
+    img {
+      display: block;
+      width: ${pageWidth}in;
+      height: ${pageHeight}in;
+      object-fit: contain;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+  </style>
+</head>
+<body><img src="${this.testPrintPreviewUrl}" alt="Test Label Preview"></body>
+</html>`;
+    }
+
+    if (this.testPrintPreviewText) {
+      const escapedText = this.escapeHtml(this.testPrintPreviewText);
+      return `<!doctype html>
+<html>
+<head>
+  <title>Test Label Print</title>
+  <style>
+    @page { size: ${pageWidth}in ${pageHeight}in; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+      width: ${pageWidth}in;
+      height: ${pageHeight}in;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    pre {
+      width: ${pageWidth}in;
+      height: ${pageHeight}in;
+      margin: 0;
+      padding: 12px;
+      overflow: hidden;
+      white-space: pre-wrap;
+      font-size: 14px;
+      line-height: 1.35;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+  </style>
+</head>
+<body><pre>${escapedText}</pre></body>
+</html>`;
+    }
+
+    return '';
+  }
+
+  private getTestPrintLabelarySize(zpl: string): { width: string; height: string } {
+    const widthDots = Number(zpl.match(/\^PW(\d+)/i)?.[1]) || 812;
+    const heightDots = Number(zpl.match(/\^LL(\d+)/i)?.[1]) || 1218;
+    return {
+      width: this.formatTestPrintInches(widthDots / 8 / 25.4),
+      height: this.formatTestPrintInches(heightDots / 8 / 25.4),
+    };
+  }
+
+  private formatTestPrintInches(value: number): string {
+    return Math.max(0.5, Math.min(15, value)).toFixed(2).replace(/\.?0+$/, '');
+  }
+
+  private buildTestPrintTextPreview(zpl: string): string {
+    const fields = Array.from(zpl.matchAll(/\^FD([\s\S]*?)\^FS/gi))
+      .map((match) => this.cleanZplField(match[1]))
+      .filter(Boolean);
+
+    return fields.length ? fields.slice(0, 18).join('\n') : 'Test label preview';
+  }
+
+  private cleanZplField(value: string): string {
+    return value
+      .replace(/\^FH\\?/gi, '')
+      .replace(/\\&/g, '\n')
+      .replace(/_0D_0A/gi, '\n')
+      .replace(/\^[A-Z0-9,]+/gi, '')
+      .trim();
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  private revokeTestPrintPreviewUrl(): void {
+    if (this.testPrintPreviewUrl) {
+      URL.revokeObjectURL(this.testPrintPreviewUrl);
+      this.testPrintPreviewUrl = '';
+    }
+  }
+
   private getStationRuleText(stationCode: string): string {
     return `${stationCode} Rule`;
   }
@@ -1751,6 +2241,15 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationCode = '';
     this.activeRulesStationName = '';
     this.stationRulesDraft = '';
+    this.stationLabelPrintingByStation = {};
+    this.labelPrintCode = '';
+    this.selectedLabelDescription = '';
+    this.labelPrintValidationMessage = '';
+    this.selectedPrinterId = '';
+    this.labelPrintStatusMessage = '';
+    this.isTestPrintLoading = false;
+    this.testPrintPreviewText = '';
+    this.revokeTestPrintPreviewUrl();
     this.previewStationStatusById = {};
     this.linkedRoutingPartNumber = '';
     this.linkedRoutingDescription = '';
@@ -1807,6 +2306,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         qty: this.toNullableNumber(child.qty) || 1,
       })),
       stationRules: this.stationRulesByStation,
+      stationLabelPrinting: this.stationLabelPrintingByStation,
       previewStatuses: this.buildPreviewStatusesByStationCode(),
     };
   }
@@ -1875,6 +2375,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     }, {});
 
     this.stationRulesByStation = snapshot.stationRules || {};
+    this.stationLabelPrintingByStation = snapshot.stationLabelPrinting || {};
     this.linkedRoutingPartNumber = partNumber.pn || '';
     this.linkedRoutingDescription = partNumber.description || '';
     this.linkedBomPartNumber = partNumber.pn || '';

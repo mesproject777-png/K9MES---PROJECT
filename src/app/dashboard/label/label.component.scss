@@ -435,8 +435,8 @@ input[readonly] {
 }
 
 .prn-editor {
-  height: clamp(440px, 58vh, 640px);
-  min-height: 440px;
+  height: clamp(360px, 48vh, 560px);
+  min-height: 360px;
   max-height: 640px;
   padding: 11px;
   font-family: Consolas, Monaco, monospace;
@@ -546,6 +546,54 @@ input[readonly] {
   color: #162235;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.labelary-settings {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(138px, 0.7fr) minmax(230px, 1fr);
+  gap: 8px;
+  align-items: end;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid #dce7f4;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.labelary-settings label {
+  gap: 4px;
+}
+
+.labelary-settings label > span:first-child {
+  color: #405066;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.labelary-settings input,
+.labelary-settings select {
+  height: 32px;
+  min-width: 0;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.label-size-field {
+  min-width: 0;
+}
+
+.size-inputs {
+  display: grid;
+  grid-template-columns: minmax(58px, 1fr) auto minmax(58px, 1fr) minmax(76px, 0.7fr);
+  gap: 5px;
+  align-items: center;
+}
+
+.size-inputs b {
+  color: #526277;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .action-row {
@@ -821,6 +869,10 @@ input[readonly] {
   }
 
   .placeholder-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .labelary-settings {
     grid-template-columns: 1fr;
   }
 

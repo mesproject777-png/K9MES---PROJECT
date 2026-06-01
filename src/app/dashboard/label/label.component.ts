@@ -76,6 +76,10 @@ interface PlaceholderResolution {
   resolved: boolean;
 }
 
+type PrintDensity = 6 | 8 | 12 | 24;
+type PrintQuality = 'Grayscale' | 'Bitonal';
+type LabelSizeUnit = 'inches' | 'cm' | 'mm';
+
 @Component({
   selector: 'app-label',
   standalone: false,
@@ -108,6 +112,14 @@ export class LabelComponent implements OnInit, OnDestroy {
     { key: 'manufacturingDate', label: 'MFG Date' },
     { key: 'bisNumber', label: 'BIS / Cert No' },
   ];
+  readonly printDensityOptions: Array<{ value: PrintDensity; label: string }> = [
+    { value: 6, label: '6 dpmm (152 dpi)' },
+    { value: 8, label: '8 dpmm (203 dpi)' },
+    { value: 12, label: '12 dpmm (300 dpi)' },
+    { value: 24, label: '24 dpmm (600 dpi)' },
+  ];
+  readonly printQualityOptions: PrintQuality[] = ['Grayscale', 'Bitonal'];
+  readonly labelSizeUnits: LabelSizeUnit[] = ['inches', 'cm', 'mm'];
 
   labels: LabelMaster[] = [];
   activeTab: 'create' | 'history' = 'create';
@@ -137,6 +149,12 @@ export class LabelComponent implements OnInit, OnDestroy {
   previewMode: 'html' | 'image' | 'empty' = 'empty';
   labelaryPreviewUrl = '';
   isPreviewLoading = false;
+  printDensity: PrintDensity = 12;
+  printQuality: PrintQuality = 'Grayscale';
+  labelWidth = 4;
+  labelHeight = 6;
+  labelSizeUnit: LabelSizeUnit = 'inches';
+  private hasCustomLabelSize = false;
   message = '';
   messageType: 'success' | 'error' | 'info' = 'info';
 
@@ -184,6 +202,12 @@ export class LabelComponent implements OnInit, OnDestroy {
     this.uploadedFileName = '';
     this.rawPrnText = '';
     this.generatedPrnText = '';
+    this.printDensity = 12;
+    this.printQuality = 'Grayscale';
+    this.labelWidth = 4;
+    this.labelHeight = 6;
+    this.labelSizeUnit = 'inches';
+    this.hasCustomLabelSize = false;
     this.placeholderResolutions = [];
     this.unresolvedPlaceholderNames = [];
     this.rsnQuery = '';
@@ -272,6 +296,8 @@ export class LabelComponent implements OnInit, OnDestroy {
         this.labelType = this.labelTypes[0];
         this.uploadedFileName = response.prn_template?.prn_file_name || '';
         this.rawPrnText = response.prn_template?.prn_content || '';
+        this.hasCustomLabelSize = false;
+        this.syncLabelSizeFromZpl(this.rawPrnText);
         this.extractedFields = this.createEmptyFields();
         this.refreshExtractedFields();
         this.generatePreview();
@@ -419,6 +445,13 @@ export class LabelComponent implements OnInit, OnDestroy {
     void this.generateLabelaryPreview(this.generatedPrnText);
   }
 
+  onLabelarySettingsChanged(): void {
+    this.hasCustomLabelSize = true;
+    if (this.rawPrnText.trim()) {
+      this.generatePreview();
+    }
+  }
+
   printLabel(): void {
     if (this.unresolvedPlaceholderNames.length) {
       this.setMessage('Resolve highlighted placeholders before printing.', 'error');
@@ -529,11 +562,12 @@ export class LabelComponent implements OnInit, OnDestroy {
 
     try {
       const { width, height } = this.getLabelarySize(zpl);
-      const response = await fetch(`http://api.labelary.com/v1/printers/8dpmm/labels/${width}x${height}/0/`, {
+      const response = await fetch(`http://api.labelary.com/v1/printers/${this.printDensity}dpmm/labels/${width}x${height}/0/`, {
         method: 'POST',
         headers: {
           Accept: 'image/png',
           'Content-Type': 'application/x-www-form-urlencoded',
+          'X-Quality': this.printQuality,
         },
         body: zpl,
       });
@@ -559,12 +593,42 @@ export class LabelComponent implements OnInit, OnDestroy {
   }
 
   private getLabelarySize(zpl: string): { width: string; height: string } {
-    const widthDots = Number(zpl.match(/\^PW(\d+)/i)?.[1]) || 812;
-    const heightDots = Number(zpl.match(/\^LL(\d+)/i)?.[1]) || 1218;
-    const width = this.formatLabelaryInches(widthDots / 8 / 25.4);
-    const height = this.formatLabelaryInches(heightDots / 8 / 25.4);
+    if (!this.hasCustomLabelSize) {
+      this.syncLabelSizeFromZpl(zpl);
+    }
+
+    const width = this.formatLabelaryInches(this.convertLabelSizeToInches(this.labelWidth));
+    const height = this.formatLabelaryInches(this.convertLabelSizeToInches(this.labelHeight));
 
     return { width, height };
+  }
+
+  private syncLabelSizeFromZpl(zpl: string): void {
+    const widthDots = Number(zpl.match(/\^PW(\d+)/i)?.[1]) || 0;
+    const heightDots = Number(zpl.match(/\^LL(\d+)/i)?.[1]) || 0;
+
+    if (!widthDots && !heightDots) {
+      return;
+    }
+
+    this.labelSizeUnit = 'inches';
+    if (widthDots) {
+      this.labelWidth = Number(this.formatLabelaryInches(widthDots / this.printDensity / 25.4));
+    }
+    if (heightDots) {
+      this.labelHeight = Number(this.formatLabelaryInches(heightDots / this.printDensity / 25.4));
+    }
+  }
+
+  private convertLabelSizeToInches(value: number): number {
+    const numericValue = Number(value) || 0;
+    if (this.labelSizeUnit === 'cm') {
+      return numericValue / 2.54;
+    }
+    if (this.labelSizeUnit === 'mm') {
+      return numericValue / 25.4;
+    }
+    return numericValue;
   }
 
   private formatLabelaryInches(value: number): string {
@@ -590,11 +654,13 @@ export class LabelComponent implements OnInit, OnDestroy {
       margin: 0;
       padding: 0;
       background: #ffffff;
+      width: max-content;
+      height: max-content;
+      overflow: hidden;
     }
     body {
-      display: flex;
-      align-items: flex-start;
-      justify-content: flex-start;
+      display: block;
+      line-height: 0;
     }
     img {
       display: block;
@@ -602,6 +668,7 @@ export class LabelComponent implements OnInit, OnDestroy {
       height: auto;
       page-break-inside: avoid;
       break-inside: avoid;
+      page-break-after: avoid;
     }
   </style>
 </head>
@@ -623,6 +690,12 @@ export class LabelComponent implements OnInit, OnDestroy {
       margin: 0;
       padding: 0;
       background: #ffffff;
+      width: max-content;
+      height: max-content;
+      overflow: hidden;
+    }
+    body {
+      display: block;
     }
     .print-label {
       position: relative;
@@ -632,6 +705,7 @@ export class LabelComponent implements OnInit, OnDestroy {
       overflow: hidden;
       page-break-inside: avoid;
       break-inside: avoid;
+      page-break-after: avoid;
     }
     .preview-item {
       position: absolute;

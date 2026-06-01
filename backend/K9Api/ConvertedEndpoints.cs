@@ -3787,6 +3787,38 @@ public static class ConvertedEndpoints
                 }
             }
 
+            if (payload["stationLabelPrinting"] is JsonObject stationLabelPrinting)
+            {
+                await ExecuteAsync(connection, "DELETE FROM workflow_station_label_printing WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
+                foreach (var configGroup in stationLabelPrinting)
+                {
+                    var stationCode = configGroup.Key.Trim();
+                    if (string.IsNullOrWhiteSpace(stationCode) || configGroup.Value is null) continue;
+
+                    await ExecuteAsync(
+                        connection,
+                        """
+                        INSERT INTO workflow_station_label_printing
+                          (workflow_part_id, station_code, station_id, station_name, label_code, label_description,
+                           printer_id, printer_name, ip_address, port, status)
+                        VALUES
+                          (@workflowPartId, @stationCode, @stationId, @stationName, @labelCode, @labelDescription,
+                           @printerId, @printerName, @ipAddress, @port, @status)
+                        """,
+                        ("workflowPartId", workflowPartId),
+                        ("stationCode", stationCode),
+                        ("stationId", ReadInt(configGroup.Value, "stationId")),
+                        ("stationName", ToDbNullable(ReadString(configGroup.Value, "stationName")?.Trim())),
+                        ("labelCode", ToDbNullable(ReadString(configGroup.Value, "labelCode")?.Trim())),
+                        ("labelDescription", ToDbNullable(ReadString(configGroup.Value, "labelDescription")?.Trim())),
+                        ("printerId", ToDbNullable(ReadString(configGroup.Value, "printerId")?.Trim())),
+                        ("printerName", ToDbNullable(ReadString(configGroup.Value, "printerName")?.Trim())),
+                        ("ipAddress", ToDbNullable(ReadString(configGroup.Value, "ipAddress")?.Trim())),
+                        ("port", ToDbNullable(ReadString(configGroup.Value, "port")?.Trim())),
+                        ("status", ToDbNullable(ReadString(configGroup.Value, "status")?.Trim())));
+                }
+            }
+
             if (payload["previewStatuses"] is JsonObject previewStatuses)
             {
                 await ExecuteAsync(connection, "DELETE FROM workflow_preview_station_statuses WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
@@ -4387,6 +4419,17 @@ public static class ConvertedEndpoints
                 """,
                 ("workflowPartId", workflowPartId));
 
+            var labelPrintingRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT station_code, station_id, station_name, label_code, label_description,
+                       printer_id, printer_name, ip_address, port, status
+                FROM workflow_station_label_printing
+                WHERE workflow_part_id = @workflowPartId
+                ORDER BY station_code ASC
+                """,
+                ("workflowPartId", workflowPartId));
+
             var statusRows = await QueryRowsAsync(
                 connection,
                 """
@@ -4411,6 +4454,20 @@ public static class ConvertedEndpoints
                 routing = routingRows,
                 bom = bomRows,
                 stationRules = GroupWorkflowRules(ruleRows),
+                stationLabelPrinting = labelPrintingRows.ToDictionary(
+                    row => Convert.ToString(row["station_code"]) ?? string.Empty,
+                    row => new
+                    {
+                        stationId = row["station_id"] is DBNull ? (int?)null : Convert.ToInt32(row["station_id"]),
+                        stationName = Convert.ToString(row["station_name"]) ?? string.Empty,
+                        labelCode = Convert.ToString(row["label_code"]) ?? string.Empty,
+                        labelDescription = Convert.ToString(row["label_description"]) ?? string.Empty,
+                        printerId = Convert.ToString(row["printer_id"]) ?? string.Empty,
+                        printerName = Convert.ToString(row["printer_name"]) ?? string.Empty,
+                        ipAddress = Convert.ToString(row["ip_address"]) ?? string.Empty,
+                        port = Convert.ToString(row["port"]) ?? string.Empty,
+                        status = Convert.ToString(row["status"]) ?? string.Empty
+                    }),
                 previewStatuses = statusRows.ToDictionary(
                     row => Convert.ToString(row["station_code"]) ?? string.Empty,
                     row => Convert.ToString(row["status"]) ?? string.Empty)
@@ -4517,6 +4574,7 @@ public static class ConvertedEndpoints
             routing = existingRoutingRows,
             bom = existingBomRows,
             stationRules = new Dictionary<string, List<string>>(),
+            stationLabelPrinting = new Dictionary<string, object>(),
             previewStatuses = new Dictionary<string, string>()
         };
     }
@@ -5423,6 +5481,28 @@ public static class ConvertedEndpoints
             )
             """);
 
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_station_label_printing (
+              id SERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              station_id INTEGER,
+              station_name VARCHAR(220),
+              label_code VARCHAR(120),
+              label_description TEXT,
+              printer_id VARCHAR(160),
+              printer_name VARCHAR(220),
+              ip_address VARCHAR(80),
+              port VARCHAR(20),
+              status VARCHAR(30),
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_station_label_printing UNIQUE (workflow_part_id, station_code)
+            )
+            """);
+
         await ExecuteAsync(connection, "CREATE SEQUENCE IF NOT EXISTS public.workflow_rsn_seq START WITH 1");
         await ExecuteAsync(
             connection,
@@ -5450,6 +5530,7 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_route_part ON public.workflow_routing_steps (workflow_part_id, station_order)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_part ON public.workflow_bom_children (workflow_part_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_rules_part ON public.workflow_station_rules (workflow_part_id, station_code)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_label_printing_part ON public.workflow_station_label_printing (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_wo ON public.workflow_serial_numbers (workflow_work_order_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_part ON public.workflow_serial_numbers (workflow_part_id)");
     }

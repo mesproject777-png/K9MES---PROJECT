@@ -922,28 +922,106 @@
       <button type="button" class="secondary-button" (click)="closeStationRulesModal()">Close</button>
     </div>
 
-    <div class="rules-body" *ngIf="!isEditingStationRules">
-      <div class="rules-empty" *ngIf="activeStationRules.length === 0">
-        No rules set for this station.
+    <div class="rules-tabs" role="tablist" aria-label="Station rule sections">
+      <button
+        *ngFor="let tab of stationRuleTabs"
+        type="button"
+        class="rules-tab"
+        [class.active]="activeStationRulesTab === tab.id"
+        [attr.aria-selected]="activeStationRulesTab === tab.id"
+        role="tab"
+        (click)="activeStationRulesTab = tab.id"
+      >
+        <span class="material-symbols-outlined" aria-hidden="true">{{ tab.icon }}</span>
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <div class="label-printing-tab" *ngIf="activeStationRulesTab === 'label-printing'" role="tabpanel">
+      <section class="rules-section">
+        <label class="rules-field" for="stationLabelCode">
+          <span>Label Code</span>
+          <input
+            id="stationLabelCode"
+            type="text"
+            list="stationLabelCodeOptions"
+            [(ngModel)]="labelPrintCode"
+            (ngModelChange)="onLabelPrintCodeChange()"
+            placeholder="Enter or select label code"
+            autocomplete="off"
+          />
+          <datalist id="stationLabelCodeOptions">
+            <option *ngFor="let label of labelCodeOptions" [value]="label.label_code">
+              {{ label.label_description || label.label_code }}
+            </option>
+          </datalist>
+        </label>
+        <p class="template-detail" *ngIf="selectedLabelDescription">
+          {{ selectedLabelDescription }}
+        </p>
+        <p class="rules-validation" *ngIf="labelPrintValidationMessage">
+          {{ labelPrintValidationMessage }}
+        </p>
+      </section>
+
+      <section class="rules-section printer-section">
+        <label class="rules-field" for="stationPrinter">
+          <span>Printer</span>
+          <select id="stationPrinter" [(ngModel)]="selectedPrinterId" (ngModelChange)="onPrinterSelectionChange()">
+            <option value="" disabled>Select printer</option>
+            <option *ngFor="let printer of printerOptions" [ngValue]="printer.id">
+              {{ printer.name }} ({{ printer.status }}) [{{ printer.ipAddress }}]
+            </option>
+          </select>
+        </label>
+
+        <div class="selected-printer-card" *ngIf="selectedPrinter as printer">
+          <span class="material-symbols-outlined printer-icon" aria-hidden="true">print</span>
+          <div class="printer-card-main">
+            <strong>{{ printer.name }}</strong>
+            <small>{{ printer.id }}</small>
+            <div class="printer-meta">
+              <span class="printer-status" [class.offline]="printer.status === 'Offline'">{{ printer.status }}</span>
+              <span>IP: {{ printer.ipAddress }}</span>
+              <span>Port: {{ printer.port }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <p
+        class="label-print-message"
+        *ngIf="labelPrintStatusMessage"
+        [class.success]="labelPrintStatusType === 'success'"
+        [class.error]="labelPrintStatusType === 'error'"
+      >
+        {{ labelPrintStatusMessage }}
+      </p>
+
+      <div class="test-print-preview" *ngIf="testPrintPreviewUrl || testPrintPreviewText || isTestPrintLoading">
+        <div *ngIf="isTestPrintLoading" class="test-print-loading">
+          Preparing preview...
+        </div>
+        <img *ngIf="!isTestPrintLoading && testPrintPreviewUrl" [src]="testPrintPreviewUrl" alt="Test label preview" />
+        <pre *ngIf="!isTestPrintLoading && !testPrintPreviewUrl && testPrintPreviewText">{{ testPrintPreviewText }}</pre>
       </div>
-
-      <ol class="rules-list" *ngIf="activeStationRules.length > 0">
-        <li *ngFor="let rule of activeStationRules">{{ rule }}</li>
-      </ol>
     </div>
 
-    <div class="rules-editor" *ngIf="isEditingStationRules">
-      <label for="stationRulesDraft">Rules</label>
-      <textarea id="stationRulesDraft" [(ngModel)]="stationRulesDraft" rows="7" placeholder="One rule per line"></textarea>
-    </div>
-
-    <div class="rules-actions">
-      <button *ngIf="!isEditingStationRules" type="button" class="secondary-button" (click)="openRulesEditor()">
-        Edit Rules
-      </button>
-      <button *ngIf="isEditingStationRules" type="button" class="save-button" (click)="saveStationRules()">
-        Save Rules
-      </button>
+    <div class="rules-actions label-print-actions">
+      <div>
+        <button type="button" class="secondary-button outline-button" (click)="testPrinterConnection()">
+          <span class="material-symbols-outlined" aria-hidden="true">print</span>
+          Test Connection
+        </button>
+        <button type="button" class="save-button" [disabled]="isTestPrintLoading" (click)="testPrintLabel()">
+          <span class="material-symbols-outlined" aria-hidden="true">print</span>
+          {{ isTestPrintLoading ? 'Preparing' : 'Test Print' }}
+        </button>
+      </div>
+      <div>
+        <button type="button" class="secondary-button text-button" (click)="closeStationRulesModal()">Cancel</button>
+        <button type="button" class="save-button" (click)="saveLabelPrintingConfig()">Save Changes</button>
+      </div>
     </div>
   </div>
 </div>
