@@ -7,11 +7,128 @@
 
 .label-page {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
+  align-items: stretch;
   box-sizing: border-box;
   min-height: calc(100vh - 120px);
+  padding: 12px;
+}
+
+.label-window {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d6e2ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 36px rgba(19, 60, 102, 0.12);
+}
+
+.workflow-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(128px, 1fr));
+  min-height: 68px;
+  background: linear-gradient(135deg, #0f88a7 0%, #08749a 48%, #075f8a 100%);
+  overflow: hidden;
+}
+
+.workflow-tab {
+  position: relative;
+  min-width: 0;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow: hidden;
+  text-align: center;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.workflow-tab + .workflow-tab {
+  border-left: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.workflow-tab::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 50%;
+  width: calc(100% - 24px);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.18);
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
+  transition: opacity 0.24s ease, transform 0.24s ease, box-shadow 0.24s ease;
+}
+
+.workflow-tab::after {
+  content: '';
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 0;
+  height: 4px;
+  border-radius: 999px 999px 0 0;
+  background: #ffffff;
+  opacity: 0;
+  transform: scaleX(0.35);
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.workflow-tab:hover::before,
+.workflow-tab:focus-visible::before,
+.workflow-tab.active::before {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.workflow-tab.active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.workflow-tab:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.72);
+  outline-offset: -6px;
+}
+
+.workflow-tab > span {
+  position: relative;
+  z-index: 1;
+}
+
+.workflow-tab .material-symbols-outlined {
+  flex: 0 0 auto;
+  font-size: 23px;
+  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+}
+
+.label-panel-shell {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.96), rgba(236, 245, 255, 0.96));
+}
+
+.label-panel {
+  width: 100%;
+  min-width: 0;
 }
 
 .label-card {
@@ -60,7 +177,7 @@ h3 {
 
 .status-message {
   min-height: 36px;
-  margin: 0;
+  margin: 0 0 12px;
   padding: 9px 12px;
   border-radius: 8px;
   background: #edf4ff;
@@ -83,7 +200,7 @@ h3 {
 
 .master-form {
   display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(220px, 1.1fr) minmax(130px, 0.6fr) auto auto auto;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(260px, 1fr) auto auto;
   align-items: end;
   gap: 10px;
 }
@@ -198,7 +315,7 @@ button:disabled {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 620px;
+  min-width: 940px;
 }
 
 th,
@@ -264,6 +381,7 @@ tr.selected td {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
+  margin-top: 12px;
   flex: 1;
   min-height: 0;
 }
@@ -317,9 +435,9 @@ input[readonly] {
 }
 
 .prn-editor {
-  height: clamp(220px, 32vh, 330px);
-  min-height: 220px;
-  max-height: 330px;
+  height: clamp(440px, 58vh, 640px);
+  min-height: 440px;
+  max-height: 640px;
   padding: 11px;
   font-family: Consolas, Monaco, monospace;
   font-size: 13px;
@@ -437,6 +555,18 @@ input[readonly] {
   margin-top: 10px;
 }
 
+.prn-action-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.small-button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .preview-mode {
   min-height: 28px;
   padding: 6px 10px;
@@ -448,8 +578,8 @@ input[readonly] {
 }
 
 .preview-shell {
-  height: clamp(540px, 62vh, 640px);
-  min-height: 540px;
+  height: clamp(440px, 58vh, 640px);
+  min-height: 440px;
   border: 1px solid #dce5f1;
   border-radius: 8px;
   background:
@@ -485,6 +615,12 @@ input[readonly] {
   background: #ffffff;
   border: 1px solid #cfd8e6;
   box-shadow: 0 18px 36px rgba(21, 32, 48, 0.14);
+}
+
+.labelary-preview {
+  width: auto;
+  height: auto;
+  display: block;
 }
 
 .print-label {
@@ -621,6 +757,28 @@ input[readonly] {
   overflow: auto;
 }
 
+.history-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.history-search {
+  width: 100%;
+  min-width: 0;
+}
+
+.edit-button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid #c8d7e8;
+  background: #f7faff;
+  color: #0f62c8;
+}
+
 @media (max-width: 1180px) {
   .master-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -675,5 +833,55 @@ input[readonly] {
     transform: scale(0.72);
     transform-origin: top center;
     margin-bottom: -176px;
+  }
+}
+
+@media print {
+  :host {
+    display: block;
+    min-height: 0;
+    background: #ffffff;
+  }
+
+  :host * {
+    visibility: hidden !important;
+  }
+
+  .preview-shell,
+  .preview-shell * {
+    visibility: visible !important;
+  }
+
+  .preview-shell {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #ffffff;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    overflow: visible;
+  }
+
+  .preview-shell img,
+  .print-label {
+    max-width: none;
+    max-height: none;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .print-label {
+    transform: none !important;
+    margin: 0 !important;
+  }
+
+  @page {
+    margin: 0;
   }
 }

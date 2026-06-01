@@ -1,4 +1,5 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
+import { LabelMasterDto, LabelService } from '../../services/label.service';
 import { TraceabilityService, TraceRouteStep, TraceSearchResponse } from '../../services/traceability.service';
 
 type LabelStatus = 'Active' | 'Draft';
@@ -11,6 +12,7 @@ interface LabelMaster {
   status: LabelStatus;
   prnText: string;
   fileName: string;
+  createdDate: string;
   fields: ExtractedLabelFields;
 }
 
@@ -81,7 +83,6 @@ interface PlaceholderResolution {
   styleUrl: './label.component.scss'
 })
 export class LabelComponent implements OnInit, OnDestroy {
-  private readonly storageKey = 'k9:label-master';
   private readonly previewWidth = 390;
   private readonly previewHeight = 540;
 
@@ -109,6 +110,7 @@ export class LabelComponent implements OnInit, OnDestroy {
   ];
 
   labels: LabelMaster[] = [];
+  activeTab: 'create' | 'history' = 'create';
   selectedLabelId: number | null = null;
   labelCode = '';
   labelDescription = '';
@@ -132,19 +134,24 @@ export class LabelComponent implements OnInit, OnDestroy {
   codeImageById: Record<string, string> = {};
   placeholderResolutions: PlaceholderResolution[] = [];
   unresolvedPlaceholderNames: string[] = [];
-  previewMode: 'html' | 'empty' = 'empty';
+  previewMode: 'html' | 'image' | 'empty' = 'empty';
+  labelaryPreviewUrl = '';
+  isPreviewLoading = false;
   message = '';
   messageType: 'success' | 'error' | 'info' = 'info';
 
-  constructor(private traceabilityService: TraceabilityService) {}
+  constructor(
+    private traceabilityService: TraceabilityService,
+    private labelService: LabelService
+  ) {}
 
   ngOnInit(): void {
-    this.labels = this.loadLabels();
-
     this.startNewLabel();
+    this.loadLabelsFromDatabase();
   }
 
   ngOnDestroy(): void {
+    this.revokeLabelaryPreviewUrl();
   }
 
   get filteredLabels(): LabelMaster[] {
@@ -153,7 +160,10 @@ export class LabelComponent implements OnInit, OnDestroy {
       return this.labels;
     }
 
-    return this.labels.filter((label) => label.code.toLowerCase().includes(query));
+    return this.labels.filter((label) =>
+      label.code.toLowerCase().includes(query) ||
+      (label.description || '').toLowerCase().includes(query)
+    );
   }
 
   get isEditMode(): boolean {
@@ -166,6 +176,7 @@ export class LabelComponent implements OnInit, OnDestroy {
 
   startNewLabel(): void {
     this.selectedLabelId = null;
+    this.activeTab = 'create';
     this.labelCode = '';
     this.labelDescription = '';
     this.labelType = this.labelTypes[0];
@@ -184,6 +195,7 @@ export class LabelComponent implements OnInit, OnDestroy {
     this.extractedFields = this.createEmptyFields();
     this.previewElements = [];
     this.codeImageById = {};
+    this.revokeLabelaryPreviewUrl();
     this.previewMode = 'empty';
     this.setMessage('Ready to create a new label.', 'info');
   }
@@ -207,41 +219,93 @@ export class LabelComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const payload: LabelMaster = {
-      id: this.selectedLabelId ?? this.getNextLabelId(),
-      code,
-      description: this.labelDescription.trim(),
-      type: this.labelType,
-      status: this.rawPrnText.trim() ? 'Active' : 'Draft',
-      prnText: this.rawPrnText,
-      fileName: this.uploadedFileName,
-      fields: this.extractedFields,
-    };
-
-    if (this.selectedLabelId === null) {
-      this.labels = [payload, ...this.labels];
-      this.selectedLabelId = payload.id;
-    } else {
-      this.labels = this.labels.map((label) => label.id === payload.id ? payload : label);
+    if (!this.rawPrnText.trim()) {
+      this.setMessage('Enter completed PRN/ZPL template content before saving.', 'error');
+      return;
     }
 
+    const masterPayload = {
+      label_code: code,
+      label_description: this.labelDescription.trim(),
+      status: 'Active' as const,
+    };
+    const saveMaster$ = this.selectedLabelId === null
+      ? this.labelService.createLabel(masterPayload)
+      : this.labelService.updateLabel(this.selectedLabelId, masterPayload);
+
+    this.setMessage('Saving label to database...', 'info');
+    saveMaster$.subscribe({
+      next: (savedLabel) => {
+        this.selectedLabelId = savedLabel.id;
+        this.labelService.savePrnTemplate(savedLabel.id, {
+          prn_file_name: this.uploadedFileName,
+          prn_content: this.rawPrnText,
+          preview_data: null,
+        }).subscribe({
+          next: () => {
+            this.labelCode = code;
+            this.loadLabelsFromDatabase();
+            this.setMessage('Label and PRN template saved to database.', 'success');
+          },
+          error: () => {
+            this.setMessage('Label saved, but PRN template could not be saved.', 'error');
+          },
+        });
+      },
+      error: (error) => {
+        const message = error?.error?.error || 'Unable to save label.';
+        this.setMessage(message, 'error');
+      },
+    });
     this.labelCode = code;
-    this.persistLabels();
-    this.setMessage('Label master saved.', 'success');
   }
 
   selectLabel(label: LabelMaster): void {
-    this.selectedLabelId = label.id;
-    this.labelCode = label.code;
-    this.labelDescription = label.description;
-    this.labelType = label.type || this.labelTypes[0];
-    this.uploadedFileName = label.fileName;
-    this.rawPrnText = label.prnText;
-    this.extractedFields = { ...label.fields };
-    this.updateStickerDataFromSources();
-    this.generatePreview();
-    this.isLabelListOpen = false;
-    this.setMessage(`${label.code} loaded for editing.`, 'info');
+    this.activeTab = 'create';
+    this.setMessage(`Loading ${label.code} from database...`, 'info');
+
+    this.labelService.getLabel(label.id).subscribe({
+      next: (response) => {
+        this.selectedLabelId = response.label.id;
+        this.labelCode = response.label.label_code;
+        this.labelDescription = response.label.label_description || '';
+        this.labelType = this.labelTypes[0];
+        this.uploadedFileName = response.prn_template?.prn_file_name || '';
+        this.rawPrnText = response.prn_template?.prn_content || '';
+        this.extractedFields = this.createEmptyFields();
+        this.refreshExtractedFields();
+        this.generatePreview();
+        this.isLabelListOpen = false;
+        this.setMessage(`${response.label.label_code} loaded for editing.`, 'info');
+      },
+      error: () => {
+        this.setMessage('Unable to load selected label.', 'error');
+      },
+    });
+  }
+
+  selectTab(tab: 'create' | 'history'): void {
+    this.activeTab = tab;
+    if (tab === 'history') {
+      this.loadLabelsFromDatabase();
+    }
+  }
+
+  formatCreatedDate(value: string | undefined): string {
+    if (!value) {
+      return '-';
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
   }
 
   loadFirstSearchResult(): void {
@@ -284,7 +348,14 @@ export class LabelComponent implements OnInit, OnDestroy {
 
   onRawPrnChanged(): void {
     this.refreshExtractedFields();
-    this.updateStickerDataFromSources(false);
+    if (this.rawPrnText.trim()) {
+      this.generatePreview();
+    } else {
+      this.previewMode = 'empty';
+      this.previewElements = [];
+      this.codeImageById = {};
+      this.revokeLabelaryPreviewUrl();
+    }
   }
 
   searchRsn(): void {
@@ -332,24 +403,20 @@ export class LabelComponent implements OnInit, OnDestroy {
 
   generatePreview(): void {
     this.refreshExtractedFields();
-    this.updateStickerDataFromSources(false);
-    this.generatedPrnText = this.applyTemplateValues(this.rawPrnText);
+    this.generatedPrnText = this.rawPrnText;
+    this.placeholderResolutions = [];
+    this.unresolvedPlaceholderNames = [];
 
     if (!this.rawPrnText.trim()) {
       this.previewMode = 'empty';
       this.previewElements = [];
       this.codeImageById = {};
+      this.revokeLabelaryPreviewUrl();
       this.setMessage('Upload or enter PRN/ZPL data before preview.', 'error');
       return;
     }
 
-    this.rebuildHtmlPreview(this.generatedPrnText);
-    void this.generateCodeImages();
-    if (this.unresolvedPlaceholderNames.length) {
-      this.setMessage(`No value found for placeholder ${this.unresolvedPlaceholderNames.map((name) => `{${name}}`).join(', ')}`, 'error');
-    } else {
-      this.setMessage('Local PRN/ZPL preview generated.', 'success');
-    }
+    void this.generateLabelaryPreview(this.generatedPrnText);
   }
 
   printLabel(): void {
@@ -358,7 +425,48 @@ export class LabelComponent implements OnInit, OnDestroy {
       return;
     }
 
-    window.print();
+    const previewMarkup = this.buildPrintPreviewMarkup();
+    if (!previewMarkup) {
+      this.setMessage('Generate preview before printing.', 'error');
+      return;
+    }
+
+    const printFrame = document.createElement('iframe');
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    printFrame.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(printFrame);
+
+    const frameWindow = printFrame.contentWindow;
+    const frameDocument = printFrame.contentDocument || frameWindow?.document;
+    if (!frameWindow || !frameDocument) {
+      printFrame.remove();
+      this.setMessage('Unable to open print preview.', 'error');
+      return;
+    }
+
+    frameDocument.open();
+    frameDocument.write(previewMarkup);
+    frameDocument.close();
+
+    const printAndCleanup = () => {
+      frameWindow.focus();
+      frameWindow.print();
+      window.setTimeout(() => printFrame.remove(), 800);
+    };
+
+    const image = frameDocument.querySelector('img');
+    if (image && !(image as HTMLImageElement).complete) {
+      image.addEventListener('load', printAndCleanup, { once: true });
+      image.addEventListener('error', printAndCleanup, { once: true });
+      return;
+    }
+
+    window.setTimeout(printAndCleanup, 100);
   }
 
   onStickerDataChanged(): void {
@@ -388,6 +496,7 @@ export class LabelComponent implements OnInit, OnDestroy {
     this.stickerData = this.createEmptyStickerData();
     this.previewElements = [];
     this.codeImageById = {};
+    this.revokeLabelaryPreviewUrl();
     this.previewMode = 'empty';
     this.setMessage('PRN data cleared.', 'info');
   }
@@ -412,6 +521,176 @@ export class LabelComponent implements OnInit, OnDestroy {
     this.previewElements = this.parseZplToPreviewElements(zpl);
     this.codeImageById = {};
     this.previewMode = this.previewElements.length ? 'html' : 'empty';
+  }
+
+  private async generateLabelaryPreview(zpl: string): Promise<void> {
+    this.isPreviewLoading = true;
+    this.setMessage('Generating PRN/ZPL preview...', 'info');
+
+    try {
+      const { width, height } = this.getLabelarySize(zpl);
+      const response = await fetch(`http://api.labelary.com/v1/printers/8dpmm/labels/${width}x${height}/0/`, {
+        method: 'POST',
+        headers: {
+          Accept: 'image/png',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: zpl,
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const blob = await response.blob();
+      this.revokeLabelaryPreviewUrl();
+      this.labelaryPreviewUrl = URL.createObjectURL(blob);
+      this.previewElements = [];
+      this.codeImageById = {};
+      this.previewMode = 'image';
+      this.setMessage('PRN/ZPL preview generated from template content.', 'success');
+    } catch {
+      this.rebuildHtmlPreview(zpl);
+      void this.generateCodeImages();
+      this.setMessage('Local preview generated. Labelary preview was unavailable.', 'info');
+    } finally {
+      this.isPreviewLoading = false;
+    }
+  }
+
+  private getLabelarySize(zpl: string): { width: string; height: string } {
+    const widthDots = Number(zpl.match(/\^PW(\d+)/i)?.[1]) || 812;
+    const heightDots = Number(zpl.match(/\^LL(\d+)/i)?.[1]) || 1218;
+    const width = this.formatLabelaryInches(widthDots / 8 / 25.4);
+    const height = this.formatLabelaryInches(heightDots / 8 / 25.4);
+
+    return { width, height };
+  }
+
+  private formatLabelaryInches(value: number): string {
+    return Math.max(0.5, Math.min(15, value)).toFixed(2).replace(/\.?0+$/, '');
+  }
+
+  private revokeLabelaryPreviewUrl(): void {
+    if (this.labelaryPreviewUrl) {
+      URL.revokeObjectURL(this.labelaryPreviewUrl);
+      this.labelaryPreviewUrl = '';
+    }
+  }
+
+  private buildPrintPreviewMarkup(): string {
+    if (this.previewMode === 'image' && this.labelaryPreviewUrl) {
+      return `<!doctype html>
+<html>
+<head>
+  <title>Label Preview</title>
+  <style>
+    @page { margin: 0; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+    }
+    body {
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+    }
+    img {
+      display: block;
+      max-width: 100vw;
+      height: auto;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+  </style>
+</head>
+<body>
+  <img src="${this.labelaryPreviewUrl}" alt="Label Preview">
+</body>
+</html>`;
+    }
+
+    if (this.previewMode === 'html' && this.previewElements.length) {
+      const labelMarkup = this.buildPrintLabelMarkup();
+      return `<!doctype html>
+<html>
+<head>
+  <title>Label Preview</title>
+  <style>
+    @page { margin: 0; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+    }
+    .print-label {
+      position: relative;
+      width: ${this.previewWidth}px;
+      height: ${this.previewHeight}px;
+      background: #ffffff;
+      overflow: hidden;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .preview-item {
+      position: absolute;
+      box-sizing: border-box;
+      color: #101828;
+      overflow: hidden;
+    }
+    .preview-text {
+      font-weight: 750;
+      line-height: 1.2;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: Arial, sans-serif;
+    }
+    .preview-box {
+      border: 2px solid #101828;
+    }
+    .barcode-wrap img,
+    .qr-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+  </style>
+</head>
+<body>${labelMarkup}</body>
+</html>`;
+    }
+
+    return '';
+  }
+
+  private buildPrintLabelMarkup(): string {
+    const items = this.previewElements.map((item) => {
+      const style = `left:${item.x}px;top:${item.y}px;width:${item.width}px;height:${item.height}px;font-size:${item.fontSize}px;`;
+      if (item.kind === 'box') {
+        return `<span class="preview-item preview-box" style="${style}"></span>`;
+      }
+
+      if ((item.kind === 'barcode' || item.kind === 'qr') && this.codeImageById[item.id]) {
+        const className = item.kind === 'barcode' ? 'barcode-wrap' : 'qr-wrap';
+        const alt = item.kind === 'barcode' ? 'Barcode' : 'QR Code';
+        return `<span class="preview-item" style="${style}"><span class="${className}"><img src="${this.codeImageById[item.id]}" alt="${alt}"></span></span>`;
+      }
+
+      return `<span class="preview-item preview-text" style="${style}">${this.escapeHtml(item.text)}</span>`;
+    }).join('');
+
+    return `<div class="print-label">${items}</div>`;
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   private async generateCodeImages(): Promise<void> {
@@ -553,8 +832,13 @@ export class LabelComponent implements OnInit, OnDestroy {
 
     const normalizedElements = this.normalizePreviewElements(rawElements);
 
-    if (!normalizedElements.length || this.hasCrowdedPreview(normalizedElements)) {
+    if (!normalizedElements.length) {
       return this.buildSummaryPreviewElements();
+    }
+
+    if (this.hasCrowdedPreview(normalizedElements)) {
+      const summaryElements = this.buildSummaryPreviewElements();
+      return summaryElements.length ? summaryElements : normalizedElements;
     }
 
     return normalizedElements;
@@ -985,25 +1269,30 @@ export class LabelComponent implements OnInit, OnDestroy {
     return 'Product';
   }
 
-  private getNextLabelId(): number {
-    return Math.max(0, ...this.labels.map((label) => label.id)) + 1;
+  private loadLabelsFromDatabase(): void {
+    this.labelService.getLabels().subscribe({
+      next: (response) => {
+        this.labels = (response.data || []).map((label) => this.mapLabelDto(label));
+      },
+      error: () => {
+        this.labels = [];
+        this.setMessage('Unable to load labels history from database.', 'error');
+      },
+    });
   }
 
-  private loadLabels(): LabelMaster[] {
-    try {
-      const raw = localStorage.getItem(this.storageKey);
-      return raw ? JSON.parse(raw) as LabelMaster[] : [];
-    } catch {
-      return [];
-    }
-  }
-
-  private persistLabels(): void {
-    try {
-      localStorage.setItem(this.storageKey, JSON.stringify(this.labels));
-    } catch {
-      this.setMessage('Labels are saved in memory only because browser storage is unavailable.', 'info');
-    }
+  private mapLabelDto(label: LabelMasterDto): LabelMaster {
+    return {
+      id: label.id,
+      code: label.label_code,
+      description: label.label_description || '',
+      type: this.labelTypes[0],
+      status: 'Active',
+      prnText: '',
+      fileName: '',
+      createdDate: label.created_at,
+      fields: this.createEmptyFields(),
+    };
   }
 
   private setMessage(message: string, type: 'success' | 'error' | 'info'): void {
