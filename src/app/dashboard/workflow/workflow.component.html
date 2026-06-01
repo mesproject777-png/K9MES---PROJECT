@@ -55,6 +55,9 @@
             <div class="workflow-messages" *ngIf="partNumberErrorMessage">
               <p *ngIf="partNumberErrorMessage" class="message error">{{ partNumberErrorMessage }}</p>
             </div>
+            <p *ngIf="isExistingPartNumberReadonly" class="message">
+              Existing part number loaded. Details are view-only.
+            </p>
 
             <div class="workflow-form-grid">
               <div class="form-field">
@@ -83,6 +86,7 @@
                     <input
                       type="radio"
                       name="workflow_sgd_control"
+                      [disabled]="isExistingPartNumberReadonly"
                       [checked]="partNumberForm.get('sgd_control')?.value === false"
                       (change)="partNumberForm.get('sgd_control')?.setValue(false)"
                     />
@@ -92,6 +96,7 @@
                     <input
                       type="radio"
                       name="workflow_sgd_control"
+                      [disabled]="isExistingPartNumberReadonly"
                       [checked]="partNumberForm.get('sgd_control')?.value === true"
                       (change)="partNumberForm.get('sgd_control')?.setValue(true)"
                     />
