@@ -5,7 +5,7 @@ using Npgsql;
 LoadLocalEnvironmentFile();
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://localhost:5000");
+builder.WebHost.UseUrls("http://localhost:5100");
 
 var app = builder.Build();
 
@@ -869,15 +869,175 @@ async Task<bool> HandleUsersAsync(HttpContext context)
     return false;
 }
 
+async Task<bool> HandleWorkflowStationLoginsAsync(HttpContext context)
+{
+    var path = context.Request.Path.Value ?? string.Empty;
+    if (!path.Equals("/api/workflow/station-logins", StringComparison.OrdinalIgnoreCase) ||
+        !context.Request.Method.Equals("PUT", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    var payload = await ReadJsonBodyAsync(context.Request);
+    var pn = payload?["pn"]?.GetValue<string>()?.Trim();
+    var stationsNode = payload?["stations"]?.AsArray();
+    if (string.IsNullOrWhiteSpace(pn))
+    {
+        await WriteErrorAsync(context, "pn is required", 400);
+        return true;
+    }
+
+    if (stationsNode is null)
+    {
+        await WriteErrorAsync(context, "stations is required", 400);
+        return true;
+    }
+
+    var stationLogins = new List<(int? LoginRowId, int StationId, string StationCode, string LoginId, string Password)>();
+    var loginIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var stationNode in stationsNode)
+    {
+        var stationId = ReadInt(stationNode, "station_id") ?? ReadInt(stationNode, "id");
+        var loginRowId = ReadInt(stationNode, "id");
+        var stationCode = stationNode?["station_code"]?.GetValue<string>()?.Trim() ?? string.Empty;
+        var loginId = stationNode?["station_login_id"]?.GetValue<string>()?.Trim() ?? string.Empty;
+        var password = stationNode?["station_login_password"]?.GetValue<string>()?.Trim() ?? string.Empty;
+
+        if (stationId is null or <= 0)
+        {
+            await WriteErrorAsync(context, "Invalid station row", 400);
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(loginId) || string.IsNullOrWhiteSpace(password))
+        {
+            await WriteErrorAsync(context, $"Login ID and password are required for station {stationCode}", 400);
+            return true;
+        }
+
+        if (!loginIds.Add(loginId))
+        {
+            await WriteErrorAsync(context, $"Login ID {loginId} is already used by another station", 400);
+            return true;
+        }
+
+        stationLogins.Add((loginRowId, stationId.Value, stationCode, loginId, password));
+    }
+
+    await using var connection = new NpgsqlConnection(GetConnectionString());
+    await connection.OpenAsync();
+    await using var transaction = await connection.BeginTransactionAsync();
+
+    async Task<int> ExecuteAsync(string sql, params (string Name, object? Value)[] parameters)
+    {
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        }
+
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    try
+    {
+        await ExecuteAsync(
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_station_logins (
+              id SERIAL PRIMARY KEY,
+              workflow_routing_step_id INTEGER NOT NULL REFERENCES workflow_routing_steps(id) ON DELETE CASCADE,
+              station_login_id VARCHAR(160) NOT NULL,
+              station_login_password VARCHAR(220) NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_station_login_id UNIQUE (workflow_routing_step_id, station_login_id)
+            )
+            """);
+
+        foreach (var station in stationLogins)
+        {
+            var updatedRoute = await ExecuteAsync(
+                """
+                UPDATE workflow_routing_steps
+                SET station_login_id = @loginId,
+                    station_login_password = @password,
+                    updated_at = NOW()
+                WHERE id = @stationId
+                """,
+                ("loginId", station.LoginId),
+                ("password", station.Password),
+                ("stationId", station.StationId));
+
+            if (updatedRoute == 0)
+            {
+                await transaction.RollbackAsync();
+                await WriteErrorAsync(context, $"Station {station.StationCode} was not found", 404);
+                return true;
+            }
+
+            if (station.LoginRowId is > 0)
+            {
+                var updatedLogin = await ExecuteAsync(
+                    """
+                    UPDATE workflow_station_logins
+                    SET station_login_id = @loginId,
+                        station_login_password = @password,
+                        updated_at = NOW()
+                    WHERE id = @loginRowId
+                      AND workflow_routing_step_id = @stationId
+                    """,
+                    ("loginId", station.LoginId),
+                    ("password", station.Password),
+                    ("loginRowId", station.LoginRowId.Value),
+                    ("stationId", station.StationId));
+
+                if (updatedLogin > 0)
+                {
+                    continue;
+                }
+            }
+
+            await ExecuteAsync(
+                """
+                INSERT INTO workflow_station_logins
+                  (workflow_routing_step_id, station_login_id, station_login_password)
+                VALUES
+                  (@stationId, @loginId, @password)
+                ON CONFLICT (workflow_routing_step_id, station_login_id)
+                DO UPDATE SET
+                    station_login_password = EXCLUDED.station_login_password,
+                    updated_at = NOW()
+                """,
+                ("stationId", station.StationId),
+                ("loginId", station.LoginId),
+                ("password", station.Password));
+        }
+
+        await transaction.CommitAsync();
+        await WriteJsonAsync(context, new Dictionary<string, object?> { ["message"] = "Station logins saved successfully" });
+        return true;
+    }
+    catch
+    {
+        await transaction.RollbackAsync();
+        throw;
+    }
+}
+
 app.Use(async (HttpContext context, RequestDelegate next) =>
 {
-    context.Response.Headers["Access-Control-Allow-Origin"] = "http://localhost:4200";
+    context.Response.Headers["Access-Control-Allow-Origin"] = "http://localhost:4400";
     context.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
     context.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
 
     if (context.Request.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
     {
         context.Response.StatusCode = StatusCodes.Status204NoContent;
+        return;
+    }
+
+    if (await HandleWorkflowStationLoginsAsync(context))
+    {
         return;
     }
 

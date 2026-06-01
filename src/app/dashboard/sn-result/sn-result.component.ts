@@ -359,7 +359,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
             sample_mode: step.sample_mode,
             report_mode: step.report_mode,
             icon: this.getStationIcon(index, step.station_name, step.station_code, step.sample_mode),
-            status: this.previewStationStatusById[step.id] || statuses[step.station_code] || step.preview_status || (index === 0 ? 'In Progress' : 'Pending'),
+            status: this.previewStationStatusById[step.id] || this.getSerialRouteStatus(step.station_code) || statuses[step.station_code] || step.preview_status || (index === 0 ? 'In Progress' : 'Pending'),
           },
         }))
       : [
@@ -405,6 +405,27 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
 
     return result || '-';
+  }
+
+  private getSerialRouteStatus(stationCode: string): PreviewStatus | null {
+    const routeStep = (this.traceResult?.routing || []).find(
+      (step) => String(step.station_code || '').trim().toUpperCase() === String(stationCode || '').trim().toUpperCase()
+    );
+
+    if (!routeStep) {
+      return null;
+    }
+
+    switch (routeStep.state) {
+      case 'completed':
+        return 'Completed';
+      case 'current':
+        return 'In Progress';
+      case 'pending':
+        return 'Pending';
+      default:
+        return null;
+    }
   }
 
   private parseHistoryDate(value: string | null | undefined): { date: string; time: string } {

@@ -38,7 +38,6 @@
                 <input
                   type="text"
                   [(ngModel)]="login.station_login_id"
-                  [readonly]="!row.isEditing"
                   [attr.aria-label]="'User ' + (i + 1) + ' ID for ' + row.station_code"
                 />
               </label>
@@ -52,7 +51,6 @@
                   <input
                     [type]="login.showPassword ? 'text' : 'password'"
                     [(ngModel)]="login.station_login_password"
-                    [readonly]="!row.isEditing"
                     [attr.aria-label]="'User ' + (i + 1) + ' password for ' + row.station_code"
                   />
                   <button
@@ -82,7 +80,9 @@
           </td>
           <td>
             <div class="row-actions">
-              <button type="button" class="secondary-button" (click)="editRow(row)">Edit</button>
+              <button type="button" class="secondary-button" [disabled]="isSaving || !hasRowChanges(row)" (click)="saveRow(row)">
+                Save
+              </button>
               <button type="button" class="secondary-button" (click)="addUser(row)">Add User</button>
             </div>
           </td>
@@ -95,7 +95,7 @@
   </div>
 
   <div class="page-actions" *ngIf="!isLoading && rows.length > 0">
-    <button type="button" class="save-button" [disabled]="isSaving" (click)="saveRows()">
+    <button type="button" class="save-button" [disabled]="isSaving || !hasChanges()" (click)="saveRows()">
       {{ isSaving ? 'Saving...' : 'Save Station Logins' }}
     </button>
   </div>

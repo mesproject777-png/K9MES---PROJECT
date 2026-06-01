@@ -242,6 +242,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   workOrderErrorMessage = '';
   routingErrorMessage = '';
   bomErrorMessage = '';
+  isExistingPartNumberReadonly = false;
   isPartNumberSaved = false;
   isWorkOrderSaved = false;
   isStationsLoading = false;
@@ -306,6 +307,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   private isRestoringSavedPreview = false;
   private lockedEditPartNumber = '';
   private lockedEditWorkOrder = '';
+  private readonly partNumberDetailControls = ['description', 'sgd_control', 'item_type', 'sn_type_name', 'pn_type_id'];
   private nextRoutingStepId = 1;
   private nextRoutingHistoryId = 1;
   private nextBomChildId = 1;
@@ -376,6 +378,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       }
 
       this.isPartNumberSaved = false;
+      this.setPartNumberDetailsReadonly(false);
       const partNumber = String(value ?? '').trim();
       if (this.restoreWorkflowTimer) {
         window.clearTimeout(this.restoreWorkflowTimer);
@@ -391,7 +394,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       }, 350);
     });
 
-    ['description', 'sgd_control', 'item_type', 'sn_type_name', 'pn_type_id'].forEach((controlName) => {
+    this.partNumberDetailControls.forEach((controlName) => {
       this.partNumberForm.get(controlName)?.valueChanges.subscribe(() => {
         if (!this.isRestoringSavedPreview) {
           this.isPartNumberSaved = false;
@@ -571,6 +574,14 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
   savePartNumber(): void {
     this.partNumberErrorMessage = '';
+
+    if (this.isExistingPartNumberReadonly) {
+      this.isPartNumberSaved = true;
+      this.syncPartNumberToWorkOrder();
+      this.syncPartNumberToRouting();
+      this.advanceToNextPane(1);
+      return;
+    }
 
     if (this.partNumberForm.invalid) {
       this.partNumberForm.markAllAsTouched();
@@ -1092,7 +1103,21 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   }
 
   getAssemblyStationOptions(): RoutingStepRow[] {
-    return this.isRoutingChildrenSaved ? this.routeSteps : [];
+    const seenStationKeys = new Set<string>();
+
+    return this.routeSteps.filter((step) => {
+      if (!this.isBomAssemblyStation(step)) {
+        return false;
+      }
+
+      const stationKey = this.normalizeLookupValue(step.station_code || step.station_name);
+      if (seenStationKeys.has(stationKey)) {
+        return false;
+      }
+
+      seenStationKeys.add(stationKey);
+      return true;
+    });
   }
 
   openChildDetails(): void {
@@ -2142,6 +2167,15 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     }
   }
 
+  private isBomAssemblyStation(step: RoutingStepRow): boolean {
+    const normalizedStationCode = this.normalizeLookupValue(step.station_code).toUpperCase();
+    const normalizedStationName = this.normalizeLookupValue(step.station_name).toUpperCase();
+
+    return /^ASM(0?[1-9]|1[0-5])$/.test(normalizedStationCode)
+      || normalizedStationCode === 'BOXING01'
+      || normalizedStationName === 'BOXING01';
+  }
+
   private getStationRuleText(stationCode: string): string {
     return `${stationCode} Rule`;
   }
@@ -2172,11 +2206,13 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.http.get<WorkflowSnapshot>(`${this.workflowApiUrl}/by-pn`, { params }).subscribe({
       next: (snapshot) => {
         this.applyWorkflowSnapshot(snapshot);
+        this.setPartNumberDetailsReadonly(true);
         this.previewActionMessageType = 'success';
         this.previewActionMessage = 'Saved workflow loaded from database.';
         this.scheduleClearMessages();
       },
       error: (error) => {
+        this.setPartNumberDetailsReadonly(false);
         if (error?.status && error.status !== 404) {
           this.partNumberErrorMessage = this.getWorkflowErrorMessage(error);
           this.scheduleClearMessages();
@@ -2222,6 +2258,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     }, { emitEvent: false });
 
     this.isPartNumberSaved = false;
+    this.isExistingPartNumberReadonly = false;
     this.isWorkOrderSaved = false;
     this.isRoutingChildrenSaved = false;
     this.isBomChildrenSaved = false;
@@ -2268,6 +2305,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.previewFlowCardsPerRow = this.getPreviewFlowCardsPerRow();
     this.activeTabIndex = 0;
     this.isRestoringSavedPreview = false;
+    this.setPartNumberDetailsReadonly(false);
   }
 
   private saveWorkflowSnapshot(onSuccess?: () => void, onError?: (message: string) => void): void {
@@ -2388,6 +2426,26 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.isRestoringSavedPreview = false;
     this.applyWorkflowEditLocks();
     this.queuePreviewConnectorRefresh();
+  }
+
+  private setPartNumberDetailsReadonly(readonly: boolean): void {
+    this.isExistingPartNumberReadonly = readonly;
+    const partNumberControl = this.partNumberForm.get('pn');
+
+    if (readonly) {
+      partNumberControl?.disable({ emitEvent: false });
+    } else if (!this.lockedEditPartNumber) {
+      partNumberControl?.enable({ emitEvent: false });
+    }
+
+    this.partNumberDetailControls.forEach((controlName) => {
+      const control = this.partNumberForm.get(controlName);
+      if (readonly) {
+        control?.disable({ emitEvent: false });
+      } else {
+        control?.enable({ emitEvent: false });
+      }
+    });
   }
 
   private applyWorkflowEditLocks(): void {

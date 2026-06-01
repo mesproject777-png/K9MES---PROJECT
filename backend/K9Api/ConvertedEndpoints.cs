@@ -3409,11 +3409,30 @@ public static class ConvertedEndpoints
     {
         var routeRows = await GetWorkflowRouteRowsForPartAsync(connection, Convert.ToInt32(serial["workflow_part_id"]));
         var currentOrder = routeRows.Count == 0 ? 0 : ResolveCurrentOrder(serial, routeRows);
+        var history = await QueryRowsAsync(
+            connection,
+            """
+            SELECT id, changed_by AS user_name, created_at AS date_time, station_code AS station,
+                   NULL::text AS length, NULL::text AS pc_name, action_result AS result,
+                   COALESCE(remark, '') AS additional_info
+            FROM workflow_serial_station_logs
+            WHERE workflow_serial_id = @serialId
+              AND UPPER(action_result) IN ('PASS', 'FAIL')
+            ORDER BY created_at DESC, id DESC
+            LIMIT 300
+            """,
+            ("serialId", serial["id"]));
+        history.Add(BuildSerialGeneratedHistoryRow(serial));
 
         var routing = routeRows.Select(step =>
         {
             var order = Convert.ToInt32(step["station_order"]);
-            var state = currentOrder == 0 ? "pending" : order < currentOrder ? "completed" : order == currentOrder ? "current" : "pending";
+            var isSerialCompleted = string.Equals(serial["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase);
+            var state = currentOrder == 0
+                ? "pending"
+                : isSerialCompleted && order <= currentOrder
+                    ? "completed"
+                    : order < currentOrder ? "completed" : order == currentOrder ? "current" : "pending";
             return new Dictionary<string, object?>
             {
                 ["station_order"] = order,
@@ -3421,6 +3440,7 @@ public static class ConvertedEndpoints
                 ["station_name"] = step["station_name"],
                 ["sample_mode"] = step["sample_mode"],
                 ["report_mode"] = step["report_mode"],
+                ["station_login_id"] = step["station_login_id"],
                 ["state"] = state,
                 ["is_current"] = state == "current"
             };
@@ -3464,7 +3484,7 @@ public static class ConvertedEndpoints
             },
             progress = new { total = routing.Count, completed, current = current is null ? 0 : 1, pending, percent },
             routing,
-            history = new[] { BuildSerialGeneratedHistoryRow(serial) },
+            history,
             generated_at = DateTime.UtcNow
         };
     }
@@ -4654,11 +4674,12 @@ public static class ConvertedEndpoints
             return JsonMessage("stations is required", 400);
         }
 
-        var stationLogins = new List<(int StationId, string StationCode, string LoginId, string Password)>();
+        var stationLogins = new List<(int? LoginRowId, int StationId, string StationCode, string LoginId, string Password)>();
         var loginIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var stationNode in stationsNode)
         {
             var stationId = ReadInt(stationNode, "station_id");
+            var loginRowId = ReadInt(stationNode, "id");
             var stationCode = ReadString(stationNode, "station_code")?.Trim() ?? string.Empty;
             var loginId = ReadString(stationNode, "station_login_id")?.Trim() ?? string.Empty;
             var password = ReadString(stationNode, "station_login_password")?.Trim() ?? string.Empty;
@@ -4678,7 +4699,7 @@ public static class ConvertedEndpoints
                 return JsonMessage($"Login ID {loginId} is already used by another station", 400);
             }
 
-            stationLogins.Add((stationId.Value, stationCode, loginId, password));
+            stationLogins.Add((loginRowId, stationId.Value, stationCode, loginId, password));
         }
 
         await using var connection = await OpenConnectionAsync();
@@ -4718,20 +4739,31 @@ public static class ConvertedEndpoints
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            await ExecuteAsync(
-                connection,
-                """
-                DELETE FROM workflow_station_logins
-                WHERE workflow_routing_step_id IN (
-                    SELECT id
-                    FROM workflow_routing_steps
-                    WHERE workflow_part_id = @workflowPartId
-                )
-                """,
-                ("workflowPartId", partId.Value));
-
             foreach (var station in stationLogins)
             {
+                if (station.LoginRowId is > 0)
+                {
+                    var updatedLogin = await ExecuteAsync(
+                        connection,
+                        """
+                        UPDATE workflow_station_logins
+                        SET station_login_id = @loginId,
+                            station_login_password = @password,
+                            updated_at = NOW()
+                        WHERE id = @loginRowId
+                          AND workflow_routing_step_id = @stationId
+                        """,
+                        ("loginId", station.LoginId),
+                        ("password", station.Password),
+                        ("loginRowId", station.LoginRowId.Value),
+                        ("stationId", station.StationId));
+
+                    if (updatedLogin > 0)
+                    {
+                        continue;
+                    }
+                }
+
                 await ExecuteAsync(
                     connection,
                     """
@@ -4739,6 +4771,10 @@ public static class ConvertedEndpoints
                       (workflow_routing_step_id, station_login_id, station_login_password)
                     VALUES
                       (@stationId, @loginId, @password)
+                    ON CONFLICT (workflow_routing_step_id, station_login_id)
+                    DO UPDATE SET
+                        station_login_password = EXCLUDED.station_login_password,
+                        updated_at = NOW()
                     """,
                     ("stationId", station.StationId),
                     ("loginId", station.LoginId),
@@ -5526,6 +5562,27 @@ public static class ConvertedEndpoints
             )
             """);
 
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_serial_station_logs (
+              id BIGSERIAL PRIMARY KEY,
+              workflow_serial_id BIGINT NOT NULL REFERENCES workflow_serial_numbers(id) ON DELETE CASCADE,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              workflow_work_order_id INTEGER NOT NULL REFERENCES workflow_work_orders(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              station_name VARCHAR(220),
+              action_result VARCHAR(10) NOT NULL,
+              remark TEXT,
+              changed_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              before_station_code VARCHAR(80),
+              before_station_order INTEGER,
+              after_station_code VARCHAR(80),
+              after_station_order INTEGER,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """);
+
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_work_orders_part ON public.workflow_work_orders (workflow_part_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_route_part ON public.workflow_routing_steps (workflow_part_id, station_order)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_part ON public.workflow_bom_children (workflow_part_id)");
@@ -5533,6 +5590,8 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_label_printing_part ON public.workflow_station_label_printing (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_wo ON public.workflow_serial_numbers (workflow_work_order_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_part ON public.workflow_serial_numbers (workflow_part_id)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_serial ON public.workflow_serial_station_logs (workflow_serial_id, created_at DESC)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_station ON public.workflow_serial_station_logs (workflow_part_id, station_code)");
     }
 
     private static async Task EnsureWorkflowStationLoginsTableAsync(NpgsqlConnection connection)

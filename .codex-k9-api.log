@@ -1,14 +1,10 @@
-
-> k9@0.0.0 start:api
-> dotnet run --project backend/K9Api
-
 Using launch settings from backend\K9Api\Properties\launchSettings.json...
 Building...
 info: Microsoft.Hosting.Lifetime[14]
-      Now listening on: http://localhost:5000
+      Now listening on: http://localhost:5100
 info: Microsoft.Hosting.Lifetime[0]
       Application started. Press Ctrl+C to shut down.
 info: Microsoft.Hosting.Lifetime[0]
       Hosting environment: Development
 info: Microsoft.Hosting.Lifetime[0]
-      Content root path: C:\Users\venka\OneDrive\My Projects\K9MES---PROJECT\backend\K9Api
+      Content root path: C:\Users\littl\Downloads\K9_24MaySunday\K9\backend\K9Api
