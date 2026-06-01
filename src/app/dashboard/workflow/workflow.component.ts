@@ -74,7 +74,6 @@ type PrinterStatus = 'Online' | 'Offline';
 
 type PrinterOption = {
   id: string;
-  name: string;
   status: PrinterStatus;
   ipAddress: string;
   port: string;
@@ -211,22 +210,6 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   readonly stationRuleTabs: Array<{ id: 'weighing' | 'label-printing'; label: string; icon: string }> = [
     { id: 'weighing', label: 'Weighing', icon: 'scale' },
     { id: 'label-printing', label: 'Label Printing', icon: 'print' },
-  ];
-  readonly defaultPrinterOptions: PrinterOption[] = [
-    {
-      id: 'zebra-barcode-6101',
-      name: 'Zebra Barcode Printer',
-      status: 'Online',
-      ipAddress: '192.168.27.136',
-      port: '6101',
-    },
-    {
-      id: 'line-printer-9100',
-      name: 'Line Label Printer',
-      status: 'Offline',
-      ipAddress: '192.168.27.140',
-      port: '9100',
-    },
   ];
   readonly minDueDate = this.getDateInputValue(1);
 
@@ -1378,15 +1361,24 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
   get printerOptions(): PrinterOption[] {
     const stepPrinterIp = String(this.activeRulesStationStep?.printer_ip || '').trim();
-    const options = [...this.defaultPrinterOptions];
+    const savedConfig = this.stationLabelPrintingByStation[this.activeRulesStationCode];
+    const options: PrinterOption[] = [];
 
-    if (stepPrinterIp && !options.some((printer) => printer.ipAddress === stepPrinterIp)) {
-      options.unshift({
-        id: `station-${this.activeRulesStationCode}`,
-        name: `${this.activeRulesStationCode} Printer`,
+    if (stepPrinterIp) {
+      options.push({
+        id: stepPrinterIp,
         status: 'Online',
         ipAddress: stepPrinterIp,
-        port: '9100',
+        port: savedConfig?.port || '9100',
+      });
+    }
+
+    if (savedConfig?.ipAddress && !options.some((printer) => printer.ipAddress === savedConfig.ipAddress)) {
+      options.push({
+        id: savedConfig.ipAddress,
+        status: savedConfig.status || 'Online',
+        ipAddress: savedConfig.ipAddress,
+        port: savedConfig.port || '9100',
       });
     }
 
@@ -1394,7 +1386,16 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   }
 
   get selectedPrinter(): PrinterOption | null {
-    return this.printerOptions.find((printer) => printer.id === this.selectedPrinterId) || null;
+    const selectedValue = String(this.selectedPrinterId || '').trim();
+    return this.printerOptions.find((printer) => printer.id === selectedValue) ||
+      (this.isValidPrinterIp(selectedValue)
+        ? {
+            id: selectedValue,
+            status: 'Online',
+            ipAddress: selectedValue,
+            port: this.stationLabelPrintingByStation[this.activeRulesStationCode]?.port || '9100',
+          }
+        : null);
   }
 
   get selectedLabel(): LabelMasterDto | null {
@@ -1422,6 +1423,11 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.labelPrintStatusMessage = '';
   }
 
+  onPrinterIpChange(): void {
+    this.selectedPrinterId = String(this.selectedPrinterId || '').trim();
+    this.labelPrintStatusMessage = '';
+  }
+
   testPrinterConnection(): void {
     const printer = this.selectedPrinter;
     if (!printer) {
@@ -1430,7 +1436,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     }
 
     if (printer.status === 'Offline') {
-      this.setLabelPrintMessage(`Connection failed. ${printer.name} is offline.`, 'error');
+      this.setLabelPrintMessage(`Connection failed. ${printer.ipAddress} is offline.`, 'error');
       return;
     }
 
@@ -1491,7 +1497,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         labelCode: label.label_code,
         labelDescription: label.label_description || '',
         printerId: printer.id,
-        printerName: printer.name,
+        printerName: printer.ipAddress,
         ipAddress: printer.ipAddress,
         port: printer.port,
         status: printer.status,
@@ -1928,7 +1934,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.labelPrintCode = config?.labelCode || '';
     this.selectedLabelDescription = config?.labelDescription || '';
     this.labelPrintValidationMessage = '';
-    this.selectedPrinterId = config?.printerId || defaultPrinter?.id || '';
+    this.selectedPrinterId = config?.ipAddress || config?.printerId || defaultPrinter?.id || '';
     this.labelPrintStatusMessage = '';
     this.labelPrintStatusType = 'info';
     this.onLabelPrintCodeChange();
@@ -1956,7 +1962,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     }
 
     if (!this.selectedPrinter) {
-      this.setLabelPrintMessage('Default Printer is required.', 'error');
+      this.setLabelPrintMessage('Printer IP is required.', 'error');
       return false;
     }
 
@@ -1967,6 +1973,10 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   private setLabelPrintMessage(message: string, type: 'success' | 'error' | 'info'): void {
     this.labelPrintStatusMessage = message;
     this.labelPrintStatusType = type;
+  }
+
+  private isValidPrinterIp(value: string): boolean {
+    return /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/.test(value);
   }
 
   private async prepareTestPrintPreview(prnContent: string): Promise<void> {

@@ -984,22 +984,27 @@
       <section class="rules-section printer-section">
         <label class="rules-field" for="stationPrinter">
           <span>Printer</span>
-          <select id="stationPrinter" [(ngModel)]="selectedPrinterId" (ngModelChange)="onPrinterSelectionChange()">
-            <option value="" disabled>Select printer</option>
-            <option *ngFor="let printer of printerOptions" [ngValue]="printer.id">
-              {{ printer.name }} ({{ printer.status }}) [{{ printer.ipAddress }}]
-            </option>
-          </select>
+          <input
+            id="stationPrinter"
+            type="text"
+            list="stationPrinterOptions"
+            [(ngModel)]="selectedPrinterId"
+            (ngModelChange)="onPrinterIpChange()"
+            placeholder="Enter printer IP"
+            autocomplete="off"
+          />
+          <datalist id="stationPrinterOptions">
+            <option *ngFor="let printer of printerOptions" [value]="printer.ipAddress"></option>
+          </datalist>
         </label>
 
         <div class="selected-printer-card" *ngIf="selectedPrinter as printer">
           <span class="material-symbols-outlined printer-icon" aria-hidden="true">print</span>
           <div class="printer-card-main">
-            <strong>{{ printer.name }}</strong>
-            <small>{{ printer.id }}</small>
+            <strong>{{ printer.ipAddress }}</strong>
+            <small>Printer IP</small>
             <div class="printer-meta">
               <span class="printer-status" [class.offline]="printer.status === 'Offline'">{{ printer.status }}</span>
-              <span>IP: {{ printer.ipAddress }}</span>
               <span>Port: {{ printer.port }}</span>
             </div>
           </div>
