@@ -9,6 +9,7 @@ import { RoleComponent } from './dashboard/role/role.component';
 import { ProfileComponent } from './dashboard/profile/profile.component';
 import { WorkflowComponent } from './dashboard/workflow/workflow.component';
 import { WorkOrderComponent } from './dashboard/work-order/work-order.component';
+import { StationLoginsComponent } from './dashboard/work-order/station-logins.component';
 import { SnResultComponent } from './dashboard/sn-result/sn-result.component';
 
 import { MasterComponent } from './dashboard/master/master.component';
@@ -60,6 +61,7 @@ const routes: Routes = [
       { path: 'home', component: HomeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
       { path: 'workflow', component: WorkflowComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
       { path: 'workorder', component: WorkOrderComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
+      { path: 'workorder/station-logins', component: StationLoginsComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/home' } },
       { path: 'workorder/SNList', component: GenerateSnComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/generatesn' } },
       { path: 'work-order', redirectTo: 'workorder', pathMatch: 'full' },
       { path: 'work-order/SNList', redirectTo: 'workorder/SNList', pathMatch: 'full' },

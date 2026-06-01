@@ -129,6 +129,28 @@ tbody td {
   outline: none;
 }
 
+.count-link {
+  min-width: 44px;
+  border-color: transparent;
+  background: transparent;
+  color: #064fbd;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.count-link:hover,
+.count-link:focus-visible {
+  background: #eaf3ff;
+  border-color: #9dbbe8;
+  outline: none;
+}
+
+.count-link:disabled {
+  color: #0b2447;
+  text-decoration: none;
+  background: transparent;
+}
+
 .empty-state {
   text-align: center;
   padding: 18px;

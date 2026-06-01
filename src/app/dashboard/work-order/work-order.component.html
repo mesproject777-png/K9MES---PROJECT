@@ -66,7 +66,16 @@
           <td>{{ row.snType || '-' }}</td>
           <td>{{ row.dueDate ? (row.dueDate | date: 'yyyy-MM-dd') : '-' }}</td>
           <td>{{ row.quantity ?? '-' }}</td>
-          <td>{{ row.stationCount }}</td>
+          <td>
+            <button
+              type="button"
+              class="count-link"
+              (click)="openStationLogins(row)"
+              title="Manage station logins"
+            >
+              {{ row.stationCount }}
+            </button>
+          </td>
           <td>{{ row.bomCount }}</td>
           <td class="actions-cell">
             <button type="button" class="view-button" (click)="viewSnList(row)">View</button>

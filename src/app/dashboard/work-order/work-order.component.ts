@@ -138,6 +138,15 @@ export class WorkOrderComponent implements OnInit {
     });
   }
 
+  openStationLogins(row: WorkflowWorkOrderSummary): void {
+    this.router.navigate(['/dashboard/workorder/station-logins'], {
+      queryParams: {
+        pn: row.partNumber,
+        wo: row.wo,
+      },
+    });
+  }
+
   get pagedRows(): WorkflowWorkOrderSummary[] {
     return this.rows;
   }

@@ -1,0 +1,102 @@
+<div class="station-login-page">
+  <div class="page-header">
+    <div>
+      <h2>Station Logins</h2>
+      <p>PN: {{ pn || '-' }}<span *ngIf="description">, Description: {{ description }}</span><span *ngIf="wo">, WO: {{ wo }}</span></p>
+    </div>
+    <button type="button" class="secondary-button" (click)="goBack()">Back</button>
+  </div>
+
+  <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+  <p *ngIf="successMessage" class="message success">{{ successMessage }}</p>
+  <p *ngIf="isLoading" class="message">Loading station logins...</p>
+
+  <div class="login-grid" *ngIf="!isLoading">
+    <table>
+      <thead>
+        <tr>
+          <th>Station ID</th>
+          <th>Station Code</th>
+          <th>User ID</th>
+          <th>Password</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let row of rows; trackBy: trackByStation">
+          <td>
+            <strong>{{ row.station_id }}</strong>
+          </td>
+          <td>
+            <strong>{{ row.station_code }}</strong>
+            <span>{{ row.station_name }}</span>
+          </td>
+          <td>
+            <div class="login-stack">
+              <label class="entry-field" *ngFor="let login of row.logins; let i = index; trackBy: trackByLogin">
+                <span>User {{ i + 1 }}</span>
+                <input
+                  type="text"
+                  [(ngModel)]="login.station_login_id"
+                  [readonly]="!row.isEditing"
+                  [attr.aria-label]="'User ' + (i + 1) + ' ID for ' + row.station_code"
+                />
+              </label>
+            </div>
+          </td>
+          <td>
+            <div class="login-stack">
+              <label class="entry-field" *ngFor="let login of row.logins; let i = index; trackBy: trackByLogin">
+                <span>User {{ i + 1 }}</span>
+                <div class="password-field">
+                  <input
+                    [type]="login.showPassword ? 'text' : 'password'"
+                    [(ngModel)]="login.station_login_password"
+                    [readonly]="!row.isEditing"
+                    [attr.aria-label]="'User ' + (i + 1) + ' password for ' + row.station_code"
+                  />
+                  <button
+                    type="button"
+                    class="icon-button"
+                    [attr.aria-label]="login.showPassword ? 'Hide password' : 'Show password'"
+                    [title]="login.showPassword ? 'Hide password' : 'Show password'"
+                    (click)="togglePassword(login)"
+                  >
+                    <span aria-hidden="true" *ngIf="!login.showPassword">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </span>
+                    <span aria-hidden="true" *ngIf="login.showPassword">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M3 3l18 18"></path>
+                        <path d="M10.7 5.2A10.3 10.3 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-2.9 4.1"></path>
+                        <path d="M6.1 6.8C3.8 8.5 2.5 12 2.5 12S6 19 12 19a9.5 9.5 0 0 0 4-.9"></path>
+                      </svg>
+                    </span>
+                  </button>
+                </div>
+              </label>
+            </div>
+          </td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="secondary-button" (click)="editRow(row)">Edit</button>
+              <button type="button" class="secondary-button" (click)="addUser(row)">Add User</button>
+            </div>
+          </td>
+        </tr>
+        <tr *ngIf="rows.length === 0">
+          <td colspan="5" class="empty-state">No stations found for this work order.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="page-actions" *ngIf="!isLoading && rows.length > 0">
+    <button type="button" class="save-button" [disabled]="isSaving" (click)="saveRows()">
+      {{ isSaving ? 'Saving...' : 'Save Station Logins' }}
+    </button>
+  </div>
+</div>

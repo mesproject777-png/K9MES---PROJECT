@@ -1,0 +1,190 @@
+.station-login-page {
+  padding: 16px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.page-header h2 {
+  margin: 0 0 4px;
+  color: #062b55;
+}
+
+.page-header p {
+  margin: 0;
+  color: #506177;
+}
+
+.message {
+  margin: 8px 0 12px;
+  color: #43566e;
+}
+
+.message.error {
+  color: #b42318;
+}
+
+.message.success {
+  color: #137333;
+}
+
+.login-grid {
+  border: 1px solid #d7e2f0;
+  border-radius: 8px;
+  overflow: auto;
+  background: #fff;
+}
+
+table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e8eef7;
+  text-align: left;
+}
+
+th {
+  background: #f3f7fd;
+  color: #0b315f;
+  font-weight: 700;
+}
+
+td strong,
+td span {
+  display: block;
+}
+
+td > span {
+  margin-top: 3px;
+  color: #5b6b80;
+  font-size: 13px;
+}
+
+input {
+  width: min(360px, 100%);
+  border: 1px solid #bccbe0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font: inherit;
+}
+
+input[readonly] {
+  background: #f7faff;
+  color: #233b59;
+}
+
+input:focus {
+  border-color: #2d73d5;
+  outline: 2px solid rgba(45, 115, 213, 0.16);
+}
+
+.password-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.login-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.entry-field {
+  display: grid;
+  gap: 4px;
+}
+
+.entry-field span {
+  color: #5b6b80;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.password-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+button {
+  border: 1px solid #b9c8dc;
+  border-radius: 8px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.secondary-button {
+  background: #f7faff;
+  color: #15345c;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  padding: 9px 0;
+  background: #f7faff;
+  color: #15345c;
+}
+
+.icon-button svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.save-button {
+  background: #0b5fc7;
+  border-color: #0b5fc7;
+  color: #fff;
+}
+
+.page-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.empty-state {
+  text-align: center;
+  color: #66758a;
+}
+
+@media (max-width: 720px) {
+  .page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .secondary-button,
+  .save-button {
+    width: 100%;
+  }
+}

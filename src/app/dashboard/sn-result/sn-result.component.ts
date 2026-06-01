@@ -268,12 +268,11 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   get historyRows(): TraceHistoryRow[] {
-    return this.traceResult?.history || [];
+    return (this.traceResult?.history || []).filter((history) => this.shouldShowSnHistoryRow(history));
   }
 
   get snHistoryDisplayRows(): SnHistoryDisplayRow[] {
-    if (this.historyRows.length) {
-      return this.historyRows.map((history) => {
+    const displayRows = this.historyRows.map((history) => {
         const dateTime = this.parseHistoryDate(history.date_time);
 
         return {
@@ -284,6 +283,22 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
           actionDescription: this.buildHistoryActionDescription(history),
         };
       });
+
+    if (this.traceResult && !this.hasGeneratedHistoryRow(this.historyRows)) {
+      const generatedDateTime = this.parseHistoryDate(this.traceResult.serial.created_at);
+      displayRows.push({
+        stationCode: this.traceResult.serial.current_station_code || 'Not started',
+        stationLoginId: 'system',
+        date: generatedDateTime.date,
+        time: generatedDateTime.time,
+        actionDescription: 'SN_GENERATED - SN generated',
+      });
+    }
+
+    const allowedRows = displayRows.filter((row) => this.shouldShowSnHistoryDisplayRow(row));
+
+    if (allowedRows.length) {
+      return allowedRows;
     }
 
     if (this.traceResult) {
@@ -417,6 +432,40 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     ].filter((part) => String(part || '').trim());
 
     return parts.length ? parts.join(' - ') : 'Station activity recorded';
+  }
+
+  private shouldShowSnHistoryRow(history: TraceHistoryRow): boolean {
+    const result = String(history.result || '').trim().toUpperCase();
+    const eventType = String(history.event_type || '').trim().toUpperCase();
+    const info = String(history.additional_info || '').trim().toUpperCase();
+
+    if (eventType === 'SN_GENERATED' || info === 'SN GENERATED') {
+      return true;
+    }
+
+    if (eventType && eventType !== 'PASS' && eventType !== 'FAIL') {
+      return false;
+    }
+
+    return result === 'PASS' || result === 'FAIL';
+  }
+
+  private shouldShowSnHistoryDisplayRow(row: SnHistoryDisplayRow): boolean {
+    const action = String(row.actionDescription || '').trim().toUpperCase();
+
+    if (!action || action.startsWith('NOT_PASS') || action.includes('ALREADY PASSED') || action.includes('PREVIOUS STATION')) {
+      return false;
+    }
+
+    return action.startsWith('PASS') || action.startsWith('FAIL') || action.startsWith('SN_GENERATED');
+  }
+
+  private hasGeneratedHistoryRow(rows: TraceHistoryRow[]): boolean {
+    return rows.some((history) => {
+      const eventType = String(history.event_type || '').trim().toUpperCase();
+      const info = String(history.additional_info || '').trim().toUpperCase();
+      return eventType === 'SN_GENERATED' || info === 'SN GENERATED';
+    });
   }
 
   getStatusClass(status: PreviewStatus): string {

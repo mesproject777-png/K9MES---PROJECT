@@ -306,7 +306,6 @@
                     <th>Sample</th>
                     <th>Report</th>
                     <th>Station Rule</th>
-                    <th>Station Logins</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -329,18 +328,13 @@
                         {{ getStationRuleLabel(step) }}
                       </button>
                     </td>
-                    <td>
-                      <button type="button" class="rule-link-button" (click)="openStationLoginModal(step)">
-                        {{ getStationLoginLabel(step) }}
-                      </button>
-                    </td>
                     <td class="routing-actions-cell">
                       <button type="button" class="secondary-button" (click)="editRoutingStep(step)">Edit</button>
                       <button type="button" class="danger-button" (click)="deleteRoutingStep(step)">Delete</button>
                     </td>
                   </tr>
                   <tr *ngIf="routeSteps.length === 0">
-                    <td colspan="8" class="routing-empty">No route stations found.</td>
+                    <td colspan="7" class="routing-empty">No route stations found.</td>
                   </tr>
                 </tbody>
               </table>
@@ -913,54 +907,6 @@
       <button type="button" class="save-button complete-task-button" (click)="completePreviewStation()">
         <span class="material-symbols-outlined" aria-hidden="true">check</span>
         Passed
-      </button>
-    </div>
-  </div>
-</div>
-
-<div *ngIf="isStationLoginModalOpen" class="station-login-backdrop">
-  <div class="station-login-modal" role="dialog" aria-modal="true" aria-labelledby="stationLoginTitle">
-    <div class="station-login-header">
-      <div>
-        <h3 id="stationLoginTitle">{{ getStationLoginLabel(activeStationLoginStep) }}</h3>
-        <p>{{ activeStationLoginStep?.station_name || 'Station login details' }}</p>
-      </div>
-      <button type="button" class="secondary-button" (click)="closeStationLoginModal()">Close</button>
-    </div>
-
-    <form class="station-login-form" [formGroup]="stationLoginForm">
-      <div class="form-field">
-        <label for="stationLoginId">Station Login ID</label>
-        <input id="stationLoginId" type="text" formControlName="station_login_id" [readonly]="!isEditingStationLogin" />
-      </div>
-
-      <div class="form-field">
-        <label for="stationLoginPassword">Password</label>
-        <input id="stationLoginPassword" type="password" formControlName="station_login_password" [readonly]="!isEditingStationLogin" />
-      </div>
-
-      <div class="form-field">
-        <label for="stationIp">Station IP</label>
-        <input id="stationIp" type="text" formControlName="station_ip" [readonly]="!isEditingStationLogin" />
-      </div>
-
-      <div class="form-field">
-        <label for="printerIp">Printer IP</label>
-        <input id="printerIp" type="text" formControlName="printer_ip" [readonly]="!isEditingStationLogin" />
-      </div>
-    </form>
-
-    <div class="station-login-messages" *ngIf="stationLoginErrorMessage || stationLoginSuccessMessage">
-      <p *ngIf="stationLoginErrorMessage" class="message error">{{ stationLoginErrorMessage }}</p>
-      <p *ngIf="stationLoginSuccessMessage" class="message success">{{ stationLoginSuccessMessage }}</p>
-    </div>
-
-    <div class="station-login-actions">
-      <button type="button" class="secondary-button" [disabled]="isEditingStationLogin" (click)="enableStationLoginEdit()">
-        Update
-      </button>
-      <button type="button" class="save-button" [disabled]="!isEditingStationLogin" (click)="saveStationLogin()">
-        Save
       </button>
     </div>
   </div>

@@ -1692,6 +1692,8 @@ public static class ConvertedEndpoints
             return Results.Json(new { data = rows, total, page, limit });
         });
 
+        app.MapGet("/api/workflow/station-logins", async (HttpRequest request) => await GetWorkflowStationLoginsAsync(request));
+        app.MapPut("/api/workflow/station-logins", async (HttpContext context) => await SaveWorkflowStationLoginsAsync(context));
         app.MapPost("/api/workflow/snapshot", async (HttpContext context) => await SaveWorkflowSnapshotAsync(context));
     }
 
@@ -3335,10 +3337,12 @@ public static class ConvertedEndpoints
                    COALESCE(additional_info, remark, '') AS additional_info
             FROM serial_station_logs
             WHERE serial_id = @serialId
+              AND UPPER(action_result) IN ('PASS', 'FAIL')
             ORDER BY created_at DESC, id DESC
             LIMIT 300
             """,
             ("serialId", serial["id"]));
+        history.Add(BuildSerialGeneratedHistoryRow(serial));
 
         var routing = routeRows.Select(step =>
         {
@@ -3458,8 +3462,24 @@ public static class ConvertedEndpoints
             },
             progress = new { total = routing.Count, completed, current = current is null ? 0 : 1, pending, percent },
             routing,
-            history = Array.Empty<object>(),
+            history = new[] { BuildSerialGeneratedHistoryRow(serial) },
             generated_at = DateTime.UtcNow
+        };
+    }
+
+    private static Dictionary<string, object?> BuildSerialGeneratedHistoryRow(Dictionary<string, object?> serial)
+    {
+        return new Dictionary<string, object?>
+        {
+            ["id"] = 0,
+            ["user_name"] = "system",
+            ["date_time"] = serial["created_at"],
+            ["station"] = serial["current_station_code"],
+            ["length"] = null,
+            ["pc_name"] = null,
+            ["result"] = "",
+            ["additional_info"] = "SN generated",
+            ["event_type"] = "SN_GENERATED"
         };
     }
 
@@ -4499,6 +4519,211 @@ public static class ConvertedEndpoints
         };
     }
 
+    private static async Task<IResult> GetWorkflowStationLoginsAsync(HttpRequest request)
+    {
+        var pn = request.Query["pn"].ToString().Trim();
+        var wo = request.Query["wo"].ToString().Trim();
+        if (string.IsNullOrWhiteSpace(pn))
+        {
+            return JsonMessage("pn is required", 400);
+        }
+
+        await using var connection = await OpenConnectionAsync();
+        await EnsureWorkflowSchemaAsync(connection);
+        await EnsureRoutingStepLoginColumnsAsync(connection);
+        await EnsureWorkflowStationLoginsTableAsync(connection);
+
+        var partRows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT p.id, p.pn, p.description, COALESCE(w.wo, @wo) AS wo
+            FROM workflow_part_numbers p
+            LEFT JOIN workflow_work_orders w
+              ON w.workflow_part_id = p.id
+             AND (@wo = '' OR UPPER(w.wo) = UPPER(@wo))
+            WHERE UPPER(p.pn) = UPPER(@pn)
+            ORDER BY w.updated_at DESC NULLS LAST, w.id DESC NULLS LAST
+            LIMIT 1
+            """,
+            ("pn", pn),
+            ("wo", wo));
+
+        if (partRows.Count == 0)
+        {
+            return JsonMessage("Workflow not found", 404);
+        }
+
+        var workflowPartId = Convert.ToInt32(partRows[0]["id"]);
+        var stations = await QueryRowsAsync(
+            connection,
+            """
+            SELECT r.id AS station_id,
+                   r.station_order,
+                   r.station_code,
+                   r.station_name,
+                   l.id AS login_row_id,
+                   COALESCE(l.station_login_id, r.station_login_id, '') AS station_login_id,
+                   COALESCE(l.station_login_password, r.station_login_password, '') AS station_login_password
+            FROM workflow_routing_steps r
+            LEFT JOIN workflow_station_logins l ON l.workflow_routing_step_id = r.id
+            WHERE r.workflow_part_id = @workflowPartId
+            ORDER BY r.station_order ASC, r.id ASC, l.id ASC
+            """,
+            ("workflowPartId", workflowPartId));
+
+        return Results.Json(new
+        {
+            partNumber = partRows[0],
+            stations
+        });
+    }
+
+    private static async Task<IResult> SaveWorkflowStationLoginsAsync(HttpContext context)
+    {
+        var payload = await ReadJsonBodyAsync(context.Request);
+        var pn = ReadString(payload, "pn")?.Trim();
+        var stationsNode = payload?["stations"]?.AsArray();
+
+        if (string.IsNullOrWhiteSpace(pn))
+        {
+            return JsonMessage("pn is required", 400);
+        }
+
+        if (stationsNode is null)
+        {
+            return JsonMessage("stations is required", 400);
+        }
+
+        var stationLogins = new List<(int StationId, string StationCode, string LoginId, string Password)>();
+        var loginIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var stationNode in stationsNode)
+        {
+            var stationId = ReadInt(stationNode, "station_id");
+            var stationCode = ReadString(stationNode, "station_code")?.Trim() ?? string.Empty;
+            var loginId = ReadString(stationNode, "station_login_id")?.Trim() ?? string.Empty;
+            var password = ReadString(stationNode, "station_login_password")?.Trim() ?? string.Empty;
+
+            if (stationId is null or <= 0)
+            {
+                return JsonMessage("Invalid station row", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(loginId) || string.IsNullOrWhiteSpace(password))
+            {
+                return JsonMessage($"Login ID and password are required for station {stationCode}", 400);
+            }
+
+            if (!loginIds.Add(loginId))
+            {
+                return JsonMessage($"Login ID {loginId} is already used by another station", 400);
+            }
+
+            stationLogins.Add((stationId.Value, stationCode, loginId, password));
+        }
+
+        await using var connection = await OpenConnectionAsync();
+        await EnsureWorkflowSchemaAsync(connection);
+        await EnsureRoutingStepLoginColumnsAsync(connection);
+        await EnsureWorkflowStationLoginsTableAsync(connection);
+
+        var partId = await ScalarAsync<int?>(
+            connection,
+            "SELECT id FROM workflow_part_numbers WHERE UPPER(pn) = UPPER(@pn) LIMIT 1",
+            ("pn", pn));
+        if (partId is null)
+        {
+            return JsonMessage("Workflow not found", 404);
+        }
+
+        var stationIds = stationLogins.Select(station => station.StationId).Distinct().ToList();
+        if (stationIds.Count > 0)
+        {
+            var existingStationRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT id, station_code
+                FROM workflow_routing_steps
+                WHERE workflow_part_id = @workflowPartId
+                  AND id = ANY(@stationIds)
+                """,
+                ("workflowPartId", partId.Value),
+                ("stationIds", stationIds.ToArray()));
+
+            if (existingStationRows.Count != stationIds.Count)
+            {
+                return JsonMessage("One or more stations were not found for this workflow", 404);
+            }
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            await ExecuteAsync(
+                connection,
+                """
+                DELETE FROM workflow_station_logins
+                WHERE workflow_routing_step_id IN (
+                    SELECT id
+                    FROM workflow_routing_steps
+                    WHERE workflow_part_id = @workflowPartId
+                )
+                """,
+                ("workflowPartId", partId.Value));
+
+            foreach (var station in stationLogins)
+            {
+                await ExecuteAsync(
+                    connection,
+                    """
+                    INSERT INTO workflow_station_logins
+                      (workflow_routing_step_id, station_login_id, station_login_password)
+                    VALUES
+                      (@stationId, @loginId, @password)
+                    """,
+                    ("stationId", station.StationId),
+                    ("loginId", station.LoginId),
+                    ("password", station.Password));
+            }
+
+            var grouped = stationLogins
+                .GroupBy(station => station.StationId)
+                .ToDictionary(group => group.Key, group => group.First());
+
+            var allRouteRows = await QueryRowsAsync(
+                connection,
+                "SELECT id FROM workflow_routing_steps WHERE workflow_part_id = @workflowPartId",
+                ("workflowPartId", partId.Value));
+            foreach (var routeRow in allRouteRows)
+            {
+                var stationId = Convert.ToInt32(routeRow["id"]);
+                grouped.TryGetValue(stationId, out var firstLogin);
+                await ExecuteAsync(
+                    connection,
+                    """
+                    UPDATE workflow_routing_steps
+                    SET station_login_id = @loginId,
+                        station_login_password = @password,
+                        updated_at = NOW()
+                    WHERE id = @stationId
+                      AND workflow_part_id = @workflowPartId
+                    """,
+                    ("loginId", ToDbNullable(firstLogin.LoginId)),
+                    ("password", ToDbNullable(firstLogin.Password)),
+                    ("stationId", stationId),
+                    ("workflowPartId", partId.Value));
+            }
+
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+
+        return Results.Json(new { message = "Station logins saved successfully" });
+    }
+
     private static Dictionary<string, List<string>> GroupWorkflowRules(List<Dictionary<string, object?>> rows)
     {
         var grouped = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -4902,6 +5127,25 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_rules_part ON public.workflow_station_rules (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_wo ON public.workflow_serial_numbers (workflow_work_order_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_part ON public.workflow_serial_numbers (workflow_part_id)");
+    }
+
+    private static async Task EnsureWorkflowStationLoginsTableAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_station_logins (
+              id SERIAL PRIMARY KEY,
+              workflow_routing_step_id INTEGER NOT NULL REFERENCES workflow_routing_steps(id) ON DELETE CASCADE,
+              station_login_id VARCHAR(160) NOT NULL,
+              station_login_password VARCHAR(220) NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_station_login_id UNIQUE (workflow_routing_step_id, station_login_id)
+            )
+            """);
+
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logins_step ON public.workflow_station_logins (workflow_routing_step_id)");
     }
 
     private static async Task EnsureRoutingStepLoginColumnsAsync(NpgsqlConnection connection)
