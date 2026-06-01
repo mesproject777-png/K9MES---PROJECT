@@ -1030,7 +1030,21 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   }
 
   getAssemblyStationOptions(): RoutingStepRow[] {
-    return this.isRoutingChildrenSaved ? this.routeSteps : [];
+    const seenStationKeys = new Set<string>();
+
+    return this.routeSteps.filter((step) => {
+      if (!this.isBomAssemblyStation(step)) {
+        return false;
+      }
+
+      const stationKey = this.normalizeLookupValue(step.station_code || step.station_name);
+      if (seenStationKeys.has(stationKey)) {
+        return false;
+      }
+
+      seenStationKeys.add(stationKey);
+      return true;
+    });
   }
 
   openChildDetails(): void {
@@ -1650,6 +1664,15 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
   private normalizeLookupValue(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  private isBomAssemblyStation(step: RoutingStepRow): boolean {
+    const normalizedStationCode = this.normalizeLookupValue(step.station_code).toUpperCase();
+    const normalizedStationName = this.normalizeLookupValue(step.station_name).toUpperCase();
+
+    return /^ASM(0?[1-9]|1[0-5])$/.test(normalizedStationCode)
+      || normalizedStationCode === 'BOXING01'
+      || normalizedStationName === 'BOXING01';
   }
 
   private getStationRuleText(stationCode: string): string {
