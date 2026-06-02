@@ -87,6 +87,7 @@ type PrinterOption = {
 type StationLabelPrintingConfig = {
   stationId: number | null;
   stationName: string;
+  isLabelPrintingEnabled: boolean;
   labelCode: string;
   labelDescription: string;
   printerId: string;
@@ -273,6 +274,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   stationRulesByStation: Record<string, string[]> = {};
   stationLabelPrintingByStation: Record<string, StationLabelPrintingConfig> = {};
   activeStationRulesTab: 'weighing' | 'label-printing' = 'weighing';
+  isLabelPrintingEnabled = false;
   labelPrintCode = '';
   selectedLabelDescription = '';
   labelPrintValidationMessage = '';
@@ -1488,6 +1490,20 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.labelPrintStatusMessage = '';
   }
 
+  onLabelPrintingEnabledChange(enabled: boolean): void {
+    this.isLabelPrintingEnabled = Boolean(enabled);
+    this.labelPrintValidationMessage = '';
+    this.labelPrintStatusMessage = '';
+
+    if (!this.isLabelPrintingEnabled) {
+      this.isTestPrintLoading = false;
+      this.testPrintPreviewText = '';
+      this.revokeTestPrintPreviewUrl();
+    }
+
+    this.saveLabelPrintingEnabledState(this.isLabelPrintingEnabled);
+  }
+
   testPrinterConnection(): void {
     const printer = this.selectedPrinter;
     if (!printer) {
@@ -1554,6 +1570,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       [step.station_code]: {
         stationId: step.id,
         stationName: step.station_name,
+        isLabelPrintingEnabled: true,
         labelCode: label.label_code,
         labelDescription: label.label_description || '',
         printerId: printer.id,
@@ -1599,6 +1616,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationCode = '';
     this.activeRulesStationName = '';
     this.stationRulesDraft = '';
+    this.isLabelPrintingEnabled = false;
     this.labelPrintCode = '';
     this.selectedLabelDescription = '';
     this.labelPrintValidationMessage = '';
@@ -2034,6 +2052,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     const config = this.stationLabelPrintingByStation[stationCode];
     const defaultPrinter = this.printerOptions[0];
 
+    this.isLabelPrintingEnabled = Boolean(config?.isLabelPrintingEnabled);
     this.labelPrintCode = config?.labelCode || '';
     this.selectedLabelDescription = config?.labelDescription || '';
     this.labelPrintValidationMessage = '';
@@ -2041,6 +2060,36 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.labelPrintStatusMessage = '';
     this.labelPrintStatusType = 'info';
     this.onLabelPrintCodeChange();
+  }
+
+  private saveLabelPrintingEnabledState(enabled: boolean): void {
+    const step = this.activeRulesStationStep;
+    if (!step) {
+      this.setLabelPrintMessage('Select a routing station before changing label printing.', 'error');
+      return;
+    }
+
+    const existingConfig = this.stationLabelPrintingByStation[step.station_code];
+    const printer = this.selectedPrinter;
+    const label = this.selectedLabel;
+
+    this.stationLabelPrintingByStation = {
+      ...this.stationLabelPrintingByStation,
+      [step.station_code]: {
+        stationId: step.id,
+        stationName: step.station_name,
+        isLabelPrintingEnabled: enabled,
+        labelCode: label?.label_code || existingConfig?.labelCode || this.normalizeLabelCode(this.labelPrintCode),
+        labelDescription: label?.label_description || existingConfig?.labelDescription || this.selectedLabelDescription || '',
+        printerId: printer?.id || existingConfig?.printerId || this.selectedPrinterId || '',
+        printerName: printer?.ipAddress || existingConfig?.printerName || this.selectedPrinterId || '',
+        ipAddress: printer?.ipAddress || existingConfig?.ipAddress || this.selectedPrinterId || '',
+        port: printer?.port || existingConfig?.port || '9100',
+        status: printer?.status || existingConfig?.status || 'Online',
+      },
+    };
+
+    this.saveWorkflowSnapshot();
   }
 
   private validateLabelPrintingConfig(): boolean {
@@ -2411,6 +2460,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationName = '';
     this.stationRulesDraft = '';
     this.stationLabelPrintingByStation = {};
+    this.isLabelPrintingEnabled = false;
     this.labelPrintCode = '';
     this.selectedLabelDescription = '';
     this.labelPrintValidationMessage = '';

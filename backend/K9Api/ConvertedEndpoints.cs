@@ -4128,10 +4128,10 @@ public static class ConvertedEndpoints
                         """
                         INSERT INTO workflow_station_label_printing
                           (workflow_part_id, station_code, station_id, station_name, label_code, label_description,
-                           printer_id, printer_name, ip_address, port, status)
+                           printer_id, printer_name, ip_address, port, status, is_label_printing_enabled)
                         VALUES
                           (@workflowPartId, @stationCode, @stationId, @stationName, @labelCode, @labelDescription,
-                           @printerId, @printerName, @ipAddress, @port, @status)
+                           @printerId, @printerName, @ipAddress, @port, @status, @isLabelPrintingEnabled)
                         """,
                         ("workflowPartId", workflowPartId),
                         ("stationCode", stationCode),
@@ -4143,7 +4143,8 @@ public static class ConvertedEndpoints
                         ("printerName", ToDbNullable(ReadString(configGroup.Value, "printerName")?.Trim())),
                         ("ipAddress", ToDbNullable(ReadString(configGroup.Value, "ipAddress")?.Trim())),
                         ("port", ToDbNullable(ReadString(configGroup.Value, "port")?.Trim())),
-                        ("status", ToDbNullable(ReadString(configGroup.Value, "status")?.Trim())));
+                        ("status", ToDbNullable(ReadString(configGroup.Value, "status")?.Trim())),
+                        ("isLabelPrintingEnabled", ReadBool(configGroup.Value, "isLabelPrintingEnabled") ?? false));
                 }
             }
 
@@ -4752,7 +4753,7 @@ public static class ConvertedEndpoints
                 connection,
                 """
                 SELECT station_code, station_id, station_name, label_code, label_description,
-                       printer_id, printer_name, ip_address, port, status
+                       printer_id, printer_name, ip_address, port, status, is_label_printing_enabled
                 FROM workflow_station_label_printing
                 WHERE workflow_part_id = @workflowPartId
                 ORDER BY station_code ASC
@@ -4795,7 +4796,8 @@ public static class ConvertedEndpoints
                         printerName = Convert.ToString(row["printer_name"]) ?? string.Empty,
                         ipAddress = Convert.ToString(row["ip_address"]) ?? string.Empty,
                         port = Convert.ToString(row["port"]) ?? string.Empty,
-                        status = Convert.ToString(row["status"]) ?? string.Empty
+                        status = Convert.ToString(row["status"]) ?? string.Empty,
+                        isLabelPrintingEnabled = row["is_label_printing_enabled"] is bool enabled && enabled
                     }),
                 previewStatuses = statusRows.ToDictionary(
                     row => Convert.ToString(row["station_code"]) ?? string.Empty,
@@ -5869,11 +5871,14 @@ public static class ConvertedEndpoints
               ip_address VARCHAR(80),
               port VARCHAR(20),
               status VARCHAR(30),
+              is_label_printing_enabled BOOLEAN NOT NULL DEFAULT FALSE,
               created_at TIMESTAMP NOT NULL DEFAULT NOW(),
               updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
               CONSTRAINT uq_workflow_station_label_printing UNIQUE (workflow_part_id, station_code)
             )
             """);
+
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_label_printing ADD COLUMN IF NOT EXISTS is_label_printing_enabled BOOLEAN NOT NULL DEFAULT FALSE");
 
         await ExecuteAsync(connection, "CREATE SEQUENCE IF NOT EXISTS public.workflow_rsn_seq START WITH 1");
         await ExecuteAsync(

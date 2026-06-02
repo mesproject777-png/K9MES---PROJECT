@@ -972,81 +972,105 @@
     </div>
 
     <div class="label-printing-tab" *ngIf="activeStationRulesTab === 'label-printing'" role="tabpanel">
-      <section class="rules-section">
-        <label class="rules-field" for="stationLabelCode">
-          <span>Label Code</span>
-          <input
-            id="stationLabelCode"
-            type="text"
-            list="stationLabelCodeOptions"
-            [(ngModel)]="labelPrintCode"
-            (ngModelChange)="onLabelPrintCodeChange()"
-            placeholder="Enter or select label code"
-            autocomplete="off"
-          />
-          <datalist id="stationLabelCodeOptions">
-            <option *ngFor="let label of labelCodeOptions" [value]="label.label_code">
-              {{ label.label_description || label.label_code }}
-            </option>
-          </datalist>
-        </label>
-        <p class="template-detail" *ngIf="selectedLabelDescription">
-          {{ selectedLabelDescription }}
-        </p>
-        <p class="rules-validation" *ngIf="labelPrintValidationMessage">
-          {{ labelPrintValidationMessage }}
+      <section class="rules-section label-print-enable-section">
+        <div class="label-print-toggle-row">
+          <span class="label-print-toggle-title">Label Printing Enabled</span>
+          <label class="label-print-switch">
+            <input
+              type="checkbox"
+              [ngModel]="isLabelPrintingEnabled"
+              (ngModelChange)="onLabelPrintingEnabledChange($event)"
+              role="switch"
+              [attr.aria-checked]="isLabelPrintingEnabled"
+            />
+            <span class="label-print-switch-track" aria-hidden="true">
+              <span class="label-print-switch-thumb"></span>
+            </span>
+            <span class="label-print-switch-state">{{ isLabelPrintingEnabled ? 'ON' : 'OFF' }}</span>
+          </label>
+        </div>
+        <p class="template-detail" *ngIf="!isLabelPrintingEnabled">
+          Label Printing is disabled for this station.
         </p>
       </section>
 
-      <section class="rules-section printer-section">
-        <label class="rules-field" for="stationPrinter">
-          <span>Printer</span>
-          <input
-            id="stationPrinter"
-            type="text"
-            list="stationPrinterOptions"
-            [(ngModel)]="selectedPrinterId"
-            (ngModelChange)="onPrinterIpChange()"
-            placeholder="Enter printer IP"
-            autocomplete="off"
-          />
-          <datalist id="stationPrinterOptions">
-            <option *ngFor="let printer of printerOptions" [value]="printer.ipAddress"></option>
-          </datalist>
-        </label>
+      <ng-container *ngIf="isLabelPrintingEnabled">
+        <section class="rules-section">
+          <label class="rules-field" for="stationLabelCode">
+            <span>Label Code</span>
+            <input
+              id="stationLabelCode"
+              type="text"
+              list="stationLabelCodeOptions"
+              [(ngModel)]="labelPrintCode"
+              (ngModelChange)="onLabelPrintCodeChange()"
+              placeholder="Enter or select label code"
+              autocomplete="off"
+            />
+            <datalist id="stationLabelCodeOptions">
+              <option *ngFor="let label of labelCodeOptions" [value]="label.label_code">
+                {{ label.label_description || label.label_code }}
+              </option>
+            </datalist>
+          </label>
+          <p class="template-detail" *ngIf="selectedLabelDescription">
+            {{ selectedLabelDescription }}
+          </p>
+          <p class="rules-validation" *ngIf="labelPrintValidationMessage">
+            {{ labelPrintValidationMessage }}
+          </p>
+        </section>
 
-        <div class="selected-printer-card" *ngIf="selectedPrinter as printer">
-          <span class="material-symbols-outlined printer-icon" aria-hidden="true">print</span>
-          <div class="printer-card-main">
-            <strong>{{ printer.ipAddress }}</strong>
-            <small>Printer IP</small>
-            <div class="printer-meta">
-              <span class="printer-status" [class.offline]="printer.status === 'Offline'">{{ printer.status }}</span>
-              <span>Port: {{ printer.port }}</span>
+        <section class="rules-section printer-section">
+          <label class="rules-field" for="stationPrinter">
+            <span>Printer</span>
+            <input
+              id="stationPrinter"
+              type="text"
+              list="stationPrinterOptions"
+              [(ngModel)]="selectedPrinterId"
+              (ngModelChange)="onPrinterIpChange()"
+              placeholder="Enter printer IP"
+              autocomplete="off"
+            />
+            <datalist id="stationPrinterOptions">
+              <option *ngFor="let printer of printerOptions" [value]="printer.ipAddress"></option>
+            </datalist>
+          </label>
+
+          <div class="selected-printer-card" *ngIf="selectedPrinter as printer">
+            <span class="material-symbols-outlined printer-icon" aria-hidden="true">print</span>
+            <div class="printer-card-main">
+              <strong>{{ printer.ipAddress }}</strong>
+              <small>Printer IP</small>
+              <div class="printer-meta">
+                <span class="printer-status" [class.offline]="printer.status === 'Offline'">{{ printer.status }}</span>
+                <span>Port: {{ printer.port }}</span>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <p
-        class="label-print-message"
-        *ngIf="labelPrintStatusMessage"
-        [class.success]="labelPrintStatusType === 'success'"
-        [class.error]="labelPrintStatusType === 'error'"
-      >
-        {{ labelPrintStatusMessage }}
-      </p>
+        <p
+          class="label-print-message"
+          *ngIf="labelPrintStatusMessage"
+          [class.success]="labelPrintStatusType === 'success'"
+          [class.error]="labelPrintStatusType === 'error'"
+        >
+          {{ labelPrintStatusMessage }}
+        </p>
 
-      <div class="test-print-preview" *ngIf="testPrintPreviewUrl || testPrintPreviewText || isTestPrintLoading">
-        <div *ngIf="isTestPrintLoading" class="test-print-loading">
-          Preparing preview...
+        <div class="test-print-preview" *ngIf="testPrintPreviewUrl || testPrintPreviewText || isTestPrintLoading">
+          <div *ngIf="isTestPrintLoading" class="test-print-loading">
+            Preparing preview...
+          </div>
+          <img *ngIf="!isTestPrintLoading && testPrintPreviewUrl" [src]="testPrintPreviewUrl" alt="Test label preview" />
+          <pre *ngIf="!isTestPrintLoading && !testPrintPreviewUrl && testPrintPreviewText">{{ testPrintPreviewText }}</pre>
         </div>
-        <img *ngIf="!isTestPrintLoading && testPrintPreviewUrl" [src]="testPrintPreviewUrl" alt="Test label preview" />
-        <pre *ngIf="!isTestPrintLoading && !testPrintPreviewUrl && testPrintPreviewText">{{ testPrintPreviewText }}</pre>
-      </div>
+      </ng-container>
     </div>
 
-    <div class="rules-actions label-print-actions">
+    <div class="rules-actions label-print-actions" *ngIf="activeStationRulesTab !== 'label-printing' || isLabelPrintingEnabled">
       <div>
         <button type="button" class="secondary-button outline-button" (click)="testPrinterConnection()">
           <span class="material-symbols-outlined" aria-hidden="true">print</span>
