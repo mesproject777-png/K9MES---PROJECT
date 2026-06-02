@@ -56,6 +56,7 @@ export class FivestepwizardComponent implements OnInit {
   workflowParentPn = '';
   workflowParentDescription = '';
   workflowParentType = '';
+  workflowBoxQty: number | null = null;
   workflowWorkOrder: WorkflowWorkOrder | null = null;
   workflowRoutingSteps: Array<any> = [];
   readonly fallbackPlants = ['Electronics Plant', 'Assembly Plant', 'Main Plant', 'Product Plant'];
@@ -67,6 +68,7 @@ export class FivestepwizardComponent implements OnInit {
   partNumberMessage = '';
   partNumberErrorMessage = '';
   private readonly pnTypesApi = `${environment.apiUrl}/api/users/pn-types`;
+  private readonly workflowSnapshotApi = `${environment.apiUrl}/api/workflow/snapshot`;
 
   // WorkOrder Modal
   showWorkOrderModal = false;
@@ -122,6 +124,7 @@ export class FivestepwizardComponent implements OnInit {
       type: ['', Validators.required],
       code: ['', Validators.required],
       description: ['', Validators.required],
+      box_qty: [null, [Validators.min(1)]],
       status: ['Active', Validators.required],
     });
 
@@ -244,6 +247,7 @@ export class FivestepwizardComponent implements OnInit {
       type: '',
       code: this.workflowParentPn,
       description: '',
+      box_qty: this.workflowBoxQty,
       status: 'Active',
     });
     this.showPartNumberModal = true;
@@ -272,6 +276,7 @@ export class FivestepwizardComponent implements OnInit {
         this.workflowParentPn = (form.code || '').trim();
         this.workflowParentDescription = (form.description || '').trim();
         this.workflowParentType = (form.type || '').trim();
+        this.workflowBoxQty = this.normalizeBoxQty(form.box_qty);
         this.workOrderForm.patchValue({ pn: this.workflowParentPn });
         this.routingForm.patchValue({ pn: this.workflowParentPn });
         this.pnQuery = this.workflowParentPn;
@@ -431,7 +436,15 @@ export class FivestepwizardComponent implements OnInit {
 
     this.previewError = '';
     this.previewMessage = '';
-    this.showFinalReportModal = true;
+
+    this.http.post(this.workflowSnapshotApi, this.buildWorkflowSnapshotPayload()).subscribe({
+      next: () => {
+        this.showFinalReportModal = true;
+      },
+      error: (error) => {
+        this.previewError = error?.error?.message || 'Unable to save workflow.';
+      }
+    });
   }
 
   closeFinalReportModal(): void {
@@ -470,6 +483,11 @@ export class FivestepwizardComponent implements OnInit {
 
   getPreviewPnType(): string {
     return this.workflowParentType || this.partNumberForm.value?.type || 'Not selected';
+  }
+
+  getPreviewBoxQty(): string {
+    const qty = this.workflowBoxQty ?? this.normalizeBoxQty(this.partNumberForm.value?.box_qty);
+    return qty ? String(qty) : 'Not selected';
   }
 
   getFinalReportStatus(): string {
@@ -857,6 +875,40 @@ export class FivestepwizardComponent implements OnInit {
   private isPackagingComponent(component: BomComponentRow): boolean {
     const text = `${component.childPartNumber} ${component.childName} ${component.remarks}`.toLowerCase();
     return ['box', 'pack', 'cart', 'pallet', 'label', 'bag', 'tray'].some((word) => text.includes(word));
+  }
+
+  private normalizeBoxQty(value: unknown): number | null {
+    const qty = Number(value);
+    return Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : null;
+  }
+
+  private buildWorkflowSnapshotPayload(): any {
+    const siteId = this.workOrderForm.value?.site_id;
+    const site = this.sites.find((row) => row.id === siteId);
+    const boxQty = this.workflowBoxQty ?? this.normalizeBoxQty(this.partNumberForm.value?.box_qty);
+
+    return {
+      partNumber: {
+        pn: this.getWorkflowPn(),
+        description: this.workflowParentDescription || this.partNumberForm.value?.description || '',
+        item_type: this.workflowParentType || this.partNumberForm.value?.type || '',
+        box_qty: boxQty
+      },
+      workOrder: {
+        ...this.workOrderForm.value,
+        site_name: site?.name || ''
+      },
+      routing: this.getBomStationOptions(),
+      bom: this.bomComponents.map((component) => ({
+        son_pn: component.childPartNumber,
+        son_description: component.childName,
+        station_code: component.station,
+        station_name: component.station,
+        qty: Math.max(1, Math.floor(Number(component.quantity) || 1)),
+        pn_type: component.unit,
+        item_type: component.remarks
+      }))
+    };
   }
 
   private resetBomComponentForm(): void {

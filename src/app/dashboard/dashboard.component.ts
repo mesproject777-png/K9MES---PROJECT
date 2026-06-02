@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService, AuthUser } from '../services/auth.service';
+import { PackingService } from '../services/packing.service';
 
 @Component({
   selector: 'app-dashboard',
@@ -15,7 +16,8 @@ export class DashboardComponent {
 
   constructor(
     private authService: AuthService,
-    private router: Router
+    private router: Router,
+    private packingService: PackingService
   ) {
     this.currentUser = this.authService.getCurrentUser();
 
@@ -48,6 +50,24 @@ export class DashboardComponent {
 
     const serialNumber = this.headerSearch.trim();
     if (!serialNumber) {
+      return;
+    }
+
+    if (serialNumber.toUpperCase().startsWith('MBX-')) {
+      this.packingService.lookupMultibox(serialNumber).subscribe({
+        next: (details) => {
+          const status = String(details?.package?.status || '').toUpperCase();
+          this.router.navigate(
+            [status === 'CLOSED' ? '/dashboard/operations/packing/closed' : '/dashboard/operations/packing/open'],
+            { queryParams: { mbx: serialNumber, t: Date.now() } }
+          );
+        },
+        error: () => {
+          this.router.navigate(['/dashboard/operations/packing/open'], {
+            queryParams: { mbx: serialNumber, t: Date.now() },
+          });
+        }
+      });
       return;
     }
 

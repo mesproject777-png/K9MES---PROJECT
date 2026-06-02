@@ -348,6 +348,10 @@
         <dt>Station</dt>
         <dd>{{ station.station_code }} - {{ station.station_name }}</dd>
       </div>
+      <div *ngIf="activePreviewStationMultiboxNo">
+        <dt>MultiBox</dt>
+        <dd>{{ activePreviewStationMultiboxNo }}</dd>
+      </div>
       <div>
         <dt>Operator</dt>
         <dd>John Doe</dd>

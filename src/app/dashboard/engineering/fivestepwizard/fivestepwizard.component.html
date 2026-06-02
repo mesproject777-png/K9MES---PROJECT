@@ -66,6 +66,11 @@
       </div>
 
       <div class="field">
+        <label for="pnBoxQty">Box Qty</label>
+        <input id="pnBoxQty" type="number" min="1" step="1" formControlName="box_qty" />
+      </div>
+
+      <div class="field">
         <label for="pnStatus">Status</label>
         <select id="pnStatus" formControlName="status">
           <option value="Active">Active</option>
@@ -410,6 +415,7 @@
             <small>Part Number</small>
             <strong>{{ getBomParentPn() }}</strong>
             <em>Type: {{ getPreviewPnType() }}</em>
+            <em>Box Qty: {{ getPreviewBoxQty() }}</em>
             <em>Rev: {{ getBomRevision() }}</em>
           </div>
 

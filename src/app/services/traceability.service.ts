@@ -15,6 +15,7 @@ export interface TraceSerial {
   created_at: string;
   updated_at: string;
   last_moved_at: string | null;
+  multibox_no?: string | null;
 }
 
 export interface TraceDevice {

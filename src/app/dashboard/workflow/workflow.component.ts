@@ -154,6 +154,7 @@ type WorkflowSnapshot = {
     item_type?: string;
     sn_type_name?: string;
     pn_type_id?: number | null;
+    box_qty?: number | null;
   };
   workOrder?: {
     wo?: string;
@@ -296,7 +297,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   private isRestoringSavedPreview = false;
   private lockedEditPartNumber = '';
   private lockedEditWorkOrder = '';
-  private readonly partNumberDetailControls = ['description', 'sgd_control', 'item_type', 'sn_type_name', 'pn_type_id'];
+  private readonly partNumberDetailControls = ['description', 'sgd_control', 'item_type', 'sn_type_name', 'pn_type_id', 'box_qty'];
   private nextRoutingStepId = 1;
   private nextRoutingHistoryId = 1;
   private nextBomChildId = 1;
@@ -322,6 +323,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       item_type: [null, Validators.required],
       sn_type_name: [''],
       pn_type_id: [null, Validators.required],
+      box_qty: [null, [Validators.min(1), Validators.pattern(/^[0-9]+$/)]],
     });
 
     this.workOrderForm = this.fb.group({
@@ -921,6 +923,12 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
     if (this.routeSteps.length === 0) {
       this.routingErrorMessage = 'Please add at least one station before saving routing.';
+      this.scheduleClearMessages();
+      return;
+    }
+
+    if (this.hasBoxQty() && !this.hasPackRoutingStep()) {
+      this.routingErrorMessage = 'Please add Pack station before saving routing.';
       this.scheduleClearMessages();
       return;
     }
@@ -1626,6 +1634,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     if (this.partNumberForm.get('description')?.invalid) missing.push('Description');
     if (this.partNumberForm.get('item_type')?.invalid) missing.push('Item Type');
     if (this.partNumberForm.get('pn_type_id')?.invalid) missing.push('PN Type');
+    if (this.partNumberForm.get('box_qty')?.invalid) missing.push('Box Qty');
 
     return `Please fill required fields: ${missing.join(', ')}`;
   }
@@ -2256,6 +2265,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       item_type: null,
       sn_type_name: '',
       pn_type_id: null,
+      box_qty: null,
     }, { emitEvent: false });
 
     this.workOrderForm.reset({
@@ -2355,7 +2365,11 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     const siteName = this.previewSiteName === 'Select Site' ? '' : this.previewSiteName;
 
     return {
-      partNumber,
+      partNumber: {
+        ...partNumber,
+        pn_type_id: this.toNullableNumber(partNumber.pn_type_id),
+        box_qty: this.toNullableNumber(partNumber.box_qty),
+      },
       workOrder: {
         ...workOrder,
         site_id: this.toNullableNumber(workOrder.site_id),
@@ -2391,6 +2405,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       item_type: partNumber.item_type || null,
       sn_type_name: partNumber.sn_type_name || '',
       pn_type_id: partNumber.pn_type_id ?? null,
+      box_qty: partNumber.box_qty ?? null,
     }, { emitEvent: false });
 
     this.workOrderForm.patchValue({
@@ -2541,6 +2556,19 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
     const numberValue = Number(value);
     return Number.isFinite(numberValue) ? numberValue : null;
+  }
+
+  private hasBoxQty(): boolean {
+    const boxQty = this.toNullableNumber(this.partNumberForm.get('box_qty')?.value);
+    return Boolean(boxQty && boxQty > 0);
+  }
+
+  private hasPackRoutingStep(): boolean {
+    return this.routeSteps.some((step) => this.isPackStation(step.station_code, step.station_name));
+  }
+
+  private isPackStation(stationCode?: string | null, stationName?: string | null): boolean {
+    return `${stationCode || ''} ${stationName || ''}`.toLowerCase().includes('pack');
   }
 
   private getWorkflowErrorMessage(error: any): string {

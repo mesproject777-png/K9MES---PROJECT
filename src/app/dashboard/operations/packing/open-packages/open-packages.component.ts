@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../../../services/auth.service';
-import { PackingPackageDetailsResponse, PackingPackageSummary, PackingService, PackageType } from '../../../../services/packing.service';
+import { PackingPackageDetailsResponse, PackingPackageSummary, PackingService, PackageSource, PackageType } from '../../../../services/packing.service';
 
 @Component({
   selector: 'app-open-packages',
@@ -15,15 +16,24 @@ export class OpenPackagesComponent {
 
   packages: PackingPackageSummary[] = [];
   selectedPackageId: number | null = null;
+  selectedSource: PackageSource = 'PACKAGE';
   selectedPackageDetails: PackingPackageDetailsResponse | null = null;
 
   scanQuery = '';
 
   constructor(
     private packingService: PackingService,
-    private authService: AuthService
+    private authService: AuthService,
+    private route: ActivatedRoute,
+    private router: Router
   ) {
     this.refresh();
+    this.route.queryParamMap.subscribe((params) => {
+      const boxNo = String(params.get('mbx') || '').trim();
+      if (boxNo) {
+        this.loadMultiboxByNo(boxNo);
+      }
+    });
   }
 
   refresh(): void {
@@ -62,13 +72,20 @@ export class OpenPackagesComponent {
     });
   }
 
-  selectPackage(packageId: number): void {
-    this.selectedPackageId = packageId;
+  selectPackage(pack: PackingPackageSummary): void {
+    this.selectedPackageId = pack.id;
+    this.selectedSource = pack.source || 'PACKAGE';
+    if (this.selectedSource === 'MULTIBOX') {
+      this.loadMultiboxByNo(pack.package_no);
+      return;
+    }
+
     this.loadSelectedDetails();
   }
 
   clearSelection(): void {
     this.selectedPackageId = null;
+    this.selectedSource = 'PACKAGE';
     this.selectedPackageDetails = null;
     this.scanQuery = '';
     this.errorMessage = '';
@@ -82,7 +99,7 @@ export class OpenPackagesComponent {
     this.errorMessage = '';
     this.successMessage = '';
 
-    if (!this.selectedPackageId) {
+    if (!this.selectedPackageId || this.selectedSource !== 'PACKAGE') {
       this.errorMessage = 'Please select an Open Package first.';
       return;
     }
@@ -112,7 +129,7 @@ export class OpenPackagesComponent {
   }
 
   closeSelected(): void {
-    if (!this.selectedPackageId) {
+    if (!this.selectedPackageId || this.selectedSource !== 'PACKAGE') {
       return;
     }
 
@@ -148,6 +165,31 @@ export class OpenPackagesComponent {
       },
       error: (error) => {
         this.errorMessage = error?.error?.message || 'Unable to load package details.';
+      }
+    });
+  }
+
+  private loadMultiboxByNo(boxNo: string): void {
+    this.isLoading = true;
+    this.errorMessage = '';
+    this.successMessage = '';
+
+    this.packingService.lookupMultibox(boxNo).subscribe({
+      next: (details) => {
+        this.isLoading = false;
+        this.selectedSource = 'MULTIBOX';
+        this.selectedPackageId = details.package.id;
+        this.selectedPackageDetails = details;
+
+        if (String(details.package.status).toUpperCase() === 'CLOSED') {
+          this.router.navigate(['/dashboard/operations/packing/closed'], {
+            queryParams: { mbx: boxNo, t: Date.now() },
+          });
+        }
+      },
+      error: (error) => {
+        this.isLoading = false;
+        this.errorMessage = error?.error?.message || 'Unable to load MultiBox details.';
       }
     });
   }

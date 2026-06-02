@@ -4,13 +4,15 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 export type PackageStatus = 'OPEN' | 'CLOSED' | 'SHIPPED';
-export type PackageType = 'BOX' | 'SHIPMENT';
+export type PackageType = 'BOX' | 'SHIPMENT' | 'MULTIBOX';
+export type PackageSource = 'PACKAGE' | 'MULTIBOX';
 
 export interface PackingPackageSummary {
   id: number;
   package_no: string;
   package_type: PackageType;
   status: PackageStatus;
+  source?: PackageSource;
   created_by: string;
   created_at: string;
   item_count: number;
@@ -38,6 +40,7 @@ export interface PackingPackageDetailsResponse {
     package_no: string;
     package_type: PackageType;
     status: PackageStatus;
+    source?: PackageSource;
     remark?: string | null;
     created_by: string;
     created_at: string;
@@ -79,6 +82,10 @@ export class PackingService {
 
   getPackageDetails(packageId: number): Observable<PackingPackageDetailsResponse> {
     return this.http.get<PackingPackageDetailsResponse>(`${this.apiUrl}/${packageId}`);
+  }
+
+  lookupMultibox(boxNo: string): Observable<PackingPackageDetailsResponse> {
+    return this.http.get<PackingPackageDetailsResponse>(`${this.apiUrl}/multibox/${encodeURIComponent(boxNo)}`);
   }
 
   addToPackage(packageId: number, query: string, changedBy: string): Observable<{ message: string }> {

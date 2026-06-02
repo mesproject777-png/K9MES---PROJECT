@@ -30,7 +30,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let p of packages" (click)="selectPackage(p.id)" [class.selected]="p.id === selectedPackageId">
+            <tr *ngFor="let p of packages" (click)="selectPackage(p)" [class.selected]="p.id === selectedPackageId && (p.source || 'PACKAGE') === selectedSource">
               <td>{{ p.package_no }}</td>
               <td>{{ p.package_type }}</td>
               <td>{{ p.item_count }}</td>
@@ -53,10 +53,11 @@
         <div class="kv">
           <div><span class="muted">No:</span> <strong>{{ selectedPackageDetails.package.package_no }}</strong></div>
           <div><span class="muted">Type:</span> <strong>{{ selectedPackageDetails.package.package_type }}</strong></div>
+          <div><span class="muted">Status:</span> <strong>{{ selectedPackageDetails.package.status }}</strong></div>
           <div><span class="muted">Items:</span> <strong>{{ selectedPackageDetails.items.length }}</strong></div>
         </div>
 
-        <form class="scan" (ngSubmit)="onScanSubmit()">
+        <form class="scan" (ngSubmit)="onScanSubmit()" *ngIf="selectedSource === 'PACKAGE'">
           <input
             name="scanQuery"
             [(ngModel)]="scanQuery"
@@ -68,6 +69,10 @@
           <button class="btn" type="button" (click)="clearSelection()" [disabled]="isLoading">Clear</button>
           <button class="btn btn--danger" type="button" (click)="closeSelected()" [disabled]="isLoading">Close Package</button>
         </form>
+
+        <div class="muted" *ngIf="selectedSource === 'MULTIBOX'">
+          MultiBox records are scanned from the operator Pack station. Partial quantity remains open.
+        </div>
 
         <div class="table-wrap">
           <table class="table">

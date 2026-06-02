@@ -75,6 +75,25 @@
                 </small>
               </div>
 
+              <div class="form-field">
+                <label for="workflowBoxQty">Box Qty</label>
+                <input
+                  id="workflowBoxQty"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  formControlName="box_qty"
+                  (keydown)="allowNumberOnly($event)"
+                  (input)="sanitizeNumberControl(partNumberForm, 'box_qty')"
+                />
+                <small
+                  class="field-error"
+                  *ngIf="partNumberForm.get('box_qty')?.touched && partNumberForm.get('box_qty')?.invalid"
+                >
+                  Enter a positive number
+                </small>
+              </div>
+
               <fieldset class="choice-field">
                 <legend>SGD Control</legend>
                 <div class="choice-options">

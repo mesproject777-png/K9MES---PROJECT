@@ -334,6 +334,14 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return this.workflowSnapshot?.stationRules?.[this.activePreviewStation.station_code] || [];
   }
 
+  get activePreviewStationMultiboxNo(): string {
+    if (!this.activePreviewStation || !this.isPackStation(this.activePreviewStation)) {
+      return '';
+    }
+
+    return String(this.traceResult?.serial?.multibox_no || '').trim();
+  }
+
   get previewStationStartTime(): string {
     return new Date().toLocaleString([], {
       year: 'numeric',
@@ -426,6 +434,10 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       default:
         return null;
     }
+  }
+
+  private isPackStation(station: PreviewStationNode): boolean {
+    return `${station.station_code || ''} ${station.station_name || ''}`.toLowerCase().includes('pack');
   }
 
   private parseHistoryDate(value: string | null | undefined): { date: string; time: string } {

@@ -2277,6 +2277,7 @@ public static class ConvertedEndpoints
         app.MapGet("/api/packing/open", async () => await ListPackagesAsync("OPEN"));
         app.MapGet("/api/packing/closed", async () => await ListPackagesAsync("CLOSED"));
         app.MapGet("/api/packing/shipped", async () => await ListPackagesAsync("SHIPPED"));
+        app.MapGet("/api/packing/multibox/{boxNo}", async (string boxNo) => await GetMultiboxPackageDetailsAsync(boxNo));
 
         app.MapPost("/api/packing/create", async (HttpContext context) =>
         {
@@ -2343,6 +2344,7 @@ public static class ConvertedEndpoints
 
             await using var connection = await OpenConnectionAsync();
             await EnsureSerialTrackingSchemaAsync(connection);
+            await EnsureWorkflowSchemaAsync(connection);
             try
             {
                 var packages = await QueryRowsAsync(connection, "SELECT * FROM packing_packages WHERE id = @id LIMIT 1", ("id", packageId));
@@ -2354,6 +2356,36 @@ public static class ConvertedEndpoints
                 if (!string.Equals(packages[0]["status"]?.ToString(), "OPEN", StringComparison.OrdinalIgnoreCase))
                 {
                     return JsonMessage("Package is not OPEN", 409);
+                }
+
+                var multiboxRows = await QueryRowsAsync(
+                    connection,
+                    "SELECT id, box_no, status FROM workflow_multiboxes WHERE UPPER(box_no) = UPPER(@query) LIMIT 1",
+                    ("query", query));
+                if (multiboxRows.Count > 0)
+                {
+                    if (string.Equals(packages[0]["package_type"]?.ToString(), "SHIPMENT", StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(multiboxRows[0]["status"]?.ToString(), "OPEN", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return JsonMessage("Open MultiBox cannot be packed into pallet", 409);
+                    }
+
+                    return JsonMessage("MultiBox pallet packing is not available for this package", 409);
+                }
+
+                var alreadyInMultibox = await ScalarAsync<int>(
+                    connection,
+                    """
+                    SELECT COUNT(*)::int
+                    FROM workflow_multibox_items mbi
+                    JOIN workflow_serial_numbers sn ON sn.id = mbi.workflow_serial_id
+                    WHERE UPPER(sn.sn) = UPPER(@query)
+                       OR UPPER(sn.rsn) = UPPER(@query)
+                    """,
+                    ("query", query));
+                if (alreadyInMultibox > 0)
+                {
+                    return JsonMessage("This SN is already scanned into a MultiBox", 409);
                 }
 
                 var serial = await GetSerialByQueryAsync(connection, query);
@@ -3409,6 +3441,18 @@ public static class ConvertedEndpoints
     {
         var routeRows = await GetWorkflowRouteRowsForPartAsync(connection, Convert.ToInt32(serial["workflow_part_id"]));
         var currentOrder = routeRows.Count == 0 ? 0 : ResolveCurrentOrder(serial, routeRows);
+        var multiboxRows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT b.box_no
+            FROM workflow_multibox_items i
+            JOIN workflow_multiboxes b ON b.id = i.box_id
+            WHERE i.workflow_serial_id = @serialId
+            ORDER BY i.added_at DESC, i.id DESC
+            LIMIT 1
+            """,
+            ("serialId", serial["id"]));
+        var multiboxNo = multiboxRows.Count > 0 ? multiboxRows[0]["box_no"] : null;
         var history = await QueryRowsAsync(
             connection,
             """
@@ -3467,7 +3511,8 @@ public static class ConvertedEndpoints
                 current_station_order = current?["station_order"] ?? (currentOrder == 0 ? null : currentOrder),
                 created_at = serial["created_at"],
                 updated_at = serial["updated_at"],
-                last_moved_at = serial["last_moved_at"]
+                last_moved_at = serial["last_moved_at"],
+                multibox_no = multiboxNo
             },
             device = new
             {
@@ -3509,19 +3554,81 @@ public static class ConvertedEndpoints
     {
         await using var connection = await OpenConnectionAsync();
         await EnsureSerialTrackingSchemaAsync(connection);
+        await EnsureWorkflowSchemaAsync(connection);
         var rows = await QueryRowsAsync(
             connection,
             """
-            SELECT p.id, p.package_no, p.package_type, p.status, p.created_by, p.created_at,
-                   p.closed_by, p.closed_at, p.shipped_by, p.shipped_at,
-                   (SELECT COUNT(*) FROM packing_package_items i WHERE i.package_id = p.id)::int AS item_count
-            FROM packing_packages p
-            WHERE p.status = @status
-            ORDER BY p.created_at DESC, p.id DESC
+            SELECT *
+            FROM (
+                SELECT p.id, p.package_no, p.package_type, p.status, p.created_by, p.created_at,
+                       p.closed_by, p.closed_at, p.shipped_by, p.shipped_at,
+                       (SELECT COUNT(*) FROM packing_package_items i WHERE i.package_id = p.id)::int AS item_count,
+                       'PACKAGE' AS source
+                FROM packing_packages p
+                WHERE p.status = @status
+                UNION ALL
+                SELECT b.id, b.box_no AS package_no, 'MULTIBOX' AS package_type, b.status,
+                       b.created_by, b.created_at, NULL AS closed_by, b.closed_at,
+                       NULL AS shipped_by, NULL AS shipped_at,
+                       (SELECT COUNT(*) FROM workflow_multibox_items i WHERE i.box_id = b.id)::int AS item_count,
+                       'MULTIBOX' AS source
+                FROM workflow_multiboxes b
+                WHERE b.status = @status
+                  AND @status <> 'SHIPPED'
+            ) packages
+            ORDER BY created_at DESC, id DESC
             LIMIT 200
             """,
             ("status", status));
         return Results.Json(new { data = rows });
+    }
+
+    private static async Task<IResult> GetMultiboxPackageDetailsAsync(string boxNo)
+    {
+        if (string.IsNullOrWhiteSpace(boxNo))
+        {
+            return JsonMessage("MultiBox serial number is required", 400);
+        }
+
+        await using var connection = await OpenConnectionAsync();
+        await EnsureWorkflowSchemaAsync(connection);
+        var boxes = await QueryRowsAsync(
+            connection,
+            """
+            SELECT b.id, b.box_no AS package_no, 'MULTIBOX' AS package_type, b.status,
+                   b.created_by, b.created_at, b.updated_at, NULL AS closed_by, b.closed_at,
+                   NULL AS shipped_by, NULL AS shipped_at, 'MULTIBOX' AS source,
+                   p.pn, w.wo, p.box_qty,
+                   (SELECT COUNT(*) FROM workflow_multibox_items i WHERE i.box_id = b.id)::int AS item_count
+            FROM workflow_multiboxes b
+            JOIN workflow_part_numbers p ON p.id = b.workflow_part_id
+            LEFT JOIN workflow_work_orders w ON w.id = b.workflow_work_order_id
+            WHERE UPPER(b.box_no) = UPPER(@boxNo)
+            LIMIT 1
+            """,
+            ("boxNo", boxNo.Trim()));
+
+        if (boxes.Count == 0)
+        {
+            return JsonMessage("MultiBox not found", 404);
+        }
+
+        var items = await QueryRowsAsync(
+            connection,
+            """
+            SELECT i.id, sn.sn, sn.rsn, sn.status AS serial_status, sn.condition,
+                   p.pn, COALESCE(w.revision, '-') AS revision, i.added_by, i.added_at
+            FROM workflow_multibox_items i
+            JOIN workflow_serial_numbers sn ON sn.id = i.workflow_serial_id
+            JOIN workflow_part_numbers p ON p.id = sn.workflow_part_id
+            JOIN workflow_work_orders w ON w.id = sn.workflow_work_order_id
+            WHERE i.box_id = @boxId
+            ORDER BY i.added_at DESC, i.id DESC
+            LIMIT 500
+            """,
+            ("boxId", boxes[0]["id"]));
+
+        return Results.Json(new { package = boxes[0], items });
     }
 
     private static async Task<IResult> UpdatePackageStatusAsync(HttpContext context, long packageId, string expectedStatus, string nextStatus)
@@ -3582,6 +3689,12 @@ public static class ConvertedEndpoints
         var itemType = ReadString(partNode, "item_type")?.Trim();
         var snTypeName = ReadString(partNode, "sn_type_name")?.Trim();
         var pnTypeId = ReadInt(partNode, "pn_type_id");
+        var boxQty = ReadInt(partNode, "box_qty");
+
+        if (boxQty is not null and <= 0)
+        {
+            return JsonMessage("Box Qty must be a positive number", 400);
+        }
 
         await using var connection = await OpenConnectionAsync();
         await EnsureWorkflowSchemaAsync(connection);
@@ -3602,9 +3715,9 @@ public static class ConvertedEndpoints
                 connection,
                 """
                 INSERT INTO workflow_part_numbers
-                  (pn, description, sgd_control, item_type, sn_type_id, sn_type_name, pn_type_id)
+                  (pn, description, sgd_control, item_type, sn_type_id, sn_type_name, pn_type_id, box_qty)
                 VALUES
-                  (@pn, @description, @sgdControl, @itemType, @snTypeId, @snTypeName, @pnTypeId)
+                  (@pn, @description, @sgdControl, @itemType, @snTypeId, @snTypeName, @pnTypeId, @boxQty)
                 ON CONFLICT (pn) DO UPDATE
                 SET description = EXCLUDED.description,
                     sgd_control = EXCLUDED.sgd_control,
@@ -3612,6 +3725,7 @@ public static class ConvertedEndpoints
                     sn_type_id = EXCLUDED.sn_type_id,
                     sn_type_name = EXCLUDED.sn_type_name,
                     pn_type_id = EXCLUDED.pn_type_id,
+                    box_qty = EXCLUDED.box_qty,
                     updated_at = NOW()
                 RETURNING *
                 """,
@@ -3621,7 +3735,8 @@ public static class ConvertedEndpoints
                 ("itemType", ToDbNullable(itemType)),
                 ("snTypeId", ToDbNullable(snTypeId)),
                 ("snTypeName", ToDbNullable(snTypeName)),
-                ("pnTypeId", ToDbNullable(pnTypeId)));
+                ("pnTypeId", ToDbNullable(pnTypeId)),
+                ("boxQty", ToDbNullable(boxQty)));
 
             var workflowPartId = Convert.ToInt32(partRows[0]["id"]);
 
@@ -3674,6 +3789,12 @@ public static class ConvertedEndpoints
 
             if (payload["routing"] is JsonArray routingRows)
             {
+                if (boxQty is > 0 && routingRows.Count > 0 && !routingRows.Any(row => IsPackStation(ReadString(row, "station_code"), ReadString(row, "station_name"))))
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("Pack station is required for Box Qty", 400);
+                }
+
                 var loginStations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var row in routingRows)
                 {
@@ -4354,6 +4475,7 @@ public static class ConvertedEndpoints
               p.description,
               p.sgd_control,
               p.item_type,
+              p.box_qty,
               COALESCE(st.sn_type_name, p.sn_type_name, '') AS sn_type_name,
               p.pn_type_id,
               p.created_at,
@@ -5417,10 +5539,13 @@ public static class ConvertedEndpoints
               sn_type_id INTEGER REFERENCES sn_types(id) ON DELETE SET NULL,
               sn_type_name VARCHAR(160),
               pn_type_id INTEGER REFERENCES pn_types(id) ON DELETE SET NULL,
+              box_qty INTEGER CHECK (box_qty IS NULL OR box_qty > 0),
               created_at TIMESTAMP NOT NULL DEFAULT NOW(),
               updated_at TIMESTAMP NOT NULL DEFAULT NOW()
             )
             """);
+
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_part_numbers ADD COLUMN IF NOT EXISTS box_qty INTEGER CHECK (box_qty IS NULL OR box_qty > 0)");
 
         await ExecuteAsync(
             connection,
@@ -5583,6 +5708,36 @@ public static class ConvertedEndpoints
             )
             """);
 
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_multiboxes (
+              id BIGSERIAL PRIMARY KEY,
+              box_no VARCHAR(80) NOT NULL UNIQUE,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              workflow_work_order_id INTEGER REFERENCES workflow_work_orders(id) ON DELETE SET NULL,
+              status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED')),
+              created_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              closed_at TIMESTAMP
+            )
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_multibox_items (
+              id BIGSERIAL PRIMARY KEY,
+              box_id BIGINT NOT NULL REFERENCES workflow_multiboxes(id) ON DELETE CASCADE,
+              workflow_serial_id BIGINT NOT NULL REFERENCES workflow_serial_numbers(id) ON DELETE RESTRICT,
+              added_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              added_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_multibox_serial UNIQUE (workflow_serial_id),
+              CONSTRAINT uq_workflow_multibox_item UNIQUE (box_id, workflow_serial_id)
+            )
+            """);
+
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_work_orders_part ON public.workflow_work_orders (workflow_part_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_route_part ON public.workflow_routing_steps (workflow_part_id, station_order)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_part ON public.workflow_bom_children (workflow_part_id)");
@@ -5592,6 +5747,7 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_part ON public.workflow_serial_numbers (workflow_part_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_serial ON public.workflow_serial_station_logs (workflow_serial_id, created_at DESC)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_station ON public.workflow_serial_station_logs (workflow_part_id, station_code)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_multiboxes_open ON public.workflow_multiboxes (workflow_part_id, workflow_work_order_id, status)");
     }
 
     private static async Task EnsureWorkflowStationLoginsTableAsync(NpgsqlConnection connection)
@@ -6232,6 +6388,17 @@ public static class ConvertedEndpoints
             return null;
         }
 
+        if (value.GetValueKind() == JsonValueKind.String)
+        {
+            var stringValue = value.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(stringValue))
+            {
+                return null;
+            }
+
+            return int.TryParse(stringValue, out var parsed) ? parsed : null;
+        }
+
         return value.GetValue<int>();
     }
 
@@ -6265,5 +6432,11 @@ public static class ConvertedEndpoints
     private static object? ToDbNullable<T>(T? value)
     {
         return value is null ? DBNull.Value : value;
+    }
+
+    private static bool IsPackStation(string? stationCode, string? stationName)
+    {
+        var text = $"{stationCode} {stationName}";
+        return text.Contains("PACK", StringComparison.OrdinalIgnoreCase);
     }
 }
