@@ -37,6 +37,11 @@ type SnType = {
   field_count?: number;
 };
 
+type FatherSnType = {
+  father_pn: string;
+  sn_type_name: string;
+};
+
 type Site = {
   id: number;
   name: string;
@@ -212,6 +217,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     { id: 'weighing', label: 'Weighing', icon: 'scale' },
     { id: 'label-printing', label: 'Label Printing', icon: 'print' },
   ];
+  readonly bomItemTypeOptions: Array<'Manufactured' | 'Purchased'> = ['Manufactured', 'Purchased'];
   readonly minDueDate = this.getDateInputValue(1);
 
   activeTabIndex = 0;
@@ -224,6 +230,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   routingStepForm: FormGroup;
   bomChildForm: FormGroup;
   partNumberErrorMessage = '';
+  fatherSnTypes: FatherSnType[] = [];
   workOrderErrorMessage = '';
   routingErrorMessage = '';
   bomErrorMessage = '';
@@ -354,6 +361,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.bomChildForm = this.fb.group({
       son_pn: ['', Validators.required],
       qty: [1, [Validators.required, Validators.min(1), Validators.pattern(/^[0-9]+$/)]],
+      item_type: ['', Validators.required],
       station_code: [''],
     });
 
@@ -376,8 +384,11 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       }
 
       if (partNumber.length < 2) {
+        this.fatherSnTypes = [];
         return;
       }
+
+      this.loadFatherSnTypes(partNumber);
 
       this.restoreWorkflowTimer = window.setTimeout(() => {
         this.restoreWorkflowTimer = null;
@@ -389,6 +400,10 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       this.partNumberForm.get(controlName)?.valueChanges.subscribe(() => {
         if (!this.isRestoringSavedPreview) {
           this.isPartNumberSaved = false;
+        }
+
+        if (controlName === 'sn_type_name') {
+          this.validateFatherSnTypeSelection();
         }
       });
     });
@@ -536,12 +551,40 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     return this.isWorkflowEditMode ? updateLabel : saveLabel;
   }
 
+  canSaveBomChildren(): boolean {
+    return this.bomChildren.length > 0 || this.bomHistory.length > 0 || this.isBomChildrenSaved;
+  }
+
   private canLeavePane(index: number): boolean {
     if (index === 4) {
       return true;
     }
 
+    if (index === 3) {
+      return this.isBomPaneComplete();
+    }
+
     return this.isPaneSaved(index);
+  }
+
+  private isBomPaneComplete(): boolean {
+    if (this.isBomChildrenSaved) {
+      return true;
+    }
+
+    return this.bomChildren.length === 0 && this.bomHistory.length === 0 && !this.hasBomChildDraft();
+  }
+
+  private hasBomChildDraft(): boolean {
+    const value = this.bomChildForm.getRawValue();
+    const qty = String(value.qty ?? '').trim();
+
+    return Boolean(
+      String(value.son_pn ?? '').trim() ||
+      String(value.item_type ?? '').trim() ||
+      String(value.station_code ?? '').trim() ||
+      (qty !== '' && qty !== '1')
+    );
   }
 
   private get isWorkflowEditMode(): boolean {
@@ -577,6 +620,11 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     if (this.partNumberForm.invalid) {
       this.partNumberForm.markAllAsTouched();
       this.partNumberErrorMessage = this.buildPartNumberMissingFieldsMessage();
+      this.scheduleClearMessages();
+      return;
+    }
+
+    if (!this.validateFatherSnTypeSelection()) {
       this.scheduleClearMessages();
       return;
     }
@@ -1225,6 +1273,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.bomChildForm.reset({
       son_pn: '',
       qty: 1,
+      item_type: '',
       station_code: '',
     });
     this.isBomChildEditorOpen = true;
@@ -1238,6 +1287,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.bomChildForm.reset({
       son_pn: child.son_pn,
       qty: child.qty,
+      item_type: child.item_type || '',
       station_code: child.station_code,
     });
     this.isBomChildEditorOpen = true;
@@ -1255,6 +1305,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
     const formValue = this.bomChildForm.value;
     const stationCode = String(formValue.station_code ?? '').trim();
+    const itemType = String(formValue.item_type ?? '').trim();
     const selectedStation = this.getAssemblyStationOptions().find((station) => station.station_code === stationCode);
 
     if (stationCode && !selectedStation) {
@@ -1277,6 +1328,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
           son_description: String(formValue.son_pn).trim(),
           station_code: selectedStation?.station_code || '',
           station_name: selectedStation?.station_name || '',
+          item_type: itemType,
           qty: Number(formValue.qty),
         };
         this.addBomHistory('Child updated', 'BOM child', previousChild.son_pn, String(formValue.son_pn).trim());
@@ -1288,7 +1340,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         son_description: String(formValue.son_pn).trim(),
         station_code: selectedStation?.station_code || '',
         station_name: selectedStation?.station_name || '',
-        item_type: 'Manufactured',
+        item_type: itemType,
         pn_type: '-',
         qty: Number(formValue.qty),
       };
@@ -1319,7 +1371,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   saveBomChildren(): void {
     this.bomErrorMessage = '';
 
-    if (this.bomChildren.length === 0) {
+    if (this.bomChildren.length === 0 && this.bomHistory.length === 0) {
       this.bomErrorMessage = 'Please add at least one BOM child before saving BOM.';
       this.scheduleClearMessages();
       return;
@@ -1583,6 +1635,47 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         this.scheduleClearMessages();
       }
     });
+  }
+
+  private loadFatherSnTypes(partNumber: string): void {
+    const pn = String(partNumber || '').trim();
+    if (!pn) {
+      this.fatherSnTypes = [];
+      return;
+    }
+
+    const params = new HttpParams().set('pn', pn);
+    this.http.get<{ data: FatherSnType[] }>(`${this.workflowApiUrl}/father-sn-types`, { params }).subscribe({
+      next: (response) => {
+        this.fatherSnTypes = response.data || [];
+        this.validateFatherSnTypeSelection();
+      },
+      error: () => {
+        this.fatherSnTypes = [];
+      },
+    });
+  }
+
+  isSnTypeBlocked(snTypeName: string): boolean {
+    const selectedName = String(snTypeName || '').trim().toLowerCase();
+    return !!selectedName && this.fatherSnTypes.some((item) =>
+      String(item.sn_type_name || '').trim().toLowerCase() === selectedName
+    );
+  }
+
+  private validateFatherSnTypeSelection(): boolean {
+    if (this.isRestoringSavedPreview) {
+      return true;
+    }
+
+    const selectedSnType = String(this.partNumberForm.get('sn_type_name')?.value || '').trim();
+    if (!selectedSnType || !this.isSnTypeBlocked(selectedSnType)) {
+      return true;
+    }
+
+    this.partNumberErrorMessage = 'this Sn type is already assigned in this father-child family';
+    this.partNumberForm.get('sn_type_name')?.setValue('', { emitEvent: false });
+    return false;
   }
 
   private loadSites(): void {
@@ -1883,6 +1976,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.bomChildForm.reset({
       son_pn: '',
       qty: 1,
+      item_type: '',
       station_code: '',
     });
   }
@@ -2289,6 +2383,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.bomChildForm.reset({
       son_pn: '',
       qty: 1,
+      item_type: '',
       station_code: '',
     }, { emitEvent: false });
 
@@ -2439,7 +2534,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       son_description: child.son_description || child.son_pn,
       station_code: child.station_code || '',
       station_name: child.station_name || '',
-      item_type: child.item_type || 'Manufactured',
+      item_type: child.item_type || '',
       pn_type: child.pn_type || '-',
       qty: Number(child.qty) || 1,
     }));

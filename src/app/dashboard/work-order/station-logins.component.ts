@@ -121,7 +121,7 @@ export class StationLoginsComponent implements OnInit {
       wo: this.wo,
       stations: this.rows.flatMap((row) =>
         row.logins.filter((login) => this.hasLoginData(login)).map((login) => ({
-          id: login.login_row_id || row.station_id,
+          id: login.login_row_id,
           station_id: row.station_id,
           station_code: row.station_code,
           station_login_id: login.station_login_id.trim(),

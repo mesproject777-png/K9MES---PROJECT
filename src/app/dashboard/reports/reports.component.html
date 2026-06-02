@@ -6,7 +6,7 @@
 		</div>
 
 		<p class="hero-copy">
-			Select station, scan SN or RSN, then press Enter or Tab. Submission happens automatically.
+			Select station, scan SN, then press Enter or Tab. Submission happens automatically.
 		</p>
 
 		<div class="station-bar">
@@ -32,7 +32,7 @@
 				[(ngModel)]="scanValue"
 				(keydown.enter)="onScanKey($event)"
 				(keydown.tab)="onScanKey($event)"
-				placeholder="Scan or enter SN/RSN"
+				placeholder="Scan or enter SN"
 				[disabled]="!selectedStationCode || submitting"
 				autocomplete="off"
 			/>
@@ -56,6 +56,6 @@
 	</section>
 
 	<p class="action-message" *ngIf="result && !actionMessage">
-		Last processed: {{ result.serial.sn }} ({{ result.serial.rsn }})
+		Last processed: {{ result.serial.sn }}
 	</p>
 </div>

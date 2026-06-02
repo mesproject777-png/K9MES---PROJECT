@@ -880,10 +880,17 @@ async Task<bool> HandleWorkflowStationLoginsAsync(HttpContext context)
 
     var payload = await ReadJsonBodyAsync(context.Request);
     var pn = payload?["pn"]?.GetValue<string>()?.Trim();
+    var wo = payload?["wo"]?.GetValue<string>()?.Trim();
     var stationsNode = payload?["stations"]?.AsArray();
     if (string.IsNullOrWhiteSpace(pn))
     {
         await WriteErrorAsync(context, "pn is required", 400);
+        return true;
+    }
+
+    if (string.IsNullOrWhiteSpace(wo))
+    {
+        await WriteErrorAsync(context, "wo is required", 400);
         return true;
     }
 
@@ -939,12 +946,37 @@ async Task<bool> HandleWorkflowStationLoginsAsync(HttpContext context)
         return await command.ExecuteNonQueryAsync();
     }
 
+    async Task<List<Dictionary<string, object?>>> QueryRowsAsync(string sql, params (string Name, object? Value)[] parameters)
+    {
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        }
+
+        var rows = new List<Dictionary<string, object?>>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            for (var index = 0; index < reader.FieldCount; index++)
+            {
+                row[reader.GetName(index)] = reader.IsDBNull(index) ? null : reader.GetValue(index);
+            }
+
+            rows.Add(row);
+        }
+
+        return rows;
+    }
+
     try
     {
         await ExecuteAsync(
             """
             CREATE TABLE IF NOT EXISTS public.workflow_station_logins (
               id SERIAL PRIMARY KEY,
+              workflow_work_order_id INTEGER REFERENCES workflow_work_orders(id) ON DELETE CASCADE,
               workflow_routing_step_id INTEGER NOT NULL REFERENCES workflow_routing_steps(id) ON DELETE CASCADE,
               station_login_id VARCHAR(160) NOT NULL,
               station_login_password VARCHAR(220) NOT NULL,
@@ -954,27 +986,94 @@ async Task<bool> HandleWorkflowStationLoginsAsync(HttpContext context)
             )
             """);
 
-        foreach (var station in stationLogins)
-        {
-            var updatedRoute = await ExecuteAsync(
-                """
-                UPDATE workflow_routing_steps
-                SET station_login_id = @loginId,
-                    station_login_password = @password,
-                    updated_at = NOW()
-                WHERE id = @stationId
-                """,
-                ("loginId", station.LoginId),
-                ("password", station.Password),
-                ("stationId", station.StationId));
+        await ExecuteAsync("ALTER TABLE public.workflow_station_logins ADD COLUMN IF NOT EXISTS workflow_work_order_id INTEGER REFERENCES workflow_work_orders(id) ON DELETE CASCADE");
 
-            if (updatedRoute == 0)
+        var workOrderRows = await QueryRowsAsync(
+            """
+            SELECT w.id AS workflow_work_order_id, p.id AS workflow_part_id
+            FROM workflow_work_orders w
+            JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+            WHERE UPPER(p.pn) = UPPER(@pn)
+              AND UPPER(w.wo) = UPPER(@wo)
+            LIMIT 1
+            """,
+            ("pn", pn),
+            ("wo", wo));
+        if (workOrderRows.Count == 0)
+        {
+            await transaction.RollbackAsync();
+            await WriteErrorAsync(context, "Work order not found", 404);
+            return true;
+        }
+
+        var workflowWorkOrderId = Convert.ToInt32(workOrderRows[0]["workflow_work_order_id"]);
+        var workflowPartId = Convert.ToInt32(workOrderRows[0]["workflow_part_id"]);
+
+        var stationIds = stationLogins.Select(station => station.StationId).Distinct().ToArray();
+        if (stationIds.Length > 0)
+        {
+            var existingStations = await QueryRowsAsync(
+                """
+                SELECT id
+                FROM workflow_routing_steps
+                WHERE workflow_part_id = @workflowPartId
+                  AND id = ANY(@stationIds)
+                """,
+                ("workflowPartId", workflowPartId),
+                ("stationIds", stationIds));
+
+            if (existingStations.Count != stationIds.Length)
             {
                 await transaction.RollbackAsync();
-                await WriteErrorAsync(context, $"Station {station.StationCode} was not found", 404);
+                await WriteErrorAsync(context, "One or more stations were not found for this workflow", 404);
                 return true;
             }
+        }
 
+        foreach (var station in stationLogins)
+        {
+            var conflicts = await QueryRowsAsync(
+                """
+                SELECT station_code, pn, wo
+                FROM (
+                    SELECT r.station_code, p.pn, w.wo
+                    FROM workflow_station_logins l
+                    JOIN workflow_routing_steps r ON r.id = l.workflow_routing_step_id
+                    JOIN workflow_part_numbers p ON p.id = r.workflow_part_id
+                    LEFT JOIN workflow_work_orders w ON w.id = l.workflow_work_order_id
+                    WHERE UPPER(l.station_login_id) = UPPER(@loginId)
+                      AND (@loginRowId::integer IS NULL OR l.id <> @loginRowId::integer)
+                ) conflicts
+                LIMIT 1
+                """,
+                ("loginId", station.LoginId),
+                ("loginRowId", station.LoginRowId),
+                ("stationId", station.StationId));
+
+            if (conflicts.Count > 0)
+            {
+                var conflict = conflicts[0];
+                var conflictStation = conflict["station_code"]?.ToString();
+                var conflictPn = conflict["pn"]?.ToString();
+                var conflictWo = conflict["wo"]?.ToString();
+                var location = string.IsNullOrWhiteSpace(conflictStation) ? "another station" : $"station {conflictStation}";
+                if (!string.IsNullOrWhiteSpace(conflictPn) && !string.IsNullOrWhiteSpace(conflictWo))
+                {
+                    location += $" (PN {conflictPn}, WO {conflictWo})";
+                }
+                else if (!string.IsNullOrWhiteSpace(conflictPn))
+                {
+                    location += $" (PN {conflictPn})";
+                }
+
+                await transaction.RollbackAsync();
+                await WriteErrorAsync(context, $"Login ID {station.LoginId} is already used by {location}", 409);
+                return true;
+            }
+        }
+
+        foreach (var station in stationLogins)
+        {
             if (station.LoginRowId is > 0)
             {
                 var updatedLogin = await ExecuteAsync(
@@ -985,11 +1084,13 @@ async Task<bool> HandleWorkflowStationLoginsAsync(HttpContext context)
                         updated_at = NOW()
                     WHERE id = @loginRowId
                       AND workflow_routing_step_id = @stationId
+                      AND workflow_work_order_id = @workflowWorkOrderId
                     """,
                     ("loginId", station.LoginId),
                     ("password", station.Password),
                     ("loginRowId", station.LoginRowId.Value),
-                    ("stationId", station.StationId));
+                    ("stationId", station.StationId),
+                    ("workflowWorkOrderId", workflowWorkOrderId));
 
                 if (updatedLogin > 0)
                 {
@@ -1000,14 +1101,11 @@ async Task<bool> HandleWorkflowStationLoginsAsync(HttpContext context)
             await ExecuteAsync(
                 """
                 INSERT INTO workflow_station_logins
-                  (workflow_routing_step_id, station_login_id, station_login_password)
+                  (workflow_work_order_id, workflow_routing_step_id, station_login_id, station_login_password)
                 VALUES
-                  (@stationId, @loginId, @password)
-                ON CONFLICT (workflow_routing_step_id, station_login_id)
-                DO UPDATE SET
-                    station_login_password = EXCLUDED.station_login_password,
-                    updated_at = NOW()
+                  (@workflowWorkOrderId, @stationId, @loginId, @password)
                 """,
+                ("workflowWorkOrderId", workflowWorkOrderId),
                 ("stationId", station.StationId),
                 ("loginId", station.LoginId),
                 ("password", station.Password));
@@ -1015,6 +1113,12 @@ async Task<bool> HandleWorkflowStationLoginsAsync(HttpContext context)
 
         await transaction.CommitAsync();
         await WriteJsonAsync(context, new Dictionary<string, object?> { ["message"] = "Station logins saved successfully" });
+        return true;
+    }
+    catch (PostgresException ex) when (ex.SqlState == "23505")
+    {
+        await transaction.RollbackAsync();
+        await WriteErrorAsync(context, "Login ID is already used by another station", 409);
         return true;
     }
     catch

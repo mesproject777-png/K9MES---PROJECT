@@ -46,14 +46,14 @@ export class MyrouteComponent implements OnDestroy {
     const normalized = this.query.trim();
 
     if (!normalized) {
-      this.errorMessage = 'Please enter SN or RSN.';
+      this.errorMessage = 'Please enter SN.';
       this.searchResult = null;
       this.stopAutoRefresh();
       return;
     }
 
     if (!/^[A-Za-z0-9_-]+$/.test(normalized)) {
-      this.errorMessage = 'Search supports only SN or RSN values.';
+      this.errorMessage = 'Search supports only SN values.';
       this.searchResult = null;
       this.stopAutoRefresh();
       return;
@@ -84,6 +84,10 @@ export class MyrouteComponent implements OnDestroy {
     return `${current.station_code} - ${current.station_name}`;
   }
 
+  get visibleHistoryRows(): TraceHistoryRow[] {
+    return (this.searchResult?.history || []).filter((history) => this.shouldShowHistoryRow(history));
+  }
+
   trackByStation(index: number, step: TraceRouteStep): string {
     return `${index}-${step.station_order}-${step.station_code}`;
   }
@@ -104,10 +108,6 @@ export class MyrouteComponent implements OnDestroy {
     const normalized = (result || '').toUpperCase();
     if (normalized === 'PASS') {
       return 'PASS';
-    }
-
-    if (normalized === 'FAIL') {
-      return 'FAIL';
     }
 
     return result || '-';
@@ -203,5 +203,21 @@ export class MyrouteComponent implements OnDestroy {
       window.clearInterval(this.refreshTimer);
       this.refreshTimer = null;
     }
+  }
+
+  private shouldShowHistoryRow(history: TraceHistoryRow): boolean {
+    const result = String(history.result || '').trim().toUpperCase();
+    const eventType = String(history.event_type || '').trim().toUpperCase();
+    const info = String(history.additional_info || '').trim().toUpperCase();
+
+    if (eventType === 'SN_GENERATED' || info === 'SN GENERATED') {
+      return true;
+    }
+
+    if (eventType && eventType !== 'PASS') {
+      return false;
+    }
+
+    return result === 'PASS';
   }
 }

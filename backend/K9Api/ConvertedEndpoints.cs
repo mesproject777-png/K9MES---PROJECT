@@ -1625,6 +1625,55 @@ public static class ConvertedEndpoints
             return snapshot is null ? JsonMessage("Workflow not found", 404) : Results.Json(snapshot);
         });
 
+        app.MapGet("/api/workflow/father-sn-types", async (HttpRequest request) =>
+        {
+            var pn = request.Query["pn"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(pn))
+            {
+                return JsonMessage("pn is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                WITH family_parents AS (
+                    SELECT p.id AS parent_id
+                    FROM workflow_part_numbers p
+                    WHERE UPPER(BTRIM(p.pn)) = UPPER(BTRIM(@pn))
+
+                    UNION
+
+                    SELECT child.workflow_part_id AS parent_id
+                    FROM workflow_bom_children child
+                    WHERE UPPER(BTRIM(child.son_pn)) = UPPER(BTRIM(@pn))
+                ),
+                family_members AS (
+                    SELECT parent.pn, COALESCE(parent_sn.sn_type_name, parent.sn_type_name, '') AS sn_type_name
+                    FROM family_parents fp
+                    JOIN workflow_part_numbers parent ON parent.id = fp.parent_id
+                    LEFT JOIN sn_types parent_sn ON parent_sn.id = parent.sn_type_id
+
+                    UNION
+
+                    SELECT child_part.pn, COALESCE(child_sn.sn_type_name, child_part.sn_type_name, '') AS sn_type_name
+                    FROM family_parents fp
+                    JOIN workflow_bom_children child ON child.workflow_part_id = fp.parent_id
+                    JOIN workflow_part_numbers child_part ON UPPER(BTRIM(child_part.pn)) = UPPER(BTRIM(child.son_pn))
+                    LEFT JOIN sn_types child_sn ON child_sn.id = child_part.sn_type_id
+                )
+                SELECT DISTINCT pn AS father_pn, sn_type_name
+                FROM family_members
+                WHERE UPPER(BTRIM(pn)) <> UPPER(BTRIM(@pn))
+                  AND BTRIM(sn_type_name) <> ''
+                ORDER BY pn ASC
+                """,
+                ("pn", pn));
+
+            return Results.Json(new { data = rows });
+        });
+
         app.MapGet("/api/workflow/work-orders", async (HttpRequest request) =>
         {
             var page = ParsePositiveInt(request.Query["page"], 1);
@@ -2090,7 +2139,7 @@ public static class ConvertedEndpoints
             catch (PostgresException ex) when (ex.SqlState == "23505")
             {
                 await transaction.RollbackAsync();
-                return JsonMessage("Duplicate SN detected. Check the Serial Pattern sequence fields.", 409);
+                return JsonMessage("Serials are already generated for this work order or sequence.", 409);
             }
             catch
             {
@@ -2501,6 +2550,11 @@ public static class ConvertedEndpoints
                     return JsonMessage("Parent and child cannot be same", 400);
                 }
 
+                if (!string.Equals(child["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase))
+                {
+                    return JsonMessage("Child SN must complete its own routing before binding with parent", 409);
+                }
+
                 await ExecuteAsync(
                     connection,
                     """
@@ -2772,6 +2826,11 @@ public static class ConvertedEndpoints
         if (reportMode is not ("Regular" or "Auto Only"))
         {
             return JsonMessage("Invalid report mode", 400);
+        }
+
+        if (string.IsNullOrWhiteSpace(stationLoginId) || string.IsNullOrWhiteSpace(stationLoginPassword))
+        {
+            return JsonMessage("Station login ID and password are required", 400);
         }
 
         await using var connection = await OpenConnectionAsync();
@@ -3466,7 +3525,12 @@ public static class ConvertedEndpoints
             LIMIT 300
             """,
             ("serialId", serial["id"]));
+        history.AddRange(await GetWorkflowBomBindingHistoryRowsAsync(connection, serial["id"]!));
         history.Add(BuildSerialGeneratedHistoryRow(serial));
+        history = history
+            .OrderByDescending(row => row["date_time"] is DateTime dateTime ? dateTime : DateTime.MinValue)
+            .ThenByDescending(row => Convert.ToInt64(row["id"] ?? 0))
+            .ToList();
 
         var routing = routeRows.Select(step =>
         {
@@ -3532,6 +3596,49 @@ public static class ConvertedEndpoints
             history,
             generated_at = DateTime.UtcNow
         };
+    }
+
+    private static async Task<List<Dictionary<string, object?>>> GetWorkflowBomBindingHistoryRowsAsync(
+        NpgsqlConnection connection,
+        object workflowSerialId)
+    {
+        return await QueryRowsAsync(
+            connection,
+            """
+            SELECT l.id,
+                   l.created_by AS user_name,
+                   l.created_at AS date_time,
+                   l.station_code AS station,
+                   NULL::text AS length,
+                   NULL::text AS pc_name,
+                   ''::text AS result,
+                   CASE
+                     WHEN l.parent_workflow_serial_id = @serialId
+                       THEN 'Bound child ' || child.rsn || ' (' || child_part.pn || ')'
+                     ELSE 'Bound to parent ' || parent_sn.rsn || ' (' || parent_part.pn || ')'
+                   END AS additional_info,
+                   'BOM_BIND'::text AS event_type,
+                   child.sn AS child_sn,
+                   child.rsn AS child_rsn,
+                   child_part.pn AS child_pn,
+                   COALESCE(child_wo.revision, '-') AS child_revision,
+                   parent_sn.sn AS parent_sn,
+                   parent_sn.rsn AS parent_rsn,
+                   parent_part.pn AS parent_pn,
+                   COALESCE(parent_wo.revision, '-') AS parent_revision
+            FROM workflow_serial_bom_bindings l
+            JOIN workflow_serial_numbers parent_sn ON parent_sn.id = l.parent_workflow_serial_id
+            JOIN workflow_part_numbers parent_part ON parent_part.id = parent_sn.workflow_part_id
+            LEFT JOIN workflow_work_orders parent_wo ON parent_wo.id = parent_sn.workflow_work_order_id
+            JOIN workflow_serial_numbers child ON child.id = l.child_workflow_serial_id
+            JOIN workflow_part_numbers child_part ON child_part.id = child.workflow_part_id
+            LEFT JOIN workflow_work_orders child_wo ON child_wo.id = child.workflow_work_order_id
+            WHERE l.parent_workflow_serial_id = @serialId
+               OR l.child_workflow_serial_id = @serialId
+            ORDER BY l.created_at DESC, l.id DESC
+            LIMIT 300
+            """,
+            ("serialId", workflowSerialId));
     }
 
     private static Dictionary<string, object?> BuildSerialGeneratedHistoryRow(Dictionary<string, object?> serial)
@@ -3711,6 +3818,51 @@ public static class ConvertedEndpoints
                     ("name", snTypeName));
             }
 
+            if (!string.IsNullOrWhiteSpace(snTypeName))
+            {
+                var fatherSnTypeRows = await QueryRowsAsync(
+                    connection,
+                    """
+                    WITH family_parents AS (
+                        SELECT p.id AS parent_id
+                        FROM workflow_part_numbers p
+                        WHERE UPPER(BTRIM(p.pn)) = UPPER(BTRIM(@pn))
+
+                        UNION
+
+                        SELECT child.workflow_part_id AS parent_id
+                        FROM workflow_bom_children child
+                        WHERE UPPER(BTRIM(child.son_pn)) = UPPER(BTRIM(@pn))
+                    ),
+                    family_members AS (
+                        SELECT parent.pn, COALESCE(parent_sn.sn_type_name, parent.sn_type_name, '') AS sn_type_name
+                        FROM family_parents fp
+                        JOIN workflow_part_numbers parent ON parent.id = fp.parent_id
+                        LEFT JOIN sn_types parent_sn ON parent_sn.id = parent.sn_type_id
+
+                        UNION
+
+                        SELECT child_part.pn, COALESCE(child_sn.sn_type_name, child_part.sn_type_name, '') AS sn_type_name
+                        FROM family_parents fp
+                        JOIN workflow_bom_children child ON child.workflow_part_id = fp.parent_id
+                        JOIN workflow_part_numbers child_part ON UPPER(BTRIM(child_part.pn)) = UPPER(BTRIM(child.son_pn))
+                        LEFT JOIN sn_types child_sn ON child_sn.id = child_part.sn_type_id
+                    )
+                    SELECT pn AS father_pn, sn_type_name AS father_sn_type
+                    FROM family_members
+                    WHERE UPPER(BTRIM(pn)) <> UPPER(BTRIM(@pn))
+                      AND UPPER(BTRIM(sn_type_name)) = UPPER(BTRIM(@snTypeName))
+                    LIMIT 1
+                    """,
+                    ("pn", pn),
+                    ("snTypeName", snTypeName));
+
+                if (fatherSnTypeRows.Count > 0)
+                {
+                    return JsonMessage("this Sn type is already assigned in this father-child family", 409);
+                }
+            }
+
             var partRows = await QueryRowsAsync(
                 connection,
                 """
@@ -3801,8 +3953,20 @@ public static class ConvertedEndpoints
                     if (row is null) continue;
 
                     var stationCode = ReadString(row, "station_code")?.Trim();
+                    if (string.IsNullOrWhiteSpace(stationCode)) continue;
+
                     var stationLoginId = ReadString(row, "station_login_id")?.Trim();
-                    if (string.IsNullOrWhiteSpace(stationCode) || string.IsNullOrWhiteSpace(stationLoginId)) continue;
+                    var stationLoginPassword = ReadString(row, "station_login_password")?.Trim();
+                    if (string.IsNullOrWhiteSpace(stationLoginId) && string.IsNullOrWhiteSpace(stationLoginPassword))
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(stationLoginId) || string.IsNullOrWhiteSpace(stationLoginPassword))
+                    {
+                        await transaction.RollbackAsync();
+                        return JsonMessage($"Both station login ID and password are required for station {stationCode}", 400);
+                    }
 
                     if (loginStations.TryGetValue(stationLoginId, out var existingStationCode) &&
                         !string.Equals(existingStationCode, stationCode, StringComparison.OrdinalIgnoreCase))
@@ -3812,6 +3976,21 @@ public static class ConvertedEndpoints
                     }
 
                     loginStations[stationLoginId] = stationCode;
+                }
+
+                await EnsureWorkflowStationLoginsTableAsync(connection);
+                foreach (var login in loginStations)
+                {
+                    var conflict = await FindWorkflowStationLoginConflictAsync(
+                        connection,
+                        login.Key,
+                        excludeWorkflowPartId: workflowPartId);
+
+                    if (conflict is not null)
+                    {
+                        await transaction.RollbackAsync();
+                        return JsonMessage(FormatStationLoginConflictMessage(login.Key, conflict), 409);
+                    }
                 }
 
                 await ExecuteAsync(connection, "DELETE FROM workflow_routing_steps WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
@@ -3869,6 +4048,14 @@ public static class ConvertedEndpoints
                     var sonPn = ReadString(row, "son_pn")?.Trim();
                     if (string.IsNullOrWhiteSpace(sonPn)) continue;
 
+                    var bomItemType = ReadString(row, "item_type")?.Trim();
+                    if (!string.Equals(bomItemType, "Manufactured", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(bomItemType, "Purchased", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await transaction.RollbackAsync();
+                        return JsonMessage("BOM item type must be Manufactured or Purchased", 400);
+                    }
+
                     await ExecuteAsync(
                         connection,
                         """
@@ -3882,7 +4069,7 @@ public static class ConvertedEndpoints
                         ("sonDescription", ReadString(row, "son_description")?.Trim() ?? sonPn),
                         ("stationCode", ToDbNullable(ReadString(row, "station_code")?.Trim())),
                         ("stationName", ToDbNullable(ReadString(row, "station_name")?.Trim())),
-                        ("itemType", ToDbNullable(ReadString(row, "item_type")?.Trim())),
+                        ("itemType", bomItemType),
                         ("pnType", ToDbNullable(ReadString(row, "pn_type")?.Trim())),
                         ("qty", ReadInt(row, "qty") ?? 1));
                 }
@@ -4730,21 +4917,23 @@ public static class ConvertedEndpoints
             return JsonMessage("pn is required", 400);
         }
 
+        if (string.IsNullOrWhiteSpace(wo))
+        {
+            return JsonMessage("wo is required", 400);
+        }
+
         await using var connection = await OpenConnectionAsync();
         await EnsureWorkflowSchemaAsync(connection);
-        await EnsureRoutingStepLoginColumnsAsync(connection);
         await EnsureWorkflowStationLoginsTableAsync(connection);
 
         var partRows = await QueryRowsAsync(
             connection,
             """
-            SELECT p.id, p.pn, p.description, COALESCE(w.wo, @wo) AS wo
+            SELECT p.id, p.pn, p.description, w.id AS workflow_work_order_id, w.wo
             FROM workflow_part_numbers p
-            LEFT JOIN workflow_work_orders w
-              ON w.workflow_part_id = p.id
-             AND (@wo = '' OR UPPER(w.wo) = UPPER(@wo))
+            JOIN workflow_work_orders w ON w.workflow_part_id = p.id
             WHERE UPPER(p.pn) = UPPER(@pn)
-            ORDER BY w.updated_at DESC NULLS LAST, w.id DESC NULLS LAST
+              AND UPPER(w.wo) = UPPER(@wo)
             LIMIT 1
             """,
             ("pn", pn),
@@ -4756,6 +4945,7 @@ public static class ConvertedEndpoints
         }
 
         var workflowPartId = Convert.ToInt32(partRows[0]["id"]);
+        var workflowWorkOrderId = Convert.ToInt32(partRows[0]["workflow_work_order_id"]);
         var stations = await QueryRowsAsync(
             connection,
             """
@@ -4764,14 +4954,17 @@ public static class ConvertedEndpoints
                    r.station_code,
                    r.station_name,
                    l.id AS login_row_id,
-                   COALESCE(l.station_login_id, r.station_login_id, '') AS station_login_id,
-                   COALESCE(l.station_login_password, r.station_login_password, '') AS station_login_password
+                   COALESCE(l.station_login_id, '') AS station_login_id,
+                   COALESCE(l.station_login_password, '') AS station_login_password
             FROM workflow_routing_steps r
-            LEFT JOIN workflow_station_logins l ON l.workflow_routing_step_id = r.id
+            LEFT JOIN workflow_station_logins l
+              ON l.workflow_routing_step_id = r.id
+             AND l.workflow_work_order_id = @workflowWorkOrderId
             WHERE r.workflow_part_id = @workflowPartId
             ORDER BY r.station_order ASC, r.id ASC, l.id ASC
             """,
-            ("workflowPartId", workflowPartId));
+            ("workflowPartId", workflowPartId),
+            ("workflowWorkOrderId", workflowWorkOrderId));
 
         return Results.Json(new
         {
@@ -4784,11 +4977,17 @@ public static class ConvertedEndpoints
     {
         var payload = await ReadJsonBodyAsync(context.Request);
         var pn = ReadString(payload, "pn")?.Trim();
+        var wo = ReadString(payload, "wo")?.Trim();
         var stationsNode = payload?["stations"]?.AsArray();
 
         if (string.IsNullOrWhiteSpace(pn))
         {
             return JsonMessage("pn is required", 400);
+        }
+
+        if (string.IsNullOrWhiteSpace(wo))
+        {
+            return JsonMessage("wo is required", 400);
         }
 
         if (stationsNode is null)
@@ -4826,16 +5025,39 @@ public static class ConvertedEndpoints
 
         await using var connection = await OpenConnectionAsync();
         await EnsureWorkflowSchemaAsync(connection);
-        await EnsureRoutingStepLoginColumnsAsync(connection);
         await EnsureWorkflowStationLoginsTableAsync(connection);
 
-        var partId = await ScalarAsync<int?>(
+        var workOrderRows = await QueryRowsAsync(
             connection,
-            "SELECT id FROM workflow_part_numbers WHERE UPPER(pn) = UPPER(@pn) LIMIT 1",
-            ("pn", pn));
-        if (partId is null)
+            """
+            SELECT w.id AS workflow_work_order_id, p.id AS workflow_part_id
+            FROM workflow_work_orders w
+            JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+            WHERE UPPER(p.pn) = UPPER(@pn)
+              AND UPPER(w.wo) = UPPER(@wo)
+            LIMIT 1
+            """,
+            ("pn", pn),
+            ("wo", wo));
+        if (workOrderRows.Count == 0)
         {
-            return JsonMessage("Workflow not found", 404);
+            return JsonMessage("Work order not found", 404);
+        }
+
+        var workflowWorkOrderId = Convert.ToInt32(workOrderRows[0]["workflow_work_order_id"]);
+        var workflowPartId = Convert.ToInt32(workOrderRows[0]["workflow_part_id"]);
+
+        foreach (var station in stationLogins)
+        {
+            var conflict = await FindWorkflowStationLoginConflictAsync(
+                connection,
+                station.LoginId,
+                excludeLoginRowId: station.LoginRowId);
+
+            if (conflict is not null)
+            {
+                return JsonMessage(FormatStationLoginConflictMessage(station.LoginId, conflict), 409);
+            }
         }
 
         var stationIds = stationLogins.Select(station => station.StationId).Distinct().ToList();
@@ -4849,7 +5071,7 @@ public static class ConvertedEndpoints
                 WHERE workflow_part_id = @workflowPartId
                   AND id = ANY(@stationIds)
                 """,
-                ("workflowPartId", partId.Value),
+                ("workflowPartId", workflowPartId),
                 ("stationIds", stationIds.ToArray()));
 
             if (existingStationRows.Count != stationIds.Count)
@@ -4874,11 +5096,13 @@ public static class ConvertedEndpoints
                             updated_at = NOW()
                         WHERE id = @loginRowId
                           AND workflow_routing_step_id = @stationId
+                          AND workflow_work_order_id = @workflowWorkOrderId
                         """,
                         ("loginId", station.LoginId),
                         ("password", station.Password),
                         ("loginRowId", station.LoginRowId.Value),
-                        ("stationId", station.StationId));
+                        ("stationId", station.StationId),
+                        ("workflowWorkOrderId", workflowWorkOrderId));
 
                     if (updatedLogin > 0)
                     {
@@ -4890,48 +5114,22 @@ public static class ConvertedEndpoints
                     connection,
                     """
                     INSERT INTO workflow_station_logins
-                      (workflow_routing_step_id, station_login_id, station_login_password)
+                      (workflow_work_order_id, workflow_routing_step_id, station_login_id, station_login_password)
                     VALUES
-                      (@stationId, @loginId, @password)
-                    ON CONFLICT (workflow_routing_step_id, station_login_id)
-                    DO UPDATE SET
-                        station_login_password = EXCLUDED.station_login_password,
-                        updated_at = NOW()
+                      (@workflowWorkOrderId, @stationId, @loginId, @password)
                     """,
+                    ("workflowWorkOrderId", workflowWorkOrderId),
                     ("stationId", station.StationId),
                     ("loginId", station.LoginId),
                     ("password", station.Password));
             }
 
-            var grouped = stationLogins
-                .GroupBy(station => station.StationId)
-                .ToDictionary(group => group.Key, group => group.First());
-
-            var allRouteRows = await QueryRowsAsync(
-                connection,
-                "SELECT id FROM workflow_routing_steps WHERE workflow_part_id = @workflowPartId",
-                ("workflowPartId", partId.Value));
-            foreach (var routeRow in allRouteRows)
-            {
-                var stationId = Convert.ToInt32(routeRow["id"]);
-                grouped.TryGetValue(stationId, out var firstLogin);
-                await ExecuteAsync(
-                    connection,
-                    """
-                    UPDATE workflow_routing_steps
-                    SET station_login_id = @loginId,
-                        station_login_password = @password,
-                        updated_at = NOW()
-                    WHERE id = @stationId
-                      AND workflow_part_id = @workflowPartId
-                    """,
-                    ("loginId", ToDbNullable(firstLogin.LoginId)),
-                    ("password", ToDbNullable(firstLogin.Password)),
-                    ("stationId", stationId),
-                    ("workflowPartId", partId.Value));
-            }
-
             await transaction.CommitAsync();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            await transaction.RollbackAsync();
+            return JsonMessage("Login ID is already used by another station", 409);
         }
         catch
         {
@@ -5573,12 +5771,12 @@ public static class ConvertedEndpoints
             CREATE TABLE IF NOT EXISTS public.workflow_routing_steps (
               id SERIAL PRIMARY KEY,
               workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
-              station_order INTEGER NOT NULL,
-              station_code VARCHAR(80) NOT NULL,
-              station_name VARCHAR(220) NOT NULL,
-              sample_mode VARCHAR(20) NOT NULL DEFAULT 'Full',
-              report_mode VARCHAR(20) NOT NULL DEFAULT 'Regular',
-              preview_status VARCHAR(30),
+                      station_order INTEGER NOT NULL,
+                      station_code VARCHAR(80) NOT NULL,
+                      station_name VARCHAR(220) NOT NULL,
+                      sample_mode VARCHAR(20) NOT NULL DEFAULT 'Full',
+                      report_mode VARCHAR(20) NOT NULL DEFAULT 'Regular',
+                      preview_status VARCHAR(30),
               station_login_id VARCHAR(160),
               station_login_password VARCHAR(220),
               station_ip VARCHAR(80),
@@ -5593,6 +5791,19 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_routing_steps ADD COLUMN IF NOT EXISTS station_login_password VARCHAR(220)");
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_routing_steps ADD COLUMN IF NOT EXISTS station_ip VARCHAR(80)");
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_routing_steps ADD COLUMN IF NOT EXISTS printer_ip VARCHAR(80)");
+        await ExecuteAsync(
+            connection,
+            """
+            ALTER TABLE public.workflow_routing_steps
+              ALTER COLUMN station_login_id DROP NOT NULL,
+              ALTER COLUMN station_login_password DROP NOT NULL
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            ALTER TABLE public.workflow_routing_steps
+              DROP CONSTRAINT IF EXISTS chk_workflow_route_login_required
+            """);
 
         await ExecuteAsync(
             connection,
@@ -5670,7 +5881,7 @@ public static class ConvertedEndpoints
             """
             CREATE TABLE IF NOT EXISTS public.workflow_serial_numbers (
               id BIGSERIAL PRIMARY KEY,
-              sn VARCHAR(220) NOT NULL UNIQUE,
+              sn VARCHAR(220) NOT NULL,
               rsn VARCHAR(40) NOT NULL UNIQUE DEFAULT ('RSN' || LPAD(nextval('workflow_rsn_seq')::text, 10, '0')),
               workflow_work_order_id INTEGER NOT NULL REFERENCES workflow_work_orders(id) ON DELETE CASCADE,
               workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
@@ -5738,6 +5949,23 @@ public static class ConvertedEndpoints
             )
             """);
 
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_serial_bom_bindings (
+              id BIGSERIAL PRIMARY KEY,
+              parent_workflow_serial_id BIGINT NOT NULL REFERENCES workflow_serial_numbers(id) ON DELETE CASCADE,
+              child_workflow_serial_id BIGINT NOT NULL REFERENCES workflow_serial_numbers(id) ON DELETE RESTRICT,
+              workflow_bom_child_id INTEGER NOT NULL REFERENCES workflow_bom_children(id) ON DELETE RESTRICT,
+              station_code VARCHAR(80) NOT NULL,
+              station_name VARCHAR(220),
+              created_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_bom_child_serial UNIQUE (child_workflow_serial_id),
+              CONSTRAINT uq_workflow_bom_parent_child_station UNIQUE (parent_workflow_serial_id, child_workflow_serial_id, station_code)
+            )
+            """);
+
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_work_orders_part ON public.workflow_work_orders (workflow_part_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_route_part ON public.workflow_routing_steps (workflow_part_id, station_order)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_part ON public.workflow_bom_children (workflow_part_id)");
@@ -5745,6 +5973,8 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_label_printing_part ON public.workflow_station_label_printing (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_wo ON public.workflow_serial_numbers (workflow_work_order_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_part ON public.workflow_serial_numbers (workflow_part_id)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_bind_parent_station ON public.workflow_serial_bom_bindings (parent_workflow_serial_id, station_code)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_bind_child ON public.workflow_serial_bom_bindings (child_workflow_serial_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_serial ON public.workflow_serial_station_logs (workflow_serial_id, created_at DESC)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_station ON public.workflow_serial_station_logs (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_multiboxes_open ON public.workflow_multiboxes (workflow_part_id, workflow_work_order_id, status)");
@@ -5757,6 +5987,7 @@ public static class ConvertedEndpoints
             """
             CREATE TABLE IF NOT EXISTS public.workflow_station_logins (
               id SERIAL PRIMARY KEY,
+              workflow_work_order_id INTEGER REFERENCES workflow_work_orders(id) ON DELETE CASCADE,
               workflow_routing_step_id INTEGER NOT NULL REFERENCES workflow_routing_steps(id) ON DELETE CASCADE,
               station_login_id VARCHAR(160) NOT NULL,
               station_login_password VARCHAR(220) NOT NULL,
@@ -5766,7 +5997,114 @@ public static class ConvertedEndpoints
             )
             """);
 
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_logins ADD COLUMN IF NOT EXISTS workflow_work_order_id INTEGER REFERENCES workflow_work_orders(id) ON DELETE CASCADE");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logins_step ON public.workflow_station_logins (workflow_routing_step_id)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logins_wo ON public.workflow_station_logins (workflow_work_order_id)");
+        await NormalizeWorkflowStationLoginUniquenessAsync(connection);
+        await ExecuteAsync(connection, "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_station_login_id_global ON public.workflow_station_logins (UPPER(station_login_id))");
+        await ExecuteAsync(
+            connection,
+            """
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'chk_workflow_station_login_required'
+                  AND conrelid = 'public.workflow_station_logins'::regclass
+              ) THEN
+                ALTER TABLE public.workflow_station_logins
+                  ADD CONSTRAINT chk_workflow_station_login_required
+                  CHECK (
+                    station_login_id IS NOT NULL AND BTRIM(station_login_id) <> '' AND
+                    station_login_password IS NOT NULL AND BTRIM(station_login_password) <> ''
+                  ) NOT VALID;
+              END IF;
+            END $$;
+            """);
+    }
+
+    private static async Task NormalizeWorkflowStationLoginUniquenessAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(
+            connection,
+            """
+            DELETE FROM public.workflow_station_logins
+            WHERE station_login_id IS NULL
+               OR BTRIM(station_login_id) = ''
+               OR station_login_password IS NULL
+               OR BTRIM(station_login_password) = ''
+            """);
+
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers DROP CONSTRAINT IF EXISTS workflow_serial_numbers_sn_key");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_sn_upper ON public.workflow_serial_numbers (UPPER(sn))");
+
+        await ExecuteAsync(
+            connection,
+            """
+            DELETE FROM public.workflow_station_logins l
+            USING (
+              SELECT id,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY UPPER(BTRIM(station_login_id))
+                       ORDER BY updated_at DESC, id DESC
+                     ) AS row_num
+              FROM public.workflow_station_logins
+              WHERE station_login_id IS NOT NULL
+                AND BTRIM(station_login_id) <> ''
+            ) duplicates
+            WHERE l.id = duplicates.id
+              AND duplicates.row_num > 1
+            """);
+    }
+
+    private static async Task<Dictionary<string, object?>?> FindWorkflowStationLoginConflictAsync(
+        NpgsqlConnection connection,
+        string loginId,
+        int? excludeLoginRowId = null,
+        int? excludeRoutingStepId = null,
+        int? excludeWorkflowPartId = null)
+    {
+        var rows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT station_code, pn, wo
+            FROM (
+                SELECT r.station_code, p.pn, w.wo
+                FROM workflow_station_logins l
+                JOIN workflow_routing_steps r ON r.id = l.workflow_routing_step_id
+                JOIN workflow_part_numbers p ON p.id = r.workflow_part_id
+                LEFT JOIN workflow_work_orders w ON w.id = l.workflow_work_order_id
+                WHERE UPPER(l.station_login_id) = UPPER(@loginId)
+                  AND (@excludeLoginRowId IS NULL OR l.id <> @excludeLoginRowId)
+            ) conflicts
+            LIMIT 1
+            """,
+            ("loginId", loginId),
+            ("excludeLoginRowId", ToDbNullable(excludeLoginRowId)),
+            ("excludeRoutingStepId", ToDbNullable(excludeRoutingStepId)),
+            ("excludeWorkflowPartId", ToDbNullable(excludeWorkflowPartId)));
+
+        return rows.Count > 0 ? rows[0] : null;
+    }
+
+    private static string FormatStationLoginConflictMessage(string loginId, Dictionary<string, object?> conflict)
+    {
+        var stationCode = conflict["station_code"]?.ToString();
+        var pn = conflict["pn"]?.ToString();
+        var wo = conflict["wo"]?.ToString();
+        var location = string.IsNullOrWhiteSpace(stationCode) ? "another station" : $"station {stationCode}";
+
+        if (!string.IsNullOrWhiteSpace(pn) && !string.IsNullOrWhiteSpace(wo))
+        {
+            location += $" (PN {pn}, WO {wo})";
+        }
+        else if (!string.IsNullOrWhiteSpace(pn))
+        {
+            location += $" (PN {pn})";
+        }
+
+        return $"Login ID {loginId} is already used by {location}";
     }
 
     private static async Task EnsureRoutingStepLoginColumnsAsync(NpgsqlConnection connection)

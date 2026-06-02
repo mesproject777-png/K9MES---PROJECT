@@ -597,7 +597,12 @@
 }
 
 .bom-child-form {
-  grid-template-columns: repeat(4, 220px);
+  grid-template-columns: 220px 120px 180px 220px 160px;
+}
+
+.bom-child-form .inline-add-button {
+  width: 160px;
+  min-width: 160px;
 }
 
 .inline-add-button {

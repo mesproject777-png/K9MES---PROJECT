@@ -147,7 +147,11 @@
                   formControlName="sn_type_name"
                 >
                   <option value="">Select Serial Pattern</option>
-                  <option *ngFor="let snType of snTypes" [value]="snType.sn_type_name">
+                  <option
+                    *ngFor="let snType of snTypes"
+                    [value]="snType.sn_type_name"
+                    [disabled]="isSnTypeBlocked(snType.sn_type_name)"
+                  >
                     {{ snType.sn_type_name }} ({{ snType.number_of_fields || snType.field_count || 0 }} fields)
                   </option>
                 </select>
@@ -468,7 +472,6 @@
                     <th>Description</th>
                     <th>Assembly Station</th>
                     <th>Item Type</th>
-                    <th>PN Type</th>
                     <th>Qty</th>
                     <th>Action</th>
                   </tr>
@@ -479,14 +482,13 @@
                     <td>{{ child.son_description }}</td>
                     <td>{{ child.station_code ? child.station_code + ' - ' + child.station_name : '-' }}</td>
                     <td>{{ child.item_type }}</td>
-                    <td>{{ child.pn_type }}</td>
                     <td>{{ child.qty }}</td>
                     <td class="bom-actions-cell">
                       <button type="button" class="danger-button" (click)="deleteBomChild(child)">Delete</button>
                     </td>
                   </tr>
                   <tr *ngIf="bomChildren.length === 0">
-                    <td colspan="7" class="routing-empty">No BOM childs found.</td>
+                    <td colspan="6" class="routing-empty">No BOM childs found.</td>
                   </tr>
                 </tbody>
               </table>
@@ -515,6 +517,14 @@
                 </div>
 
                 <div class="form-field">
+                  <label for="workflowBomItemType">Item Type</label>
+                  <select id="workflowBomItemType" formControlName="item_type">
+                    <option value="" disabled>Select item type</option>
+                    <option *ngFor="let itemType of bomItemTypeOptions" [value]="itemType">{{ itemType }}</option>
+                  </select>
+                </div>
+
+                <div class="form-field">
                   <label for="workflowBomStation">Assembly Station</label>
                   <select id="workflowBomStation" formControlName="station_code">
                     <option value="">Optional</option>
@@ -540,7 +550,7 @@
                 type="button"
                 class="save-childs-button"
                 [class.saved]="isBomChildrenSaved"
-                [disabled]="bomChildren.length === 0"
+                [disabled]="!canSaveBomChildren()"
                 (click)="saveBomChildren()"
               >
                 {{ getWorkflowActionLabel(isBomChildrenSaved, 'Save BOM', 'Update BOM') }}
@@ -834,7 +844,6 @@
             <th>Description</th>
             <th>Station</th>
             <th>Item Type</th>
-            <th>PN Type</th>
             <th>Qty</th>
           </tr>
         </thead>
@@ -844,7 +853,6 @@
             <td>{{ child.son_description }}</td>
             <td>{{ child.station_code }} - {{ child.station_name }}</td>
             <td>{{ child.item_type }}</td>
-            <td>{{ child.pn_type }}</td>
             <td>{{ child.qty }}</td>
           </tr>
         </tbody>
@@ -916,16 +924,6 @@
       </ng-template>
     </div>
 
-    <div class="station-modal-actions">
-      <button type="button" class="secondary-button pause-task-button" (click)="pausePreviewStation()">
-        <span class="material-symbols-outlined" aria-hidden="true">skip_next</span>
-        Skip
-      </button>
-      <button type="button" class="save-button complete-task-button" (click)="completePreviewStation()">
-        <span class="material-symbols-outlined" aria-hidden="true">check</span>
-        Passed
-      </button>
-    </div>
   </div>
 </div>
 

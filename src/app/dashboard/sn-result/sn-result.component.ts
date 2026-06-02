@@ -212,11 +212,11 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   getSnResultTabLabel(tabId: SnResultTab): string {
-    const rsnNumber = this.traceResult?.serial?.rsn || this.serialNumber;
+    const snNumber = this.serialNumber;
 
     return tabId === 'preview'
-      ? `SN Chart - ${rsnNumber}`
-      : `SN History - ${rsnNumber}`;
+      ? `SN Chart - ${snNumber}`
+      : `SN History - ${snNumber}`;
   }
 
   get serialNumber(): string {
@@ -476,11 +476,11 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       return true;
     }
 
-    if (eventType && eventType !== 'PASS' && eventType !== 'FAIL') {
+    if (eventType && eventType !== 'PASS') {
       return false;
     }
 
-    return result === 'PASS' || result === 'FAIL';
+    return result === 'PASS';
   }
 
   private shouldShowSnHistoryDisplayRow(row: SnHistoryDisplayRow): boolean {
@@ -490,7 +490,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       return false;
     }
 
-    return action.startsWith('PASS') || action.startsWith('FAIL') || action.startsWith('SN_GENERATED');
+    return action.startsWith('PASS') || action.startsWith('SN_GENERATED');
   }
 
   private hasGeneratedHistoryRow(rows: TraceHistoryRow[]): boolean {

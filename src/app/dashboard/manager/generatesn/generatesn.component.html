@@ -69,12 +69,11 @@
 
     <div *ngIf="sns.length" class="card generated-card">
       <h3>{{ woDetails?.balance ? 'Generated SNs' : 'Existing Generated SNs' }} ({{sns.length}})</h3>
-      <button class="secondary full-width track-main-btn" (click)="openTracker()">Open SN Tracker (First RSN/SN)</button>
+      <button class="secondary full-width track-main-btn" (click)="openTracker()">Open SN Tracker (First SN)</button>
       <div class="sn-list">
         <div *ngFor="let sn of sns; let i = index" class="sn-item">
           <div class="sn-row-head">{{i+1}}. SN: {{sn}}</div>
-          <div class="sn-row-rsn" *ngIf="getRsnAt(i)">RSN: {{ getRsnAt(i) }}</div>
-          <button class="secondary track-inline-btn" (click)="openTracker(getTrackSearchValue(i, sn))">Track</button>
+          <button class="secondary track-inline-btn" (click)="openTracker(sn)">Track</button>
         </div>
       </div>
       <button class="secondary full-width" (click)="copyAllSns()">Copy All to Clipboard</button>

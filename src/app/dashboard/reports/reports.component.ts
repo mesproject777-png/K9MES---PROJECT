@@ -109,13 +109,13 @@ export class ReportsComponent implements OnInit, AfterViewInit {
 
     const code = this.scanValue.trim();
     if (!code) {
-      this.errorMessage = 'Please scan SN or RSN';
+      this.errorMessage = 'Please scan SN';
       this.focusScanInput();
       return;
     }
 
     if (!/^[A-Za-z0-9_-]+$/.test(code)) {
-      this.errorMessage = 'Only SN or RSN values are allowed.';
+      this.errorMessage = 'Only SN values are allowed.';
       this.focusScanInput();
       return;
     }

@@ -103,7 +103,7 @@ export class LabelComponent implements OnInit, OnDestroy {
     { key: 'productName', label: 'Product Name' },
     { key: 'model', label: 'Model' },
     { key: 'partNumber', label: 'PN' },
-    { key: 'serialNumber', label: 'SN / RSN' },
+    { key: 'serialNumber', label: 'SN' },
     { key: 'workOrder', label: 'Work Order' },
     { key: 'revision', label: 'Revision' },
     { key: 'macId', label: 'MAC ID' },
@@ -387,12 +387,12 @@ export class LabelComponent implements OnInit, OnDestroy {
   searchRsn(): void {
     const query = this.rsnQuery.trim();
     if (!query) {
-      this.setMessage('Enter RSN / Serial Number.', 'error');
+      this.setMessage('Enter Serial Number.', 'error');
       return;
     }
 
     this.isSearchingRsn = true;
-    this.setMessage('Searching RSN / Serial Number...', 'info');
+    this.setMessage('Searching Serial Number...', 'info');
 
     this.traceabilityService.search(query).subscribe({
       next: (response) => {
@@ -405,7 +405,7 @@ export class LabelComponent implements OnInit, OnDestroy {
         if (!this.routingStations.length) {
           this.setMessage('No Routing Stations found for this Part Number.', 'error');
         } else {
-          this.setMessage('MES data loaded for RSN.', 'success');
+          this.setMessage('MES data loaded for SN.', 'success');
         }
 
         this.generatePreview();
@@ -416,7 +416,7 @@ export class LabelComponent implements OnInit, OnDestroy {
         this.selectedStationCode = '';
         this.mesData = this.createEmptyMesData();
         this.isSearchingRsn = false;
-        this.setMessage('No Work Order found for this RSN.', 'error');
+        this.setMessage('No Work Order found for this SN.', 'error');
         this.generatePreview();
       }
     });

@@ -1,4 +1,4 @@
-<form [formGroup]="loginForm" novalidate>
+<form [formGroup]="loginForm" (ngSubmit)="onSubmit()" novalidate>
       <!-- Left section of the form -->
       <div class="left">
         <div>
@@ -28,7 +28,7 @@
           <p *ngIf="errorMessage" class="login-error">{{ errorMessage }}</p>
 
           <!-- Login button -->
-          <button type="button" [disabled]="isSubmitting" (click)="onSubmit()">
+          <button type="submit" [disabled]="isSubmitting">
             {{ isSubmitting ? 'Logging in...' : 'Login' }}
           </button>
 

@@ -187,26 +187,12 @@ export class GenerateSnComponent implements OnInit, OnDestroy {
   }
 
   copyAllSns() {
-    const text = this.serialRows.length
-      ? this.serialRows.map((row) => `${row.sn} | ${row.rsn}`).join('\n')
-      : this.sns.join('\n');
+    const text = this.sns.join('\n');
 
     navigator.clipboard.writeText(text).then(() => {
-      this.message = this.serialRows.length ? 'SN + RSN copied!' : 'SNs copied!';
+      this.message = 'SNs copied!';
       this.success = true;
     });
-  }
-
-  getRsnAt(index: number): string {
-    if (index < 0 || index >= this.serialRows.length) {
-      return '';
-    }
-
-    return this.serialRows[index].rsn || '';
-  }
-
-  getTrackSearchValue(index: number, sn: string): string {
-    return this.getRsnAt(index) || sn;
   }
 
   openTracker(searchValue?: string): void {
@@ -221,10 +207,6 @@ export class GenerateSnComponent implements OnInit, OnDestroy {
   }
 
   private getFirstTraceValue(): string {
-    if (this.serialRows.length > 0) {
-      return this.serialRows[0].rsn || this.serialRows[0].sn || '';
-    }
-
     return this.sns[0] || '';
   }
 

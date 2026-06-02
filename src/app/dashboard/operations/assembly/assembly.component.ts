@@ -261,6 +261,7 @@ export class OperationsAssemblyComponent {
     const payload = {
       parent_query: this.parentContext.sn,
       child_query: childQuery,
+      station_code: String(this.selectedStage || this.parentContext.station_code || '').trim().toUpperCase(),
       changed_by: changedBy,
     };
 
