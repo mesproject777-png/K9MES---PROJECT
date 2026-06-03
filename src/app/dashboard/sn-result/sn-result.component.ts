@@ -82,6 +82,8 @@ type PreviewFlowNode = {
   station?: PreviewStationNode;
 };
 
+type LogisticsVariant = NonNullable<PreviewFlowNode['variant']>;
+
 type PreviewFlowRow = {
   nodes: PreviewFlowNode[];
   isReversed: boolean;
@@ -123,6 +125,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   previewFlowCardsPerRow = this.getPreviewFlowCardsPerRow();
   isChildDetailsOpen = false;
   activePreviewStation: PreviewStationNode | null = null;
+  activePreviewLogistics: PreviewFlowNode | null = null;
   previewStationStatusById: Record<number, PreviewStatus> = {};
 
   private readonly workflowApiUrl = `${environment.apiUrl}/api/workflow`;
@@ -342,6 +345,50 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return String(this.traceResult?.serial?.multibox_no || '').trim();
   }
 
+  get activePreviewStationPalletNo(): string {
+    if (!this.activePreviewStation || !this.isPackStation(this.activePreviewStation)) {
+      return '';
+    }
+
+    return String(this.traceResult?.serial?.pallet_no || '').trim();
+  }
+
+  get activePreviewStationShipmentNo(): string {
+    if (!this.activePreviewStation || !this.isPackStation(this.activePreviewStation)) {
+      return '';
+    }
+
+    return String(this.traceResult?.serial?.shipment_no || '').trim();
+  }
+
+  get activeLogisticsTitle(): string {
+    return this.activePreviewLogistics?.title || 'Packing';
+  }
+
+  get activeLogisticsIcon(): string {
+    return this.activePreviewLogistics?.icon || 'inventory_2';
+  }
+
+  get activeLogisticsStatus(): PreviewStatus {
+    return this.getLogisticsStatus(this.activePreviewLogistics?.variant);
+  }
+
+  get traceMultiboxNo(): string {
+    return String(this.traceResult?.serial?.multibox_no || '').trim();
+  }
+
+  get tracePalletNo(): string {
+    return String(this.traceResult?.serial?.pallet_no || '').trim();
+  }
+
+  get traceShipmentNo(): string {
+    return String(this.traceResult?.serial?.shipment_no || '').trim();
+  }
+
+  get isSerialShipped(): boolean {
+    return Boolean(this.traceShipmentNo);
+  }
+
   get previewStationStartTime(): string {
     return new Date().toLocaleString([], {
       year: 'numeric',
@@ -528,6 +575,29 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.activePreviewStation = null;
   }
 
+  openPreviewLogisticsDetails(event: Event, node: PreviewFlowNode): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.activePreviewLogistics = node;
+  }
+
+  closePreviewLogisticsDetails(): void {
+    this.activePreviewLogistics = null;
+  }
+
+  getLogisticsStatus(variant?: LogisticsVariant): PreviewStatus {
+    switch (variant) {
+      case 'cart':
+        return this.traceMultiboxNo ? 'Completed' : 'Pending';
+      case 'pallet':
+        return this.tracePalletNo ? 'Completed' : 'Pending';
+      case 'truck':
+        return this.traceShipmentNo ? 'Completed' : 'Pending';
+      default:
+        return 'Pending';
+    }
+  }
+
   pausePreviewStation(): void {
     this.setPreviewStationStatus('Paused');
   }
@@ -547,6 +617,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.previewStationStatusById = {};
     this.isChildDetailsOpen = false;
     this.activePreviewStation = null;
+    this.activePreviewLogistics = null;
 
     this.traceabilityService.search(serial).subscribe({
       next: (result) => {
@@ -638,7 +709,16 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       .map((step) => `${step.id}:${step.station_code}:${step.sample_mode}`)
       .join('|');
 
-    return `${this.activeTab}:${this.previewFlowCardsPerRow}:${flowIds}:${routeSignature}:${this.previewLoading}`;
+    return [
+      this.activeTab,
+      this.previewFlowCardsPerRow,
+      flowIds,
+      routeSignature,
+      this.traceMultiboxNo,
+      this.tracePalletNo,
+      this.traceShipmentNo,
+      this.previewLoading,
+    ].join(':');
   }
 
   private queuePreviewConnectorRefresh(): void {

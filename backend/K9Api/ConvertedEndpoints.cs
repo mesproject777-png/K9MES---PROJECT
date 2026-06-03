@@ -2327,6 +2327,53 @@ public static class ConvertedEndpoints
         app.MapGet("/api/packing/closed", async () => await ListPackagesAsync("CLOSED"));
         app.MapGet("/api/packing/shipped", async () => await ListPackagesAsync("SHIPPED"));
         app.MapGet("/api/packing/multibox/{boxNo}", async (string boxNo) => await GetMultiboxPackageDetailsAsync(boxNo));
+        app.MapGet("/api/packing/hierarchy", async (HttpRequest request) =>
+        {
+            var query = request.Query["query"].ToString().Trim();
+            await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT
+                  sn.id AS serial_id,
+                  sn.sn,
+                  sn.rsn,
+                  sn.status AS serial_status,
+                  sn.condition,
+                  wp.pn,
+                  w.wo,
+                  b.box_no AS multibox_no,
+                  b.status AS multibox_status,
+                  p.pallet_no,
+                  p.status AS pallet_status,
+                  s.shipment_no,
+                  s.status AS shipment_status,
+                  COALESCE(si.added_at, pi.added_at, mbi.added_at, sn.updated_at, sn.created_at) AS last_packed_at
+                FROM workflow_serial_numbers sn
+                JOIN workflow_part_numbers wp ON wp.id = sn.workflow_part_id
+                LEFT JOIN workflow_work_orders w ON w.id = sn.workflow_work_order_id
+                LEFT JOIN workflow_multibox_items mbi ON mbi.workflow_serial_id = sn.id
+                LEFT JOIN workflow_multiboxes b ON b.id = mbi.box_id
+                LEFT JOIN workflow_pallet_items pi ON pi.box_id = b.id
+                LEFT JOIN workflow_pallets p ON p.id = pi.pallet_id
+                LEFT JOIN workflow_shipment_items si ON si.pallet_id = p.id
+                LEFT JOIN workflow_shipments s ON s.id = si.shipment_id
+                WHERE NULLIF(@query, '') IS NULL
+                   OR sn.sn ILIKE @pattern
+                   OR sn.rsn ILIKE @pattern
+                   OR wp.pn ILIKE @pattern
+                   OR w.wo ILIKE @pattern
+                   OR b.box_no ILIKE @pattern
+                   OR p.pallet_no ILIKE @pattern
+                   OR s.shipment_no ILIKE @pattern
+                ORDER BY COALESCE(si.added_at, pi.added_at, mbi.added_at, sn.updated_at, sn.created_at) DESC, sn.id DESC
+                LIMIT 500
+                """,
+                ("query", query),
+                ("pattern", $"%{query}%"));
+            return Results.Json(new { data = rows });
+        });
 
         app.MapPost("/api/packing/create", async (HttpContext context) =>
         {
@@ -3503,15 +3550,21 @@ public static class ConvertedEndpoints
         var multiboxRows = await QueryRowsAsync(
             connection,
             """
-            SELECT b.box_no
+            SELECT b.box_no, p.pallet_no, s.shipment_no
             FROM workflow_multibox_items i
             JOIN workflow_multiboxes b ON b.id = i.box_id
+            LEFT JOIN workflow_pallet_items pi ON pi.box_id = b.id
+            LEFT JOIN workflow_pallets p ON p.id = pi.pallet_id
+            LEFT JOIN workflow_shipment_items si ON si.pallet_id = p.id
+            LEFT JOIN workflow_shipments s ON s.id = si.shipment_id
             WHERE i.workflow_serial_id = @serialId
             ORDER BY i.added_at DESC, i.id DESC
             LIMIT 1
             """,
             ("serialId", serial["id"]));
         var multiboxNo = multiboxRows.Count > 0 ? multiboxRows[0]["box_no"] : null;
+        var palletNo = multiboxRows.Count > 0 ? multiboxRows[0]["pallet_no"] : null;
+        var shipmentNo = multiboxRows.Count > 0 ? multiboxRows[0]["shipment_no"] : null;
         var history = await QueryRowsAsync(
             connection,
             """
@@ -3576,7 +3629,9 @@ public static class ConvertedEndpoints
                 created_at = serial["created_at"],
                 updated_at = serial["updated_at"],
                 last_moved_at = serial["last_moved_at"],
-                multibox_no = multiboxNo
+                multibox_no = multiboxNo,
+                pallet_no = palletNo,
+                shipment_no = shipmentNo
             },
             device = new
             {
@@ -5957,6 +6012,64 @@ public static class ConvertedEndpoints
         await ExecuteAsync(
             connection,
             """
+            CREATE TABLE IF NOT EXISTS public.workflow_pallets (
+              id BIGSERIAL PRIMARY KEY,
+              pallet_no VARCHAR(80) NOT NULL UNIQUE,
+              workflow_part_id INTEGER REFERENCES workflow_part_numbers(id) ON DELETE SET NULL,
+              workflow_work_order_id INTEGER REFERENCES workflow_work_orders(id) ON DELETE SET NULL,
+              status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED', 'SHIPPED')),
+              created_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              closed_at TIMESTAMP
+            )
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_pallet_items (
+              id BIGSERIAL PRIMARY KEY,
+              pallet_id BIGINT NOT NULL REFERENCES workflow_pallets(id) ON DELETE CASCADE,
+              box_id BIGINT NOT NULL REFERENCES workflow_multiboxes(id) ON DELETE RESTRICT,
+              added_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              added_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_pallet_box UNIQUE (box_id),
+              CONSTRAINT uq_workflow_pallet_item UNIQUE (pallet_id, box_id)
+            )
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_shipments (
+              id BIGSERIAL PRIMARY KEY,
+              shipment_no VARCHAR(80) NOT NULL UNIQUE,
+              status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED', 'SHIPPED')),
+              created_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              shipped_at TIMESTAMP
+            )
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_shipment_items (
+              id BIGSERIAL PRIMARY KEY,
+              shipment_id BIGINT NOT NULL REFERENCES workflow_shipments(id) ON DELETE CASCADE,
+              pallet_id BIGINT NOT NULL REFERENCES workflow_pallets(id) ON DELETE RESTRICT,
+              added_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              added_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_shipment_pallet UNIQUE (pallet_id),
+              CONSTRAINT uq_workflow_shipment_item UNIQUE (shipment_id, pallet_id)
+            )
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
             CREATE TABLE IF NOT EXISTS public.workflow_serial_bom_bindings (
               id BIGSERIAL PRIMARY KEY,
               parent_workflow_serial_id BIGINT NOT NULL REFERENCES workflow_serial_numbers(id) ON DELETE CASCADE,
@@ -5983,6 +6096,8 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_serial ON public.workflow_serial_station_logs (workflow_serial_id, created_at DESC)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_station ON public.workflow_serial_station_logs (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_multiboxes_open ON public.workflow_multiboxes (workflow_part_id, workflow_work_order_id, status)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_pallet_items_pallet ON public.workflow_pallet_items (pallet_id)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_shipment_items_shipment ON public.workflow_shipment_items (shipment_id)");
     }
 
     private static async Task EnsureWorkflowStationLoginsTableAsync(NpgsqlConnection connection)

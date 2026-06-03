@@ -53,6 +53,23 @@ export interface PackingPackageDetailsResponse {
   items: PackingPackageItem[];
 }
 
+export interface PackingHierarchyRow {
+  serial_id: number;
+  sn: string;
+  rsn: string;
+  serial_status: string;
+  condition: string;
+  pn: string;
+  wo: string;
+  multibox_no?: string | null;
+  multibox_status?: string | null;
+  pallet_no?: string | null;
+  pallet_status?: string | null;
+  shipment_no?: string | null;
+  shipment_status?: string | null;
+  last_packed_at?: string | null;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -71,6 +88,13 @@ export class PackingService {
 
   listShipped(): Observable<{ data: PackingPackageSummary[] }> {
     return this.http.get<{ data: PackingPackageSummary[] }>(`${this.apiUrl}/shipped`);
+  }
+
+  listHierarchy(query = ''): Observable<{ data: PackingHierarchyRow[] }> {
+    const url = query.trim()
+      ? `${this.apiUrl}/hierarchy?query=${encodeURIComponent(query.trim())}`
+      : `${this.apiUrl}/hierarchy`;
+    return this.http.get<{ data: PackingHierarchyRow[] }>(url);
   }
 
   createPackage(packageType: PackageType, changedBy: string): Observable<{ data: PackingPackageSummary }> {

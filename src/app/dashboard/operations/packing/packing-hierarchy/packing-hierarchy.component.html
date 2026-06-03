@@ -1,0 +1,74 @@
+<div class="hierarchy-page">
+  <div class="hierarchy-header">
+    <div>
+      <h2>Packing Hierarchy</h2>
+      <p>Track each product SN through Multibox, Pallet, and Shipment.</p>
+    </div>
+
+    <form class="hierarchy-search" (ngSubmit)="load()">
+      <input
+        type="search"
+        name="packingHierarchySearch"
+        [(ngModel)]="query"
+        placeholder="Search SN, RSN, WO, PN, multibox, pallet, shipment"
+      />
+      <button type="submit" class="primary-button" [disabled]="isLoading">Search</button>
+      <button type="button" class="secondary-button" (click)="clear()" [disabled]="isLoading || !query">Clear</button>
+    </form>
+  </div>
+
+  <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+  <p *ngIf="isLoading" class="message">Loading packing hierarchy...</p>
+
+  <div class="rules-strip">
+    <span>SN/Box -> Multibox/Pallet/Shipment</span>
+    <span>Multibox -> Pallet/Shipment</span>
+    <span>Pallet -> Shipment</span>
+    <span>Shipment is final</span>
+  </div>
+
+  <div class="table-card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>SN</th>
+            <th>RSN</th>
+            <th>PN</th>
+            <th>WO</th>
+            <th>SN Status</th>
+            <th>Multibox</th>
+            <th>Pallet</th>
+            <th>Shipment</th>
+            <th>Last Packed</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of rows">
+            <td>{{ row.sn }}</td>
+            <td>{{ row.rsn || '-' }}</td>
+            <td>{{ row.pn || '-' }}</td>
+            <td>{{ row.wo || '-' }}</td>
+            <td><span class="status" [class]="statusClass(row.serial_status)">{{ row.serial_status || '-' }}</span></td>
+            <td>
+              <strong>{{ row.multibox_no || '-' }}</strong>
+              <small *ngIf="row.multibox_no">{{ row.multibox_status || '-' }}</small>
+            </td>
+            <td>
+              <strong>{{ row.pallet_no || '-' }}</strong>
+              <small *ngIf="row.pallet_no">{{ row.pallet_status || '-' }}</small>
+            </td>
+            <td>
+              <strong>{{ row.shipment_no || '-' }}</strong>
+              <small *ngIf="row.shipment_no">{{ row.shipment_status || '-' }}</small>
+            </td>
+            <td>{{ row.last_packed_at | date:'yyyy-MM-dd HH:mm' }}</td>
+          </tr>
+          <tr *ngIf="!isLoading && rows.length === 0">
+            <td colspan="9" class="empty">No packing hierarchy records found.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

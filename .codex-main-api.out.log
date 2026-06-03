@@ -1,7 +1,3 @@
-
-> k9@0.0.0 start:api
-> dotnet run --project backend/K9Api
-
 Using launch settings from backend\K9Api\Properties\launchSettings.json...
 Building...
 info: Microsoft.Hosting.Lifetime[14]
@@ -12,3 +8,65 @@ info: Microsoft.Hosting.Lifetime[0]
       Hosting environment: Development
 info: Microsoft.Hosting.Lifetime[0]
       Content root path: C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api
+fail: Microsoft.AspNetCore.Diagnostics.DeveloperExceptionPageMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Npgsql.PostgresException (0x80004005): 42P08: could not determine data type of parameter $2
+      
+      POSITION: 381
+         at Npgsql.Internal.NpgsqlConnector.ReadMessageLong(Boolean async, DataRowLoadingMode dataRowLoadingMode, Boolean readingNotifications, Boolean isReadingPrependedMessage)
+         at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+         at Npgsql.NpgsqlDataReader.NextResult(Boolean async, Boolean isConsuming, CancellationToken cancellationToken)
+         at Npgsql.NpgsqlDataReader.NextResult(Boolean async, Boolean isConsuming, CancellationToken cancellationToken)
+         at Npgsql.NpgsqlCommand.ExecuteReader(Boolean async, CommandBehavior behavior, CancellationToken cancellationToken)
+         at Npgsql.NpgsqlCommand.ExecuteReader(Boolean async, CommandBehavior behavior, CancellationToken cancellationToken)
+         at ConvertedEndpoints.QueryRowsAsync(NpgsqlConnection connection, String sql, ValueTuple`2[] parameters) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 6376
+         at ConvertedEndpoints.QueryRowsAsync(NpgsqlConnection connection, String sql, ValueTuple`2[] parameters) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 6383
+         at ConvertedEndpoints.FindWorkflowStationLoginConflictAsync(NpgsqlConnection connection, String loginId, Nullable`1 excludeLoginRowId, Nullable`1 excludeRoutingStepId, Nullable`1 excludeWorkflowPartId) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 6188
+         at ConvertedEndpoints.SaveWorkflowSnapshotAsync(HttpContext context) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 4039
+         at ConvertedEndpoints.SaveWorkflowSnapshotAsync(HttpContext context) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 4236
+         at ConvertedEndpoints.SaveWorkflowSnapshotAsync(HttpContext context) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 4237
+         at ConvertedEndpoints.SaveWorkflowSnapshotAsync(HttpContext context) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 4237
+         at ConvertedEndpoints.<>c.<<MapWorkflow>b__20_5>d.MoveNext() in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 1748
+      --- End of stack trace from previous location ---
+         at Program.<>c.<<<Main>$>b__0_27>d.MoveNext() in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\Program.cs:line 1153
+      --- End of stack trace from previous location ---
+         at Microsoft.AspNetCore.Diagnostics.DeveloperExceptionPageMiddlewareImpl.Invoke(HttpContext context)
+        Exception data:
+          Severity: ERROR
+          SqlState: 42P08
+          MessageText: could not determine data type of parameter $2
+          Position: 381
+          File: parse_param.c
+          Line: 312
+          Routine: check_parameter_resolution_walker
+fail: Microsoft.AspNetCore.Diagnostics.DeveloperExceptionPageMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Npgsql.PostgresException (0x80004005): 42P08: could not determine data type of parameter $2
+      
+      POSITION: 381
+         at Npgsql.Internal.NpgsqlConnector.ReadMessageLong(Boolean async, DataRowLoadingMode dataRowLoadingMode, Boolean readingNotifications, Boolean isReadingPrependedMessage)
+         at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+         at Npgsql.NpgsqlDataReader.NextResult(Boolean async, Boolean isConsuming, CancellationToken cancellationToken)
+         at Npgsql.NpgsqlDataReader.NextResult(Boolean async, Boolean isConsuming, CancellationToken cancellationToken)
+         at Npgsql.NpgsqlCommand.ExecuteReader(Boolean async, CommandBehavior behavior, CancellationToken cancellationToken)
+         at Npgsql.NpgsqlCommand.ExecuteReader(Boolean async, CommandBehavior behavior, CancellationToken cancellationToken)
+         at ConvertedEndpoints.QueryRowsAsync(NpgsqlConnection connection, String sql, ValueTuple`2[] parameters) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 6376
+         at ConvertedEndpoints.QueryRowsAsync(NpgsqlConnection connection, String sql, ValueTuple`2[] parameters) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 6383
+         at ConvertedEndpoints.FindWorkflowStationLoginConflictAsync(NpgsqlConnection connection, String loginId, Nullable`1 excludeLoginRowId, Nullable`1 excludeRoutingStepId, Nullable`1 excludeWorkflowPartId) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 6188
+         at ConvertedEndpoints.SaveWorkflowSnapshotAsync(HttpContext context) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 4039
+         at ConvertedEndpoints.SaveWorkflowSnapshotAsync(HttpContext context) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 4236
+         at ConvertedEndpoints.SaveWorkflowSnapshotAsync(HttpContext context) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 4237
+         at ConvertedEndpoints.SaveWorkflowSnapshotAsync(HttpContext context) in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 4237
+         at ConvertedEndpoints.<>c.<<MapWorkflow>b__20_5>d.MoveNext() in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\ConvertedEndpoints.cs:line 1748
+      --- End of stack trace from previous location ---
+         at Program.<>c.<<<Main>$>b__0_27>d.MoveNext() in C:\Users\venka\OneDrive\My Projects\K9MES-OP\K9MES---PROJECT\backend\K9Api\Program.cs:line 1153
+      --- End of stack trace from previous location ---
+         at Microsoft.AspNetCore.Diagnostics.DeveloperExceptionPageMiddlewareImpl.Invoke(HttpContext context)
+        Exception data:
+          Severity: ERROR
+          SqlState: 42P08
+          MessageText: could not determine data type of parameter $2
+          Position: 381
+          File: parse_param.c
+          Line: 312
+          Routine: check_parameter_resolution_walker

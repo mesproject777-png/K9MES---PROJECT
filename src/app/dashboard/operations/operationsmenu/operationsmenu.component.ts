@@ -43,6 +43,13 @@ export class OperationsmenuComponent {
       description: 'Track shipped packages.',
       icon: 'local_shipping',
       route: '/dashboard/operations/packing/shipped'
+    },
+    {
+      id: 'hlOperationsPackingHierarchy',
+      title: 'Packing Hierarchy',
+      description: 'View SN to multibox, pallet, and shipment state.',
+      icon: 'account_tree',
+      route: '/dashboard/operations/packing/hierarchy'
     }
   ];
 }

@@ -1,0 +1,182 @@
+.hierarchy-page {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.hierarchy-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hierarchy-header h2 {
+  margin: 0;
+  color: #102a43;
+  font-size: 1.45rem;
+}
+
+.hierarchy-header p {
+  margin: 5px 0 0;
+  color: #52677d;
+  font-weight: 700;
+}
+
+.hierarchy-search {
+  display: flex;
+  flex: 0 1 720px;
+  gap: 8px;
+}
+
+.hierarchy-search input {
+  min-width: 260px;
+  flex: 1;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #c8d8e8;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.primary-button,
+.secondary-button {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.primary-button {
+  border: 1px solid #0d72df;
+  background: #0d72df;
+  color: #ffffff;
+}
+
+.secondary-button {
+  border: 1px solid #c8d8e8;
+  background: #ffffff;
+  color: #102a43;
+}
+
+.rules-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rules-strip span {
+  padding: 7px 10px;
+  border: 1px solid #d6e4f2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #24445f;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.message {
+  margin: 0;
+  color: #425d78;
+  font-weight: 800;
+}
+
+.message.error {
+  color: #b42318;
+}
+
+.table-card {
+  padding: 12px;
+  border: 1px solid #d8e3f0;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(16, 42, 67, 0.08);
+}
+
+.table-wrap {
+  overflow: auto;
+  border: 1px solid #d8e3f0;
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e8eef6;
+  color: #102a43;
+  text-align: left;
+  white-space: nowrap;
+}
+
+th {
+  background: #f2f7fd;
+  color: #153463;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+td {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+td small {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.status {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #edf2f7;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.status.completed,
+.status.closed,
+.status.shipped {
+  background: #e0f5e9;
+  color: #118344;
+}
+
+.status.failed {
+  background: #fee2e2;
+  color: #b42318;
+}
+
+.empty {
+  color: #7a8da3;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .hierarchy-header,
+  .hierarchy-search {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hierarchy-search {
+    flex-basis: auto;
+  }
+
+  .hierarchy-search input,
+  .primary-button,
+  .secondary-button {
+    width: 100%;
+  }
+}

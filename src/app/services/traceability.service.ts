@@ -16,6 +16,8 @@ export interface TraceSerial {
   updated_at: string;
   last_moved_at: string | null;
   multibox_no?: string | null;
+  pallet_no?: string | null;
+  shipment_no?: string | null;
 }
 
 export interface TraceDevice {

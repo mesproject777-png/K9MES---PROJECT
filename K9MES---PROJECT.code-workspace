@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"name": "K9MES---PROJECT",
+			"path": "."
+		},
+		{
+			"path": "../K9Operator"
+		}
+	],
+	"settings": {}
+}

@@ -199,21 +199,35 @@
                         <strong>{{ node.title }}</strong>
                       </div>
 
-                      <div
+                      <button
                         *ngSwitchCase="'logistics'"
                         #previewFlowNode
+                        type="button"
                         class="logistics-node flow-card"
                         [attr.data-flow-id]="node.id"
                         [class.cart-node]="node.variant === 'cart'"
                         [class.pallet-node]="node.variant === 'pallet'"
                         [class.truck-node]="node.variant === 'truck'"
+                        [class.completed]="getLogisticsStatus(node.variant) === 'Completed'"
+                        [class.pending]="getLogisticsStatus(node.variant) === 'Pending'"
+                        [class.shipped-node]="node.variant === 'truck' && isSerialShipped"
+                        [class.selected]="activePreviewLogistics?.id === node.id"
+                        (pointerdown)="openPreviewLogisticsDetails($event, node)"
+                        (click)="openPreviewLogisticsDetails($event, node)"
                       >
                         <span class="logistics-icon material-symbols-outlined" aria-hidden="true">
                           {{ node.icon }}
                         </span>
                         <strong>{{ node.title }}</strong>
                         <small *ngIf="node.subtitle">{{ node.subtitle }}</small>
-                      </div>
+                        <small
+                          class="logistics-status"
+                          [class.completed]="getLogisticsStatus(node.variant) === 'Completed'"
+                          [class.pending]="getLogisticsStatus(node.variant) === 'Pending'"
+                        >
+                          {{ getLogisticsStatus(node.variant) === 'Completed' ? 'Passed' : 'Pending' }}
+                        </small>
+                      </button>
                     </ng-container>
 
                     <span class="flow-line" *ngIf="i < row.nodes.length - 1" aria-hidden="true"></span>
@@ -320,6 +334,58 @@
   </div>
 </div>
 
+<div *ngIf="activePreviewLogistics as logistics" class="preview-popup-backdrop station-popup-backdrop">
+  <div class="preview-station-modal" role="dialog" aria-modal="true" aria-labelledby="previewLogisticsTitle">
+    <div class="station-modal-top">
+      <span class="station-modal-icon-wrap" aria-hidden="true">
+        <span class="station-modal-icon material-symbols-outlined">{{ activeLogisticsIcon }}</span>
+        <span class="station-modal-gear material-symbols-outlined">inventory_management</span>
+      </span>
+      <div>
+        <h3 id="previewLogisticsTitle">{{ activeLogisticsTitle }}</h3>
+      </div>
+      <button type="button" class="icon-close-button" aria-label="Close packing details" (click)="closePreviewLogisticsDetails()">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+
+    <dl class="station-detail-list">
+      <div>
+        <dt>Part Number</dt>
+        <dd>{{ partNumber }}</dd>
+      </div>
+      <div>
+        <dt>Work Order</dt>
+        <dd>{{ workOrderNumber }}</dd>
+      </div>
+      <div>
+        <dt>Status</dt>
+        <dd>{{ activeLogisticsStatus === 'Completed' ? 'Passed' : activeLogisticsStatus }}</dd>
+      </div>
+      <div *ngIf="logistics.variant === 'cart'">
+        <dt>MultiBox</dt>
+        <dd>{{ traceMultiboxNo || '-' }}</dd>
+      </div>
+      <div *ngIf="logistics.variant === 'cart'">
+        <dt>Pallet</dt>
+        <dd>{{ tracePalletNo || '-' }}</dd>
+      </div>
+      <div *ngIf="logistics.variant === 'pallet'">
+        <dt>Pallet</dt>
+        <dd>{{ tracePalletNo || '-' }}</dd>
+      </div>
+      <div *ngIf="logistics.variant === 'pallet'">
+        <dt>Shipment</dt>
+        <dd>{{ traceShipmentNo || '-' }}</dd>
+      </div>
+      <div *ngIf="logistics.variant === 'truck'">
+        <dt>Shipment</dt>
+        <dd>{{ traceShipmentNo || '-' }}</dd>
+      </div>
+    </dl>
+  </div>
+</div>
+
 <div *ngIf="activePreviewStation as station" class="preview-popup-backdrop station-popup-backdrop">
   <div class="preview-station-modal" role="dialog" aria-modal="true" aria-labelledby="previewStationTitle">
     <div class="station-modal-top">
@@ -351,6 +417,14 @@
       <div *ngIf="activePreviewStationMultiboxNo">
         <dt>MultiBox</dt>
         <dd>{{ activePreviewStationMultiboxNo }}</dd>
+      </div>
+      <div *ngIf="activePreviewStationPalletNo">
+        <dt>Pallet</dt>
+        <dd>{{ activePreviewStationPalletNo }}</dd>
+      </div>
+      <div *ngIf="activePreviewStationShipmentNo">
+        <dt>Shipment</dt>
+        <dd>{{ activePreviewStationShipmentNo }}</dd>
       </div>
       <div>
         <dt>Operator</dt>
