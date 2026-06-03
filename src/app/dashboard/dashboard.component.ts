@@ -1,7 +1,9 @@
 import { Component } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { AuthService, AuthUser } from '../services/auth.service';
 import { PackingService } from '../services/packing.service';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-dashboard',
@@ -13,11 +15,13 @@ export class DashboardComponent {
   currentUser: AuthUser | null = null;
   isProfileMenuOpen = false;
   headerSearch = '';
+  private readonly reportsApi = `${environment.apiUrl}/api/reports/work-order-tree`;
 
   constructor(
     private authService: AuthService,
     private router: Router,
-    private packingService: PackingService
+    private packingService: PackingService,
+    private http: HttpClient
   ) {
     this.currentUser = this.authService.getCurrentUser();
 
@@ -71,8 +75,18 @@ export class DashboardComponent {
       return;
     }
 
-    this.router.navigate(['/dashboard/sn-result'], {
-      queryParams: { q: serialNumber, t: Date.now() },
+    const params = new HttpParams().set('wo', serialNumber);
+    this.http.get(this.reportsApi, { params }).subscribe({
+      next: () => {
+        this.router.navigate(['/dashboard/reports'], {
+          queryParams: { wo: serialNumber, t: Date.now() },
+        });
+      },
+      error: () => {
+        this.router.navigate(['/dashboard/sn-result'], {
+          queryParams: { q: serialNumber, t: Date.now() },
+        });
+      }
     });
   }
 

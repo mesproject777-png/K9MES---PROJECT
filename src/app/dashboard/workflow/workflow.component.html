@@ -484,6 +484,7 @@
                     <td>{{ child.item_type }}</td>
                     <td>{{ child.qty }}</td>
                     <td class="bom-actions-cell">
+                      <button type="button" class="secondary-button" (click)="editBomChild(child)">Edit</button>
                       <button type="button" class="danger-button" (click)="deleteBomChild(child)">Delete</button>
                     </td>
                   </tr>
@@ -677,13 +678,9 @@
                 </div>
 
                 <div class="preview-node hierarchy-node product-node">
-                  <span class="product-title">Product</span>
-                  <span class="product-visual" aria-hidden="true">
-                    <span class="product-shaft"></span>
-                    <span class="product-hub left"></span>
-                    <span class="product-hub right"></span>
-                    <span class="product-cap left"></span>
-                    <span class="product-cap right"></span>
+                  <span class="preview-node-copy">
+                    <strong>Total devices</strong>
+                    <small>{{ previewTotalDevicesCount }} SN</small>
                   </span>
                 </div>
 
@@ -748,6 +745,10 @@
                           [class.completed]="node.station?.status === 'Passed'"
                           [class.paused]="node.station?.status === 'Skipped'"
                           [class.pending]="node.station?.status === 'Pending'"
+                          [class.high-sn-alert]="isHighSnCountStation(node.station)"
+                          [style.background]="isHighSnCountStation(node.station) ? '#fecaca' : null"
+                          [style.border-color]="isHighSnCountStation(node.station) ? '#dc2626' : null"
+                          [style.animation]="isHighSnCountStation(node.station) ? 'stationVibrate .35s linear infinite' : null"
                           (pointerdown)="openPreviewStationDetails($event, node.station)"
                           (click)="openPreviewStationDetails($event, node.station)"
                         >
@@ -756,8 +757,11 @@
                               {{ node.station?.icon }}
                             </span>
                             <strong>{{ node.station?.station_code || node.station?.station_name }}</strong>
-                            <small [class]="node.station ? getPreviewStatusClass(node.station.status) : ''">
-                              {{ node.station?.status }}
+                            <small
+                              class="sn-count"
+                              [class.high]="isHighSnCountStation(node.station)"
+                            >
+                              {{ getPreviewStationSnCountLabel(node.station) }}
                             </small>
                           </span>
                         </button>

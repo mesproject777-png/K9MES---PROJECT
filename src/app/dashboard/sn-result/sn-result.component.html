@@ -116,13 +116,12 @@
                 </span>
               </div>
 
-              <div class="preview-node hierarchy-node box-node">
+              <button type="button" class="preview-node hierarchy-node box-node" (click)="openAssembledParts()">
                 <span class="preview-node-icon box-icon material-symbols-outlined" aria-hidden="true">inventory_2</span>
                 <span class="preview-node-copy">
                   <strong>Assembled parts</strong>
-                  <small>{{ boxRightLabel }}</small>
                 </span>
-              </div>
+              </button>
             </div>
           </div>
 
@@ -267,12 +266,34 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let history of snHistoryDisplayRows">
+              <tr
+                *ngFor="let history of snHistoryDisplayRows; trackBy: trackByHistory"
+                [class.binding-history-row]="history.isBinding"
+              >
                 <td>{{ history.stationCode }}</td>
                 <td>{{ history.stationLoginId }}</td>
                 <td>{{ history.date }}</td>
                 <td>{{ history.time }}</td>
-                <td>{{ history.actionDescription }}</td>
+                <td>
+                  <ng-container *ngIf="history.linkSerial; else defaultHistoryAction">
+                    <span>{{ history.actionDescription }}</span>
+                    <button
+                      type="button"
+                      class="history-sn-link"
+                      [class.father-link]="history.linkRole === 'father'"
+                      [class.child-link]="history.linkRole === 'child'"
+                      (click)="openLinkedSerial(history.linkSerial)"
+                    >
+                      {{ history.linkLabel || history.linkSerial }}
+                    </button>
+                    <span *ngIf="history.relatedPart">
+                      ({{ history.relatedPart }}<ng-container *ngIf="history.relatedRevision"> / {{ history.relatedRevision }}</ng-container>)
+                    </span>
+                  </ng-container>
+                  <ng-template #defaultHistoryAction>
+                    {{ history.actionDescription }}
+                  </ng-template>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -305,20 +326,16 @@
         <thead>
           <tr>
             <th>Child PN</th>
-            <th>Description</th>
             <th>Station</th>
             <th>Item Type</th>
-            <th>PN Type</th>
             <th>Qty</th>
           </tr>
         </thead>
         <tbody>
           <tr *ngFor="let child of bomChildren">
             <td>{{ child.son_pn }}</td>
-            <td>{{ child.son_description || child.son_pn }}</td>
             <td>{{ child.station_code }} - {{ child.station_name }}</td>
             <td>{{ child.item_type || '-' }}</td>
-            <td>{{ child.pn_type || '-' }}</td>
             <td>{{ child.qty }}</td>
           </tr>
         </tbody>
@@ -383,6 +400,57 @@
         <dd>{{ traceShipmentNo || '-' }}</dd>
       </div>
     </dl>
+  </div>
+</div>
+
+<div *ngIf="isAssembledPartsOpen" class="preview-popup-backdrop">
+  <div class="preview-child-modal" role="dialog" aria-modal="true" aria-labelledby="assembledPartsTitle">
+    <div class="preview-popup-header">
+      <div>
+        <h3 id="assembledPartsTitle">Assembled Parts</h3>
+        <p>{{ serialNumber }}</p>
+      </div>
+      <button type="button" class="icon-close-button" aria-label="Close assembled parts" (click)="closeAssembledParts()">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+
+    <div class="preview-child-summary">
+      <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+      <strong>{{ assembledPartsSummary }}</strong>
+      <small>{{ partNumber }}</small>
+    </div>
+
+    <div class="preview-child-table assembled-parts-table" *ngIf="assembledParts.length > 0; else noAssembledParts">
+      <table>
+        <thead>
+          <tr>
+            <th>PN</th>
+            <th>Son SN Number</th>
+            <th>PN Type</th>
+            <th>Station</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let part of assembledParts">
+            <td>{{ part.pn || '-' }}</td>
+            <td>{{ part.son_sn || '-' }}</td>
+            <td>{{ part.pn_type || '-' }}</td>
+            <td>
+              {{ part.station_code || '-' }}
+              <span *ngIf="part.station_name"> - {{ part.station_name }}</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ng-template #noAssembledParts>
+      <div class="preview-empty-popup">
+        <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+        <strong>No assembled parts found.</strong>
+      </div>
+    </ng-template>
   </div>
 </div>
 

@@ -888,6 +888,7 @@ button.preview-node:focus-visible {
 
 .truck-node .logistics-icon {
   color: #2e7d46;
+  transform: scaleX(-1);
 }
 
 .truck-node.shipped-node {
@@ -1047,6 +1048,53 @@ button.preview-node:focus-visible {
   font-size: 0.8rem;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.binding-history-row {
+  background: #fffdf3;
+}
+
+.binding-history-row td {
+  border-bottom-color: #f3deb2;
+}
+
+.history-sn-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  margin: 0 6px;
+  padding: 4px 10px;
+  border: 1px solid #b8d5ff;
+  border-radius: 8px;
+  background: #eaf4ff;
+  color: #0758b8;
+  font: inherit;
+  font-weight: 900;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.history-sn-link:hover,
+.history-sn-link:focus-visible {
+  outline: none;
+  border-color: #0d61c8;
+  background: #ddecff;
+  box-shadow: 0 0 0 3px rgba(13, 97, 200, 0.14);
+}
+
+.history-sn-link.father-link {
+  border-color: #f5c66f;
+  background: #fff4d8;
+  color: #8a5200;
+}
+
+.history-sn-link.father-link:hover,
+.history-sn-link.father-link:focus-visible {
+  border-color: #d18400;
+  background: #ffe8ac;
+  box-shadow: 0 0 0 3px rgba(209, 132, 0, 0.14);
 }
 
 .result-chip {

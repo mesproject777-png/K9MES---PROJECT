@@ -9,16 +9,15 @@
       </div>
 
       <form class="header-search" aria-label="Search" (submit)="searchSerialNumber($event)">
-        <button type="submit" class="header-search-button" aria-label="Search serial number" (click)="searchSerialNumber($event)">
+        <button type="submit" class="header-search-button" aria-label="Search serial number or work order">
           <span class="material-symbols-outlined">search</span>
         </button>
         <input
           type="search"
           [(ngModel)]="headerSearch"
           name="headerSearch"
-          (keydown.enter)="searchSerialNumber($event)"
           (search)="onHeaderSearchInput()"
-          placeholder="Search Serial Number..."
+          placeholder="Search Serial Number or Work Order..."
           autocomplete="off"
         />
       </form>

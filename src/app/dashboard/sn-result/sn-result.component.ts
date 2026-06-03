@@ -17,6 +17,7 @@ import { Subscription } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   TraceabilityService,
+  TraceAssembledPart,
   TraceHistoryRow,
   TraceSearchResponse,
 } from '../../services/traceability.service';
@@ -91,11 +92,18 @@ type PreviewFlowRow = {
 };
 
 type SnHistoryDisplayRow = {
+  id: string;
   stationCode: string;
   stationLoginId: string;
   date: string;
   time: string;
   actionDescription: string;
+  linkSerial?: string;
+  linkLabel?: string;
+  linkRole?: 'father' | 'child';
+  relatedPart?: string;
+  relatedRevision?: string;
+  isBinding?: boolean;
 };
 
 @Component({
@@ -124,6 +132,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   previewConnectorHeight = 0;
   previewFlowCardsPerRow = this.getPreviewFlowCardsPerRow();
   isChildDetailsOpen = false;
+  isAssembledPartsOpen = false;
   activePreviewStation: PreviewStationNode | null = null;
   activePreviewLogistics: PreviewFlowNode | null = null;
   previewStationStatusById: Record<number, PreviewStatus> = {};
@@ -206,7 +215,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return `${index}-${tab.id}`;
   }
 
-  trackByHistory(index: number, row: TraceHistoryRow): string {
+  trackByHistory(index: number, row: TraceHistoryRow | SnHistoryDisplayRow): string {
     return `${index}-${row.id}`;
   }
 
@@ -266,8 +275,16 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   get boxRightLabel(): string {
-    const qty = this.workflowSnapshot?.workOrder?.qty;
-    return qty && qty > 0 ? `Qty ${qty}` : this.traceResult?.serial?.status || '-';
+    return 'Assembled parts';
+  }
+
+  get assembledParts(): TraceAssembledPart[] {
+    return this.traceResult?.assembled_parts || [];
+  }
+
+  get assembledPartsSummary(): string {
+    const count = this.assembledParts.length;
+    return count === 1 ? '1 Part' : `${count} Parts`;
   }
 
   get historyRows(): TraceHistoryRow[] {
@@ -275,21 +292,30 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   get snHistoryDisplayRows(): SnHistoryDisplayRow[] {
-    const displayRows = this.historyRows.map((history) => {
+    const displayRows: SnHistoryDisplayRow[] = this.historyRows.map((history, index) => {
         const dateTime = this.parseHistoryDate(history.date_time);
+        const bindingDetails = this.getBindingDisplayDetails(history);
 
         return {
+          id: `${history.event_type || 'history'}-${history.id}-${history.date_time || index}`,
           stationCode: history.station || this.traceResult?.serial?.current_station_code || '-',
           stationLoginId: history.user_name || '-',
           date: dateTime.date,
           time: dateTime.time,
-          actionDescription: this.buildHistoryActionDescription(history),
+          actionDescription: bindingDetails?.actionDescription || this.buildHistoryActionDescription(history),
+          linkSerial: bindingDetails?.linkSerial,
+          linkLabel: bindingDetails?.linkLabel,
+          linkRole: bindingDetails?.linkRole,
+          relatedPart: bindingDetails?.relatedPart,
+          relatedRevision: bindingDetails?.relatedRevision,
+          isBinding: !!bindingDetails,
         };
       });
 
     if (this.traceResult && !this.hasGeneratedHistoryRow(this.historyRows)) {
       const generatedDateTime = this.parseHistoryDate(this.traceResult.serial.created_at);
       displayRows.push({
+        id: 'generated-fallback',
         stationCode: this.traceResult.serial.current_station_code || 'Not started',
         stationLoginId: 'system',
         date: generatedDateTime.date,
@@ -311,6 +337,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
 
       return [
         {
+          id: 'status-fallback',
           stationCode: this.traceResult.serial.current_station_code || 'Not started',
           stationLoginId: 'system',
           date: fallbackDateTime.date,
@@ -462,6 +489,17 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return result || '-';
   }
 
+  openLinkedSerial(serial: string | undefined): void {
+    const normalized = String(serial || '').trim();
+    if (!normalized) {
+      return;
+    }
+
+    this.router.navigate(['/dashboard/sn-result'], {
+      queryParams: { q: normalized, t: Date.now() },
+    });
+  }
+
   private getSerialRouteStatus(stationCode: string): PreviewStatus | null {
     const routeStep = (this.traceResult?.routing || []).find(
       (step) => String(step.station_code || '').trim().toUpperCase() === String(stationCode || '').trim().toUpperCase()
@@ -505,13 +543,72 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   private buildHistoryActionDescription(history: TraceHistoryRow): string {
+    const eventType = String(history.event_type || '').trim();
     const parts = [
-      history.event_type,
+      eventType.toUpperCase() === 'BOM_BIND' ? '' : eventType,
       this.formatHistoryResult(history.result) !== '-' ? this.formatHistoryResult(history.result) : '',
       history.additional_info,
     ].filter((part) => String(part || '').trim());
 
     return parts.length ? parts.join(' - ') : 'Station activity recorded';
+  }
+
+  private getBindingDisplayDetails(history: TraceHistoryRow): Partial<SnHistoryDisplayRow> | null {
+    const eventType = String(history.event_type || '').trim().toUpperCase();
+    if (eventType !== 'BOM_BIND') {
+      return null;
+    }
+
+    const currentSn = this.normalizeSerialValue(this.traceResult?.serial?.sn);
+    const currentRsn = this.normalizeSerialValue(this.traceResult?.serial?.rsn);
+    const parentSn = String(history.parent_sn || '').trim();
+    const parentRsn = String(history.parent_rsn || '').trim();
+    const childSn = String(history.child_sn || '').trim();
+    const childRsn = String(history.child_rsn || '').trim();
+    const parentValues = [parentSn, parentRsn]
+      .map((value) => this.normalizeSerialValue(value))
+      .filter((value) => !!value);
+    const isFatherContext = parentValues.includes(currentSn) || parentValues.includes(currentRsn);
+
+    if (isFatherContext) {
+      const fatherLabel = this.preferredSerialLabel(parentRsn, parentSn, this.serialNumber);
+      const childLabel = this.preferredSerialLabel(childSn, childRsn);
+      if (childLabel === '-') {
+        return null;
+      }
+
+      return {
+        actionDescription: `This father SN ${fatherLabel} is binded with child SN`,
+        linkSerial: childLabel,
+        linkLabel: childLabel,
+        linkRole: 'child',
+        relatedPart: history.child_pn,
+        relatedRevision: history.child_revision,
+      };
+    }
+
+    const childLabel = this.preferredSerialLabel(childSn, childRsn, this.serialNumber);
+    const fatherLabel = this.preferredSerialLabel(parentRsn, parentSn);
+    if (fatherLabel === '-') {
+      return null;
+    }
+
+    return {
+      actionDescription: `This child SN ${childLabel} is binded with father SN`,
+      linkSerial: fatherLabel,
+      linkLabel: fatherLabel,
+      linkRole: 'father',
+      relatedPart: history.parent_pn,
+      relatedRevision: history.parent_revision,
+    };
+  }
+
+  private preferredSerialLabel(...values: Array<string | null | undefined>): string {
+    return values.map((value) => String(value || '').trim()).find((value) => !!value) || '-';
+  }
+
+  private normalizeSerialValue(value: string | null | undefined): string {
+    return String(value || '').trim().toUpperCase();
   }
 
   private shouldShowSnHistoryRow(history: TraceHistoryRow): boolean {
@@ -520,6 +617,10 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     const info = String(history.additional_info || '').trim().toUpperCase();
 
     if (eventType === 'SN_GENERATED' || info === 'SN GENERATED') {
+      return true;
+    }
+
+    if (eventType === 'BOM_BIND') {
       return true;
     }
 
@@ -537,7 +638,11 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       return false;
     }
 
-    return action.startsWith('PASS') || action.startsWith('SN_GENERATED');
+    return action.startsWith('PASS')
+      || action.startsWith('SN_GENERATED')
+      || action.includes('BOM_BIND')
+      || action.includes('BINDED')
+      || action.includes('BOUND');
   }
 
   private hasGeneratedHistoryRow(rows: TraceHistoryRow[]): boolean {
@@ -558,6 +663,14 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
 
   closeChildDetails(): void {
     this.isChildDetailsOpen = false;
+  }
+
+  openAssembledParts(): void {
+    this.isAssembledPartsOpen = true;
+  }
+
+  closeAssembledParts(): void {
+    this.isAssembledPartsOpen = false;
   }
 
   openPreviewStationDetails(event: Event, station?: PreviewStationNode | null): void {
@@ -616,6 +729,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.workflowSnapshot = null;
     this.previewStationStatusById = {};
     this.isChildDetailsOpen = false;
+    this.isAssembledPartsOpen = false;
     this.activePreviewStation = null;
     this.activePreviewLogistics = null;
 

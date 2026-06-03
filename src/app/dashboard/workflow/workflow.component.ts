@@ -73,6 +73,10 @@ type RoutingStepRow = {
   station_login_password?: string;
   station_ip?: string;
   printer_ip?: string;
+  sn_count?: number | null;
+  preview_sn_count?: number | null;
+  sn_count_label?: string | null;
+  preview_sn_count_label?: string | null;
 };
 
 type PrinterStatus = 'Online' | 'Offline';
@@ -114,7 +118,6 @@ type BomChildRow = {
   station_code: string;
   station_name: string;
   item_type: string;
-  pn_type: string;
   qty: number;
 };
 
@@ -134,6 +137,8 @@ type PreviewStationNode = RoutingStepRow & {
   flowIndex: number;
   icon: string;
   status: PreviewStatus;
+  snCount: number;
+  isHighSnCount: boolean;
 };
 
 type PreviewFlowNode = {
@@ -1045,6 +1050,10 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     return Number.isFinite(qty) && qty > 0 ? `Qty ${qty}` : 'BX-50002';
   }
 
+  get previewTotalDevicesCount(): number {
+    return this.getPreviewTotalSnCount();
+  }
+
   get previewStationStartTime(): string {
     return new Date().toLocaleString([], {
       year: 'numeric',
@@ -1056,12 +1065,33 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   }
 
   get previewStations(): PreviewStationNode[] {
-    return this.routeSteps.map((step, index) => ({
-      ...step,
-      flowIndex: index + 1,
-      icon: this.getPreviewStationIcon(index, step),
-      status: this.getPreviewStationStatus(index, step),
-    }));
+    const snCounts = this.routeSteps.map((step) => this.getPreviewStationSnCount(step));
+    const highestCount = Math.max(0, ...snCounts);
+
+    return this.routeSteps.map((step, index) => {
+      const snCount = snCounts[index] || 0;
+
+      return {
+        ...step,
+        flowIndex: index + 1,
+        icon: this.getPreviewStationIcon(index, step),
+        status: this.getPreviewStationStatus(index, step),
+        snCount,
+        isHighSnCount: snCount > 0 && snCount === highestCount,
+      };
+    });
+  }
+
+  getPreviewStationSnCountLabel(station: PreviewStationNode | null | undefined): string {
+    return `${station?.snCount || 0} SN`;
+  }
+
+  isHighSnCountStation(station: PreviewStationNode | null | undefined): boolean {
+    if (!station || station.snCount <= 0) {
+      return false;
+    }
+
+    return Boolean(station.isHighSnCount);
   }
 
   get previewFlowNodes(): PreviewFlowNode[] {
@@ -1343,7 +1373,6 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         station_code: selectedStation?.station_code || '',
         station_name: selectedStation?.station_name || '',
         item_type: itemType,
-        pn_type: '-',
         qty: Number(formValue.qty),
       };
 
@@ -1788,6 +1817,33 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     return index === 0 ? 'In Progress' : 'Pending';
   }
 
+  private getPreviewStationSnCount(step: RoutingStepRow): number {
+    const count = this.toNullableNumber(
+      step.sn_count
+      ?? step.preview_sn_count
+      ?? this.extractCountFromLabel(step.sn_count_label || step.preview_sn_count_label)
+    );
+
+    if (count && count > 0) {
+      return count;
+    }
+
+    return this.bomChildren
+      .filter((child) => this.normalizeLookupValue(child.station_code) === this.normalizeLookupValue(step.station_code))
+      .reduce((total, child) => total + (this.toNullableNumber(child.qty) || 0), 0);
+  }
+
+  private getPreviewTotalSnCount(): number {
+    const workOrderQty = this.toNullableNumber(this.workOrderForm.get('qty')?.value);
+    const boxQty = this.toNullableNumber(this.partNumberForm.get('box_qty')?.value);
+    return workOrderQty || boxQty || Math.max(0, ...this.previewStations.map((station) => station.snCount));
+  }
+
+  private extractCountFromLabel(label: string | null | undefined): number | null {
+    const match = String(label || '').match(/\d+/);
+    return match ? Number(match[0]) : null;
+  }
+
   private setPreviewStationStatus(status: PreviewStatus): void {
     if (!this.activePreviewStation) {
       return;
@@ -1850,42 +1906,66 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       }
     });
 
-    const orderedRects = this.previewFlowNodes
-      .map((node) => nodeRectsById.get(node.id))
-      .filter((rect): rect is DOMRect => Boolean(rect));
+    const renderedRows = this.previewFlowRows
+      .map((row) => ({
+        isReversed: row.isReversed,
+        rects: row.nodes
+          .map((node) => nodeRectsById.get(node.id))
+          .filter((rect): rect is DOMRect => Boolean(rect)),
+      }))
+      .filter((row) => row.rects.length > 0);
 
-    if (orderedRects.length < 2) {
+    if (!renderedRows.length) {
       this.setPreviewConnector('', 0, 0);
       return;
     }
 
     const pathSegments: string[] = [];
 
-    for (let index = 0; index < orderedRects.length - 1; index += 1) {
-      const currentRect = orderedRects[index];
-      const nextRect = orderedRects[index + 1];
-      const currentCenter = this.getRelativeRectCenter(currentRect, containerRect);
-      const nextCenter = this.getRelativeRectCenter(nextRect, containerRect);
-      const sameRow = Math.abs(currentCenter.y - nextCenter.y) < 28;
-
-      if (sameRow) {
-        const flowsRight = nextCenter.x >= currentCenter.x;
-        const startX = flowsRight ? currentRect.right - containerRect.left : currentRect.left - containerRect.left;
-        const endX = flowsRight ? nextRect.left - containerRect.left : nextRect.right - containerRect.left;
-        const y = (currentCenter.y + nextCenter.y) / 2;
-        pathSegments.push(`M ${startX} ${y} L ${endX} ${y}`);
-      } else {
-        const flowsDown = nextCenter.y >= currentCenter.y;
-        const startX = currentCenter.x;
-        const startY = flowsDown ? currentRect.bottom - containerRect.top : currentRect.top - containerRect.top;
-        const endX = nextCenter.x;
-        const endY = flowsDown ? nextRect.top - containerRect.top : nextRect.bottom - containerRect.top;
-        const midY = startY + ((endY - startY) / 2);
-        pathSegments.push(`M ${startX} ${startY} L ${startX} ${midY} L ${endX} ${midY} L ${endX} ${endY}`);
+    renderedRows.forEach((row, rowIndex) => {
+      for (let index = 0; index < row.rects.length - 1; index += 1) {
+        pathSegments.push(this.buildPreviewSameRowConnector(row.rects[index], row.rects[index + 1], containerRect));
       }
-    }
+
+      const nextRow = renderedRows[rowIndex + 1];
+      if (!nextRow) {
+        return;
+      }
+
+      const exitRect = row.isReversed ? row.rects[0] : row.rects[row.rects.length - 1];
+      const entryRect = nextRow.isReversed ? nextRow.rects[nextRow.rects.length - 1] : nextRow.rects[0];
+      pathSegments.push(this.buildPreviewRowTurnConnector(exitRect, entryRect, containerRect));
+    });
 
     this.setPreviewConnector(pathSegments.join(' '), containerRect.width, containerRect.height);
+  }
+
+  private buildPreviewSameRowConnector(currentRect: DOMRect, nextRect: DOMRect, containerRect: DOMRect): string {
+    const currentCenter = this.getRelativeRectCenter(currentRect, containerRect);
+    const nextCenter = this.getRelativeRectCenter(nextRect, containerRect);
+    const flowsRight = nextCenter.x >= currentCenter.x;
+    const startX = flowsRight ? currentRect.right - containerRect.left : currentRect.left - containerRect.left;
+    const endX = flowsRight ? nextRect.left - containerRect.left : nextRect.right - containerRect.left;
+    const y = (currentCenter.y + nextCenter.y) / 2;
+
+    return `M ${startX} ${y} L ${endX} ${y}`;
+  }
+
+  private buildPreviewRowTurnConnector(currentRect: DOMRect, nextRect: DOMRect, containerRect: DOMRect): string {
+    const currentCenter = this.getRelativeRectCenter(currentRect, containerRect);
+    const nextCenter = this.getRelativeRectCenter(nextRect, containerRect);
+    const flowsDown = nextCenter.y >= currentCenter.y;
+    const startX = currentCenter.x;
+    const startY = flowsDown ? currentRect.bottom - containerRect.top : currentRect.top - containerRect.top;
+    const endX = nextCenter.x;
+    const endY = flowsDown ? nextRect.top - containerRect.top : nextRect.bottom - containerRect.top;
+    const midY = startY + ((endY - startY) / 2);
+
+    if (Math.abs(startX - endX) < 4) {
+      return `M ${startX} ${startY} L ${endX} ${endY}`;
+    }
+
+    return `M ${startX} ${startY} L ${startX} ${midY} L ${endX} ${midY} L ${endX} ${endY}`;
   }
 
   private getRelativeRectCenter(rect: DOMRect, containerRect: DOMRect): { x: number; y: number } {
@@ -2576,6 +2656,8 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       station_login_password: step.station_login_password || '',
       station_ip: step.station_ip || '',
       printer_ip: step.printer_ip || '',
+      sn_count: this.toNullableNumber(step.sn_count ?? step.preview_sn_count),
+      sn_count_label: step.sn_count_label || step.preview_sn_count_label || '',
     }));
 
     this.bomChildren = (snapshot.bom || []).map((child, index) => ({
@@ -2585,7 +2667,6 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       station_code: child.station_code || '',
       station_name: child.station_name || '',
       item_type: child.item_type || '',
-      pn_type: child.pn_type || '-',
       qty: Number(child.qty) || 1,
     }));
 
