@@ -946,7 +946,7 @@
         [class.active]="activeStationRulesTab === tab.id"
         [attr.aria-selected]="activeStationRulesTab === tab.id"
         role="tab"
-        (click)="activeStationRulesTab = tab.id"
+        (click)="setActiveStationRulesTab(tab.id)"
       >
         <span class="material-symbols-outlined" aria-hidden="true">{{ tab.icon }}</span>
         {{ tab.label }}
@@ -954,7 +954,29 @@
     </div>
 
     <div class="weighing-tab" *ngIf="activeStationRulesTab === 'weighing'" role="tabpanel">
-      <div class="weighing-fields" aria-label="Weighing limits">
+      <section class="rules-section label-print-enable-section">
+        <div class="label-print-toggle-row">
+          <span class="label-print-toggle-title">Weighing Enabled</span>
+          <label class="label-print-switch">
+            <input
+              type="checkbox"
+              [ngModel]="isWeighingEnabled"
+              (ngModelChange)="onWeighingEnabledChange($event)"
+              role="switch"
+              [attr.aria-checked]="isWeighingEnabled"
+            />
+            <span class="label-print-switch-track" aria-hidden="true">
+              <span class="label-print-switch-thumb"></span>
+            </span>
+            <span class="label-print-switch-state">{{ isWeighingEnabled ? 'ON' : 'OFF' }}</span>
+          </label>
+        </div>
+        <p class="template-detail" *ngIf="!isWeighingEnabled">
+          Weighing is disabled for this station.
+        </p>
+      </section>
+
+      <div class="weighing-fields" *ngIf="isWeighingEnabled" aria-label="Weighing limits">
         <div class="weighing-field">
           <label for="weighingMinimum">Minimum</label>
           <input id="weighingMinimum" type="number" [(ngModel)]="weighingMinimum" />
@@ -970,6 +992,15 @@
           <input id="weighingTolerance" type="number" [(ngModel)]="weighingTolerance" />
         </div>
       </div>
+
+      <p
+        class="label-print-message"
+        *ngIf="labelPrintStatusMessage"
+        [class.success]="labelPrintStatusType === 'success'"
+        [class.error]="labelPrintStatusType === 'error'"
+      >
+        {{ labelPrintStatusMessage }}
+      </p>
     </div>
 
     <div class="label-printing-tab" *ngIf="activeStationRulesTab === 'label-printing'" role="tabpanel">
@@ -1069,10 +1100,19 @@
           <pre *ngIf="!isTestPrintLoading && !testPrintPreviewUrl && testPrintPreviewText">{{ testPrintPreviewText }}</pre>
         </div>
       </ng-container>
+
+      <p
+        class="label-print-message"
+        *ngIf="labelPrintStatusMessage && !isLabelPrintingEnabled"
+        [class.success]="labelPrintStatusType === 'success'"
+        [class.error]="labelPrintStatusType === 'error'"
+      >
+        {{ labelPrintStatusMessage }}
+      </p>
     </div>
 
     <div class="rules-actions label-print-actions" *ngIf="activeStationRulesTab !== 'label-printing' || isLabelPrintingEnabled">
-      <div>
+      <div *ngIf="activeStationRulesTab === 'label-printing' && isLabelPrintingEnabled">
         <button type="button" class="secondary-button outline-button" (click)="testPrinterConnection()">
           <span class="material-symbols-outlined" aria-hidden="true">print</span>
           Test Connection
@@ -1084,7 +1124,7 @@
       </div>
       <div>
         <button type="button" class="secondary-button text-button" (click)="closeStationRulesModal()">Cancel</button>
-        <button type="button" class="save-button" (click)="saveLabelPrintingConfig()">Save Changes</button>
+        <button type="button" class="save-button" (click)="saveActiveStationRulesTab()">Save Changes</button>
       </div>
     </div>
   </div>

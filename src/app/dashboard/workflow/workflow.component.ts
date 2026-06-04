@@ -102,6 +102,15 @@ type StationLabelPrintingConfig = {
   status: PrinterStatus;
 };
 
+type StationWeighingConfig = {
+  stationId: number | null;
+  stationName: string;
+  isWeighingEnabled: boolean;
+  minimumWeight: string;
+  maximumWeight: string;
+  tolerance: string;
+};
+
 type RoutingHistoryRow = {
   id: number;
   description: string;
@@ -184,6 +193,7 @@ type WorkflowSnapshot = {
   bom?: BomChildRow[];
   stationRules?: Record<string, string[]>;
   stationLabelPrinting?: Record<string, StationLabelPrintingConfig>;
+  stationWeighing?: Record<string, StationWeighingConfig>;
   previewStatuses?: Record<string, PreviewStatus>;
 };
 
@@ -274,11 +284,13 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   activeRulesStationCode = '';
   activeRulesStationName = '';
   stationRulesDraft = '';
+  isWeighingEnabled = false;
   weighingMinimum = '';
   weighingMaximum = '';
   weighingTolerance = '';
   stationRulesByStation: Record<string, string[]> = {};
   stationLabelPrintingByStation: Record<string, StationLabelPrintingConfig> = {};
+  stationWeighingByStation: Record<string, StationWeighingConfig> = {};
   activeStationRulesTab: 'weighing' | 'label-printing' = 'weighing';
   isLabelPrintingEnabled = false;
   labelPrintCode = '';
@@ -853,7 +865,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationCode = step.station_code;
     this.activeRulesStationName = step.station_name;
     this.stationRulesDraft = (this.stationRulesByStation[step.station_code] || []).join('\n');
-    this.resetWeighingFields();
+    this.loadWeighingDraft(step.station_code);
     this.isEditingStationRules = false;
     this.activeStationRulesTab = 'weighing';
     this.loadLabelPrintingDraft(step.station_code);
@@ -1534,6 +1546,59 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.saveLabelPrintingEnabledState(this.isLabelPrintingEnabled);
   }
 
+  onWeighingEnabledChange(enabled: boolean): void {
+    this.isWeighingEnabled = Boolean(enabled);
+    this.labelPrintStatusMessage = '';
+    this.saveWeighingConfig();
+  }
+
+  saveActiveStationRulesTab(): void {
+    if (this.activeStationRulesTab === 'weighing') {
+      this.saveWeighingConfig();
+      return;
+    }
+
+    this.saveLabelPrintingConfig();
+  }
+
+  setActiveStationRulesTab(tabId: 'weighing' | 'label-printing'): void {
+    if (this.activeStationRulesTab !== tabId) {
+      this.labelPrintStatusMessage = '';
+      this.labelPrintStatusType = 'info';
+    }
+
+    this.activeStationRulesTab = tabId;
+  }
+
+  saveWeighingConfig(): void {
+    const step = this.activeRulesStationStep;
+    const stationCode = step?.station_code || this.activeRulesStationCode;
+    if (!stationCode) {
+      return;
+    }
+
+    this.stationWeighingByStation = {
+      ...this.stationWeighingByStation,
+      [stationCode]: {
+        stationId: step?.id ?? null,
+        stationName: step?.station_name || this.activeRulesStationName,
+        isWeighingEnabled: this.isWeighingEnabled,
+        minimumWeight: String(this.weighingMinimum || '').trim(),
+        maximumWeight: String(this.weighingMaximum || '').trim(),
+        tolerance: String(this.weighingTolerance || '').trim(),
+      },
+    };
+
+    this.saveWorkflowSnapshot(
+      () => {
+        this.setLabelPrintMessage('Station weighing configuration saved.', 'success');
+      },
+      (message) => {
+        this.setLabelPrintMessage(message, 'error');
+      }
+    );
+  }
+
   testPrinterConnection(): void {
     const printer = this.selectedPrinter;
     if (!printer) {
@@ -1636,7 +1701,14 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       ...this.stationRulesByStation,
       [this.activeRulesStationCode]: rules,
     };
-    this.saveWorkflowSnapshot();
+    this.saveWorkflowSnapshot(
+      () => {
+        this.setLabelPrintMessage('Station rules saved.', 'success');
+      },
+      (message) => {
+        this.setLabelPrintMessage(message, 'error');
+      }
+    );
     this.isEditingStationRules = false;
   }
 
@@ -1646,6 +1718,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationCode = '';
     this.activeRulesStationName = '';
     this.stationRulesDraft = '';
+    this.isWeighingEnabled = false;
     this.isLabelPrintingEnabled = false;
     this.labelPrintCode = '';
     this.selectedLabelDescription = '';
@@ -2170,6 +2243,14 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.onLabelPrintCodeChange();
   }
 
+  private loadWeighingDraft(stationCode: string): void {
+    const config = this.stationWeighingByStation[stationCode];
+    this.isWeighingEnabled = Boolean(config?.isWeighingEnabled);
+    this.weighingMinimum = config?.minimumWeight || '';
+    this.weighingMaximum = config?.maximumWeight || '';
+    this.weighingTolerance = config?.tolerance || '';
+  }
+
   private saveLabelPrintingEnabledState(enabled: boolean): void {
     const step = this.activeRulesStationStep;
     if (!step) {
@@ -2197,7 +2278,14 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       },
     };
 
-    this.saveWorkflowSnapshot();
+    this.saveWorkflowSnapshot(
+      () => {
+        this.setLabelPrintMessage('Station label printing setting saved.', 'success');
+      },
+      (message) => {
+        this.setLabelPrintMessage(message, 'error');
+      }
+    );
   }
 
   private validateLabelPrintingConfig(): boolean {
@@ -2471,12 +2559,13 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationCode = station.station_code;
     this.activeRulesStationName = station.station_desc;
     this.stationRulesDraft = this.activeStationRules.join('\n');
-    this.resetWeighingFields();
+    this.loadWeighingDraft(station.station_code);
     this.isEditingStationRules = false;
     this.isStationRulesModalOpen = true;
   }
 
   private resetWeighingFields(): void {
+    this.isWeighingEnabled = false;
     this.weighingMinimum = '';
     this.weighingMaximum = '';
     this.weighingTolerance = '';
@@ -2603,7 +2692,9 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
     this.http.post<WorkflowSnapshot>(`${this.workflowApiUrl}/snapshot`, payload).subscribe({
       next: (snapshot) => {
-        this.applyWorkflowSnapshot(snapshot);
+        if (snapshot?.routing?.length || this.routeSteps.length === 0) {
+          this.applyWorkflowSnapshot(snapshot);
+        }
         onSuccess?.();
       },
       error: (error) => {
@@ -2639,6 +2730,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       })),
       stationRules: this.stationRulesByStation,
       stationLabelPrinting: this.stationLabelPrintingByStation,
+      stationWeighing: this.stationWeighingByStation,
       previewStatuses: this.buildPreviewStatusesByStationCode(),
     };
   }
@@ -2710,6 +2802,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
     this.stationRulesByStation = snapshot.stationRules || {};
     this.stationLabelPrintingByStation = snapshot.stationLabelPrinting || {};
+    this.stationWeighingByStation = snapshot.stationWeighing || {};
     this.linkedRoutingPartNumber = partNumber.pn || '';
     this.linkedRoutingDescription = partNumber.description || '';
     this.linkedBomPartNumber = partNumber.pn || '';
