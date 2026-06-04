@@ -128,6 +128,7 @@ public static class ConvertedEndpoints
         MapTraceability(app);
         MapPacking(app);
         MapAssembly(app);
+        MapOperationsRouteBack(app);
         MapLabels(app);
         MapReports(app);
     }
@@ -2242,12 +2243,6 @@ public static class ConvertedEndpoints
                     return JsonMessage("SN/RSN not found", 404);
                 }
 
-                if (string.Equals(serial["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase))
-                {
-                    await transaction.RollbackAsync();
-                    return JsonMessage("SN is scrapped. Production actions are blocked until Undo Scrap is completed.", 409);
-                }
-
                 var routeRows = await GetRouteRowsForItemAsync(connection, Convert.ToInt32(serial["item_id"]));
                 if (routeRows.Count == 0)
                 {
@@ -2327,110 +2322,6 @@ public static class ConvertedEndpoints
                 var trace = await BuildTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!);
                 await transaction.CommitAsync();
                 return Results.Json(new { message = result == "PASS" ? "PASS submitted successfully" : "FAIL submitted successfully", action = result, data = trace });
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
-        });
-
-        app.MapPost("/api/reports/scrap-sn", async (HttpContext context) =>
-        {
-            var payload = await ReadJsonBodyAsync(context.Request);
-            var query = ReadString(payload, "query")?.Trim();
-            var reason = ReadString(payload, "reason")?.Trim();
-            var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
-            var pcName = ReadString(payload, "pc_name")?.Trim() ?? "WEB-CLIENT";
-
-            if (string.IsNullOrWhiteSpace(query))
-            {
-                return JsonMessage("SN or RSN is required", 400);
-            }
-
-            if (string.IsNullOrWhiteSpace(reason))
-            {
-                return JsonMessage("Scrap reason is required", 400);
-            }
-
-            await using var connection = await OpenConnectionAsync();
-            await EnsureSerialTrackingSchemaAsync(connection);
-            await EnsureWorkflowSchemaAsync(connection);
-            await EnsureScrapTrackingColumnsAsync(connection);
-            await using var transaction = await connection.BeginTransactionAsync();
-
-            try
-            {
-                var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
-                if (workflowSerial is not null)
-                {
-                    var result = await ScrapWorkflowSerialAsync(connection, workflowSerial, reason, changedBy);
-                    await transaction.CommitAsync();
-                    return result;
-                }
-
-                var serial = await GetSerialByQueryAsync(connection, query);
-                if (serial is not null)
-                {
-                    var result = await ScrapSerialAsync(connection, serial, reason, changedBy, pcName);
-                    await transaction.CommitAsync();
-                    return result;
-                }
-
-                await transaction.RollbackAsync();
-                return JsonMessage("SN/RSN not found", 404);
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
-        });
-
-        app.MapPost("/api/reports/undo-scrap", async (HttpContext context) =>
-        {
-            var payload = await ReadJsonBodyAsync(context.Request);
-            var query = ReadString(payload, "query")?.Trim();
-            var reason = ReadString(payload, "reason")?.Trim();
-            var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
-            var pcName = ReadString(payload, "pc_name")?.Trim() ?? "WEB-CLIENT";
-
-            if (string.IsNullOrWhiteSpace(query))
-            {
-                return JsonMessage("SN or RSN is required", 400);
-            }
-
-            if (string.IsNullOrWhiteSpace(reason))
-            {
-                return JsonMessage("Undo Scrap reason is required", 400);
-            }
-
-            await using var connection = await OpenConnectionAsync();
-            await EnsureSerialTrackingSchemaAsync(connection);
-            await EnsureWorkflowSchemaAsync(connection);
-            await EnsureScrapTrackingColumnsAsync(connection);
-            await using var transaction = await connection.BeginTransactionAsync();
-
-            try
-            {
-                var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
-                if (workflowSerial is not null)
-                {
-                    var result = await UndoScrapWorkflowSerialAsync(connection, workflowSerial, reason, changedBy);
-                    await transaction.CommitAsync();
-                    return result;
-                }
-
-                var serial = await GetSerialByQueryAsync(connection, query);
-                if (serial is not null)
-                {
-                    var result = await UndoScrapSerialAsync(connection, serial, reason, changedBy, pcName);
-                    await transaction.CommitAsync();
-                    return result;
-                }
-
-                await transaction.RollbackAsync();
-                return JsonMessage("SN/RSN not found", 404);
             }
             catch
             {
@@ -2610,8 +2501,7 @@ public static class ConvertedEndpoints
                 }
 
                 if (string.Equals(serial["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(serial["serial_status"]?.ToString(), "Failed", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(serial["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase))
+                    string.Equals(serial["serial_status"]?.ToString(), "Failed", StringComparison.OrdinalIgnoreCase))
                 {
                     return JsonMessage("SN is not eligible for packing", 409);
                 }
@@ -2672,11 +2562,6 @@ public static class ConvertedEndpoints
                 return JsonMessage("SN/RSN not found", 404);
             }
 
-            if (string.Equals(serial["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase))
-            {
-                return JsonMessage("SN is SCRAP. Assembly cannot be done until Undo Scrap is completed.", 409);
-            }
-
             var required = await GetAssemblyLinesForStationAsync(connection, Convert.ToInt32(serial["item_id"]), serial["revision"]?.ToString(), stationCode);
             var bound = await QueryRowsAsync(
                 connection,
@@ -2720,16 +2605,6 @@ public static class ConvertedEndpoints
                 if (Equals(parent["id"], child["id"]))
                 {
                     return JsonMessage("Parent and child cannot be same", 400);
-                }
-
-                if (string.Equals(parent["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase))
-                {
-                    return JsonMessage("Parent SN is SCRAP. Assembly cannot be done until Undo Scrap is completed.", 409);
-                }
-
-                if (string.Equals(child["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase))
-                {
-                    return JsonMessage("Child SN is SCRAP and cannot be bound.", 409);
                 }
 
                 if (!string.Equals(child["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase))
@@ -3499,334 +3374,6 @@ public static class ConvertedEndpoints
         return result;
     }
 
-    private static async Task<IResult> ScrapSerialAsync(
-        NpgsqlConnection connection,
-        Dictionary<string, object?> serial,
-        string reason,
-        string changedBy,
-        string pcName)
-    {
-        var status = serial["serial_status"]?.ToString() ?? "New";
-        if (string.Equals(status, "SCRAP", StringComparison.OrdinalIgnoreCase))
-        {
-            return JsonMessage("SN is already marked as SCRAP.", 409);
-        }
-
-        var stationCode = serial["current_station_code"]?.ToString() ?? "SCRAP";
-        var stationName = await ResolveLegacyStationNameAsync(connection, serial, stationCode);
-
-        await ExecuteAsync(
-            connection,
-            """
-            UPDATE serial_numbers
-            SET status = 'SCRAP',
-                condition = 'NG',
-                scrap_previous_status = @previousStatus,
-                scrap_previous_condition = @previousCondition,
-                scrap_reason = @reason,
-                scrapped_by = @changedBy,
-                scrapped_at = NOW(),
-                updated_at = NOW()
-            WHERE id = @id
-            """,
-            ("previousStatus", status),
-            ("previousCondition", serial["condition"] ?? "Good"),
-            ("reason", reason),
-            ("changedBy", changedBy),
-            ("id", serial["id"]));
-
-        await InsertSerialScrapLogAsync(
-            connection,
-            serial,
-            stationCode,
-            stationName,
-            "SCRAP",
-            reason,
-            changedBy,
-            pcName,
-            $"Scrap mark saved. Previous status: {status}; Reason: {reason}");
-
-        var refreshed = await GetSerialByQueryAsync(connection, serial["rsn"]!.ToString()!);
-        return Results.Json(new
-        {
-            message = "SN marked as SCRAP.",
-            action = "SCRAP",
-            data = await BuildTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!)
-        });
-    }
-
-    private static async Task<IResult> UndoScrapSerialAsync(
-        NpgsqlConnection connection,
-        Dictionary<string, object?> serial,
-        string reason,
-        string changedBy,
-        string pcName)
-    {
-        var status = serial["serial_status"]?.ToString() ?? "";
-        if (!string.Equals(status, "SCRAP", StringComparison.OrdinalIgnoreCase))
-        {
-            return JsonMessage("Only SCRAP SN can be restored.", 409);
-        }
-
-        var previousStatus = serial["scrap_previous_status"]?.ToString();
-        if (!string.IsNullOrWhiteSpace(previousStatus) && !string.Equals(previousStatus, "New", StringComparison.OrdinalIgnoreCase))
-        {
-            return JsonMessage("Only New SN can be returned from scrap.", 409);
-        }
-
-        var restoredStatus = string.IsNullOrWhiteSpace(previousStatus) ? "New" : previousStatus;
-        var restoredCondition = serial["scrap_previous_condition"]?.ToString();
-        if (string.IsNullOrWhiteSpace(restoredCondition))
-        {
-            restoredCondition = "Good";
-        }
-
-        var stationCode = serial["current_station_code"]?.ToString() ?? "UNDO_SCRAP";
-        var stationName = await ResolveLegacyStationNameAsync(connection, serial, stationCode);
-
-        await ExecuteAsync(
-            connection,
-            """
-            UPDATE serial_numbers
-            SET status = @restoredStatus,
-                condition = @restoredCondition,
-                scrap_previous_status = NULL,
-                scrap_previous_condition = NULL,
-                scrap_reason = NULL,
-                scrapped_by = NULL,
-                scrapped_at = NULL,
-                updated_at = NOW()
-            WHERE id = @id
-            """,
-            ("restoredStatus", restoredStatus),
-            ("restoredCondition", restoredCondition),
-            ("id", serial["id"]));
-
-        await InsertSerialScrapLogAsync(
-            connection,
-            serial,
-            stationCode,
-            stationName,
-            "UNDO_SCRAP",
-            reason,
-            changedBy,
-            pcName,
-            $"Undo Scrap saved. Restored status: {restoredStatus}; Reason: {reason}");
-
-        var refreshed = await GetSerialByQueryAsync(connection, serial["rsn"]!.ToString()!);
-        return Results.Json(new
-        {
-            message = "SCRAP mark removed from SN.",
-            action = "UNDO_SCRAP",
-            data = await BuildTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!)
-        });
-    }
-
-    private static async Task<IResult> ScrapWorkflowSerialAsync(
-        NpgsqlConnection connection,
-        Dictionary<string, object?> serial,
-        string reason,
-        string changedBy)
-    {
-        var status = serial["serial_status"]?.ToString() ?? "New";
-        if (string.Equals(status, "SCRAP", StringComparison.OrdinalIgnoreCase))
-        {
-            return JsonMessage("SN is already marked as SCRAP.", 409);
-        }
-
-        var stationCode = serial["current_station_code"]?.ToString() ?? "SCRAP";
-        var stationName = await ResolveWorkflowStationNameAsync(connection, serial, stationCode);
-
-        await ExecuteAsync(
-            connection,
-            """
-            UPDATE workflow_serial_numbers
-            SET status = 'SCRAP',
-                condition = 'NG',
-                scrap_previous_status = @previousStatus,
-                scrap_previous_condition = @previousCondition,
-                scrap_reason = @reason,
-                scrapped_by = @changedBy,
-                scrapped_at = NOW(),
-                updated_at = NOW()
-            WHERE id = @id
-            """,
-            ("previousStatus", status),
-            ("previousCondition", serial["condition"] ?? "Good"),
-            ("reason", reason),
-            ("changedBy", changedBy),
-            ("id", serial["id"]));
-
-        await InsertWorkflowScrapLogAsync(
-            connection,
-            serial,
-            stationCode,
-            stationName,
-            "SCRAP",
-            reason,
-            changedBy,
-            $"Scrap mark saved. Previous status: {status}; Reason: {reason}");
-
-        var refreshed = await GetWorkflowSerialByQueryAsync(connection, serial["rsn"]!.ToString()!);
-        return Results.Json(new
-        {
-            message = "SN marked as SCRAP.",
-            action = "SCRAP",
-            data = await BuildWorkflowTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!)
-        });
-    }
-
-    private static async Task<IResult> UndoScrapWorkflowSerialAsync(
-        NpgsqlConnection connection,
-        Dictionary<string, object?> serial,
-        string reason,
-        string changedBy)
-    {
-        var status = serial["serial_status"]?.ToString() ?? "";
-        if (!string.Equals(status, "SCRAP", StringComparison.OrdinalIgnoreCase))
-        {
-            return JsonMessage("Only SCRAP SN can be restored.", 409);
-        }
-
-        var previousStatus = serial["scrap_previous_status"]?.ToString();
-        if (!string.IsNullOrWhiteSpace(previousStatus) && !string.Equals(previousStatus, "New", StringComparison.OrdinalIgnoreCase))
-        {
-            return JsonMessage("Only New SN can be returned from scrap.", 409);
-        }
-
-        var restoredStatus = string.IsNullOrWhiteSpace(previousStatus) ? "New" : previousStatus;
-        var restoredCondition = serial["scrap_previous_condition"]?.ToString();
-        if (string.IsNullOrWhiteSpace(restoredCondition))
-        {
-            restoredCondition = "Good";
-        }
-
-        var stationCode = serial["current_station_code"]?.ToString() ?? "UNDO_SCRAP";
-        var stationName = await ResolveWorkflowStationNameAsync(connection, serial, stationCode);
-
-        await ExecuteAsync(
-            connection,
-            """
-            UPDATE workflow_serial_numbers
-            SET status = @restoredStatus,
-                condition = @restoredCondition,
-                scrap_previous_status = NULL,
-                scrap_previous_condition = NULL,
-                scrap_reason = NULL,
-                scrapped_by = NULL,
-                scrapped_at = NULL,
-                updated_at = NOW()
-            WHERE id = @id
-            """,
-            ("restoredStatus", restoredStatus),
-            ("restoredCondition", restoredCondition),
-            ("id", serial["id"]));
-
-        await InsertWorkflowScrapLogAsync(
-            connection,
-            serial,
-            stationCode,
-            stationName,
-            "UNDO_SCRAP",
-            reason,
-            changedBy,
-            $"Undo Scrap saved. Restored status: {restoredStatus}; Reason: {reason}");
-
-        var refreshed = await GetWorkflowSerialByQueryAsync(connection, serial["rsn"]!.ToString()!);
-        return Results.Json(new
-        {
-            message = "SCRAP mark removed from SN.",
-            action = "UNDO_SCRAP",
-            data = await BuildWorkflowTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!)
-        });
-    }
-
-    private static async Task InsertSerialScrapLogAsync(
-        NpgsqlConnection connection,
-        Dictionary<string, object?> serial,
-        string stationCode,
-        string stationName,
-        string action,
-        string reason,
-        string changedBy,
-        string pcName,
-        string additionalInfo)
-    {
-        await ExecuteAsync(
-            connection,
-            """
-            INSERT INTO serial_station_logs
-              (serial_id, item_id, work_order_id, station_code, station_name, action_result, remark, changed_by,
-               before_station_code, before_station_order, after_station_code, after_station_order,
-               station_length, pc_name, additional_info)
-            VALUES
-              (@serialId, @itemId, @workOrderId, @stationCode, @stationName, @action, @reason, @changedBy,
-               @beforeCode, @beforeOrder, @afterCode, @afterOrder, NULL, @pcName, @additionalInfo)
-            """,
-            ("serialId", serial["id"]),
-            ("itemId", serial["item_id"]),
-            ("workOrderId", serial["work_order_id"]),
-            ("stationCode", stationCode),
-            ("stationName", stationName),
-            ("action", action),
-            ("reason", reason),
-            ("changedBy", changedBy),
-            ("beforeCode", serial["current_station_code"]),
-            ("beforeOrder", serial["current_station_order"]),
-            ("afterCode", serial["current_station_code"]),
-            ("afterOrder", serial["current_station_order"]),
-            ("pcName", pcName),
-            ("additionalInfo", additionalInfo));
-    }
-
-    private static async Task InsertWorkflowScrapLogAsync(
-        NpgsqlConnection connection,
-        Dictionary<string, object?> serial,
-        string stationCode,
-        string stationName,
-        string action,
-        string reason,
-        string changedBy,
-        string additionalInfo)
-    {
-        await ExecuteAsync(
-            connection,
-            """
-            INSERT INTO workflow_serial_station_logs
-              (workflow_serial_id, workflow_part_id, workflow_work_order_id, station_code, station_name, action_result,
-               remark, changed_by, before_station_code, before_station_order, after_station_code, after_station_order)
-            VALUES
-              (@serialId, @partId, @workOrderId, @stationCode, @stationName, @action,
-               @remark, @changedBy, @beforeCode, @beforeOrder, @afterCode, @afterOrder)
-            """,
-            ("serialId", serial["id"]),
-            ("partId", serial["workflow_part_id"]),
-            ("workOrderId", serial["workflow_work_order_id"]),
-            ("stationCode", stationCode),
-            ("stationName", stationName),
-            ("action", action),
-            ("remark", additionalInfo),
-            ("changedBy", changedBy),
-            ("beforeCode", serial["current_station_code"]),
-            ("beforeOrder", serial["current_station_order"]),
-            ("afterCode", serial["current_station_code"]),
-            ("afterOrder", serial["current_station_order"]));
-    }
-
-    private static async Task<string> ResolveLegacyStationNameAsync(NpgsqlConnection connection, Dictionary<string, object?> serial, string stationCode)
-    {
-        var routeRows = await GetRouteRowsForItemAsync(connection, Convert.ToInt32(serial["item_id"]));
-        return routeRows.FirstOrDefault(step => string.Equals(step["station_code"]?.ToString(), stationCode, StringComparison.OrdinalIgnoreCase))?["station_name"]?.ToString()
-            ?? stationCode;
-    }
-
-    private static async Task<string> ResolveWorkflowStationNameAsync(NpgsqlConnection connection, Dictionary<string, object?> serial, string stationCode)
-    {
-        var routeRows = await GetWorkflowRouteRowsForPartAsync(connection, Convert.ToInt32(serial["workflow_part_id"]));
-        return routeRows.FirstOrDefault(step => string.Equals(step["station_code"]?.ToString(), stationCode, StringComparison.OrdinalIgnoreCase))?["station_name"]?.ToString()
-            ?? stationCode;
-    }
-
     private static async Task<Dictionary<string, object?>?> GetSerialByQueryAsync(NpgsqlConnection connection, string query)
     {
         var rows = await QueryRowsAsync(
@@ -3834,7 +3381,6 @@ public static class ConvertedEndpoints
             """
             SELECT snr.id, snr.sn, snr.rsn, snr.status AS serial_status, snr.condition,
                    snr.current_station_code, snr.current_station_order, snr.last_moved_at,
-                   snr.scrap_previous_status, snr.scrap_previous_condition,
                    snr.created_at, snr.updated_at,
                    wo.id AS work_order_id, wo.wo, wo.status AS wo_status, wo.qty AS wo_qty, wo.balance AS wo_balance,
                    i.id AS item_id, i.pn, i.description AS item_description,
@@ -3863,7 +3409,6 @@ public static class ConvertedEndpoints
             """
             SELECT snr.id, snr.sn, snr.rsn, snr.status AS serial_status, snr.condition,
                    snr.current_station_code, snr.current_station_order, snr.last_moved_at,
-                   snr.scrap_previous_status, snr.scrap_previous_condition,
                    snr.created_at, snr.updated_at,
                    w.id AS workflow_work_order_id, w.wo, w.status AS wo_status, w.qty AS wo_qty,
                    GREATEST(COALESCE(w.qty, 0) - (
@@ -3943,7 +3488,7 @@ public static class ConvertedEndpoints
                    COALESCE(additional_info, remark, '') AS additional_info
             FROM serial_station_logs
             WHERE serial_id = @serialId
-              AND UPPER(action_result) IN ('PASS', 'FAIL', 'SCRAP', 'UNDO_SCRAP')
+              AND UPPER(action_result) IN ('PASS', 'FAIL')
             ORDER BY created_at DESC, id DESC
             LIMIT 300
             """,
@@ -4046,7 +3591,7 @@ public static class ConvertedEndpoints
                    COALESCE(remark, '') AS additional_info
             FROM workflow_serial_station_logs
             WHERE workflow_serial_id = @serialId
-              AND UPPER(action_result) IN ('PASS', 'FAIL', 'SCRAP', 'UNDO_SCRAP')
+              AND UPPER(action_result) IN ('PASS', 'FAIL')
             ORDER BY created_at DESC, id DESC
             LIMIT 300
             """,
@@ -6188,6 +5733,432 @@ public static class ConvertedEndpoints
         return connection;
     }
 
+    private static void MapOperationsRouteBack(WebApplication app)
+    {
+        app.MapGet("/api/operations/sn-route-back", async (HttpRequest request) =>
+        {
+            var query = request.Query["query"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return JsonError("Serial Number is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            await EnsureWorkflowSchemaAsync(connection);
+            await EnsureRouteBackSchemaAsync(connection);
+
+            var serial = await GetSerialByQueryAsync(connection, query);
+            if (serial is not null)
+            {
+                var routeRows = await GetRouteRowsForItemAsync(connection, Convert.ToInt32(serial["item_id"]));
+                var passLogs = await GetActivePassLogsByStationAsync(connection, "serial_station_logs", "serial_id", serial["id"]!);
+                return Results.Json(BuildRouteBackSummary(query, "standard", serial, routeRows, passLogs));
+            }
+
+            var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
+            if (workflowSerial is not null)
+            {
+                var routeRows = await GetWorkflowRouteRowsForPartAsync(connection, Convert.ToInt32(workflowSerial["workflow_part_id"]));
+                var passLogs = await GetActivePassLogsByStationAsync(connection, "workflow_serial_station_logs", "workflow_serial_id", workflowSerial["id"]!);
+                return Results.Json(BuildRouteBackSummary(query, "workflow", workflowSerial, routeRows, passLogs));
+            }
+
+            return JsonError("SN/RSN not found", 404);
+        });
+
+        app.MapPost("/api/operations/sn-route-back", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var query = ReadString(payload, "query")?.Trim();
+            var targetStationCode = ReadString(payload, "targetStationCode")?.Trim() ?? ReadString(payload, "target_station_code")?.Trim();
+            var reason = ReadString(payload, "reason")?.Trim() ?? ReadString(payload, "remarks")?.Trim();
+            var changedBy = ReadString(payload, "changedBy")?.Trim() ?? ReadString(payload, "changed_by")?.Trim() ?? "system";
+
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return JsonError("Serial Number is required", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(targetStationCode))
+            {
+                return JsonError("Route back station is required", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return JsonError("Reason / remarks is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            await EnsureWorkflowSchemaAsync(connection);
+            await EnsureRouteBackSchemaAsync(connection);
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            try
+            {
+                var serial = await GetSerialByQueryAsync(connection, query);
+                if (serial is not null)
+                {
+                    var result = await RouteBackStandardSerialAsync(connection, serial, targetStationCode, reason, changedBy);
+                    await transaction.CommitAsync();
+                    return result;
+                }
+
+                var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
+                if (workflowSerial is not null)
+                {
+                    var result = await RouteBackWorkflowSerialAsync(connection, workflowSerial, targetStationCode, reason, changedBy);
+                    await transaction.CommitAsync();
+                    return result;
+                }
+
+                await transaction.RollbackAsync();
+                return JsonError("SN/RSN not found", 404);
+            }
+            catch (InvalidOperationException ex)
+            {
+                await transaction.RollbackAsync();
+                return JsonError(ex.Message, 400);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+    }
+
+    private static async Task<IResult> RouteBackStandardSerialAsync(
+        NpgsqlConnection connection,
+        Dictionary<string, object?> serial,
+        string targetStationCode,
+        string reason,
+        string changedBy)
+    {
+        var routeRows = await GetRouteRowsForItemAsync(connection, Convert.ToInt32(serial["item_id"]));
+        var target = FindRouteBackTarget(routeRows, targetStationCode);
+        var currentOrder = ResolveRouteBackCurrentOrder(serial, routeRows);
+        var targetOrder = Convert.ToInt32(target["station_order"]);
+        if (currentOrder > 0 && targetOrder > currentOrder)
+        {
+            return JsonError("Route back station must be current or previous station", 400);
+        }
+
+        var cancelledStations = GetRouteBackCancelledStations(routeRows, targetOrder);
+        await CancelRouteBackPassLogsAsync(connection, "serial_station_logs", "serial_id", serial["id"]!, cancelledStations, changedBy, reason);
+        await ExecuteAsync(
+            connection,
+            """
+            UPDATE serial_numbers
+            SET status = 'In Process',
+                condition = 'Good',
+                current_station_code = @stationCode,
+                current_station_order = @stationOrder,
+                last_moved_at = NOW(),
+                updated_at = NOW()
+            WHERE id = @id
+            """,
+            ("stationCode", target["station_code"]),
+            ("stationOrder", targetOrder),
+            ("id", serial["id"]));
+
+        await InsertRouteBackAuditAsync(
+            connection,
+            "standard",
+            serial["id"]!,
+            serial["sn"]?.ToString() ?? string.Empty,
+            serial["current_station_code"]?.ToString(),
+            target["station_code"]?.ToString(),
+            cancelledStations,
+            changedBy,
+            reason);
+
+        var refreshed = await GetSerialByQueryAsync(connection, serial["sn"]?.ToString() ?? string.Empty);
+        return Results.Json(new
+        {
+            message = "Route back completed successfully.",
+            data = BuildRouteBackSummary(serial["sn"]?.ToString(), "standard", refreshed ?? serial, routeRows, await GetActivePassLogsByStationAsync(connection, "serial_station_logs", "serial_id", serial["id"]!))
+        });
+    }
+
+    private static async Task<IResult> RouteBackWorkflowSerialAsync(
+        NpgsqlConnection connection,
+        Dictionary<string, object?> serial,
+        string targetStationCode,
+        string reason,
+        string changedBy)
+    {
+        var routeRows = await GetWorkflowRouteRowsForPartAsync(connection, Convert.ToInt32(serial["workflow_part_id"]));
+        var target = FindRouteBackTarget(routeRows, targetStationCode);
+        var currentOrder = ResolveRouteBackCurrentOrder(serial, routeRows);
+        var targetOrder = Convert.ToInt32(target["station_order"]);
+        if (currentOrder > 0 && targetOrder > currentOrder)
+        {
+            return JsonError("Route back station must be current or previous station", 400);
+        }
+
+        var cancelledStations = GetRouteBackCancelledStations(routeRows, targetOrder);
+        await CancelRouteBackPassLogsAsync(connection, "workflow_serial_station_logs", "workflow_serial_id", serial["id"]!, cancelledStations, changedBy, reason);
+        await ExecuteAsync(
+            connection,
+            """
+            UPDATE workflow_serial_numbers
+            SET status = 'In Process',
+                condition = 'Good',
+                current_station_code = @stationCode,
+                current_station_order = @stationOrder,
+                last_moved_at = NOW(),
+                updated_at = NOW()
+            WHERE id = @id
+            """,
+            ("stationCode", target["station_code"]),
+            ("stationOrder", targetOrder),
+            ("id", serial["id"]));
+
+        await InsertRouteBackAuditAsync(
+            connection,
+            "workflow",
+            serial["id"]!,
+            serial["sn"]?.ToString() ?? string.Empty,
+            serial["current_station_code"]?.ToString(),
+            target["station_code"]?.ToString(),
+            cancelledStations,
+            changedBy,
+            reason);
+
+        var refreshed = await GetWorkflowSerialByQueryAsync(connection, serial["sn"]?.ToString() ?? string.Empty);
+        return Results.Json(new
+        {
+            message = "Route back completed successfully.",
+            data = BuildRouteBackSummary(serial["sn"]?.ToString(), "workflow", refreshed ?? serial, routeRows, await GetActivePassLogsByStationAsync(connection, "workflow_serial_station_logs", "workflow_serial_id", serial["id"]!))
+        });
+    }
+
+    private static Dictionary<string, object?> FindRouteBackTarget(List<Dictionary<string, object?>> routeRows, string targetStationCode)
+    {
+        if (routeRows.Count == 0)
+        {
+            throw new InvalidOperationException("No routing configured for this SN.");
+        }
+
+        return routeRows.FirstOrDefault(row => string.Equals(row["station_code"]?.ToString(), targetStationCode, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Route back station is not in this SN route.");
+    }
+
+    private static int ResolveRouteBackCurrentOrder(Dictionary<string, object?> serial, List<Dictionary<string, object?>> routeRows)
+    {
+        if (routeRows.Count == 0)
+        {
+            return 0;
+        }
+
+        if (string.Equals(serial["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase))
+        {
+            return routeRows.Max(row => Convert.ToInt32(row["station_order"]));
+        }
+
+        return ResolveCurrentOrder(serial, routeRows);
+    }
+
+    private static string[] GetRouteBackCancelledStations(List<Dictionary<string, object?>> routeRows, int targetOrder)
+    {
+        return routeRows
+            .Where(row => Convert.ToInt32(row["station_order"]) > targetOrder)
+            .Select(row => row["station_code"]?.ToString() ?? string.Empty)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static async Task<Dictionary<string, Dictionary<string, object?>>> GetActivePassLogsByStationAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        string serialIdColumn,
+        object serialId)
+    {
+        var rows = await QueryRowsAsync(
+            connection,
+            $"""
+            SELECT DISTINCT ON (station_code)
+                   station_code, id, action_result, created_at
+            FROM {tableName}
+            WHERE {serialIdColumn} = @serialId
+              AND UPPER(action_result) = 'PASS'
+              AND COALESCE(is_active, TRUE) = TRUE
+            ORDER BY station_code, created_at DESC, id DESC
+            """,
+            ("serialId", serialId));
+
+        return rows.ToDictionary(row => row["station_code"]?.ToString() ?? string.Empty, row => row, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static async Task CancelRouteBackPassLogsAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        string serialIdColumn,
+        object serialId,
+        string[] cancelledStations,
+        string changedBy,
+        string reason)
+    {
+        if (cancelledStations.Length == 0)
+        {
+            return;
+        }
+
+        await ExecuteAsync(
+            connection,
+            $"""
+            UPDATE {tableName}
+            SET is_active = FALSE,
+                route_back_cancelled_at = NOW(),
+                route_back_cancelled_by = @changedBy,
+                route_back_reason = @reason,
+                action_result = 'RouteBackCancelled'
+            WHERE {serialIdColumn} = @serialId
+              AND station_code = ANY(@cancelledStations)
+              AND UPPER(action_result) = 'PASS'
+              AND COALESCE(is_active, TRUE) = TRUE
+            """,
+            ("changedBy", changedBy),
+            ("reason", reason),
+            ("serialId", serialId),
+            ("cancelledStations", cancelledStations));
+    }
+
+    private static async Task InsertRouteBackAuditAsync(
+        NpgsqlConnection connection,
+        string serialSource,
+        object serialId,
+        string serialNumber,
+        string? previousStation,
+        string? routeBackStation,
+        string[] cancelledStations,
+        string changedBy,
+        string reason)
+    {
+        await ExecuteAsync(
+            connection,
+            """
+            INSERT INTO serial_route_back_audit
+              (serial_source, serial_id, serial_number, previous_station_code, route_back_station_code,
+               cancelled_stations, changed_by, reason)
+            VALUES
+              (@serialSource, @serialId, @serialNumber, @previousStation, @routeBackStation,
+               @cancelledStations, @changedBy, @reason)
+            """,
+            ("serialSource", serialSource),
+            ("serialId", Convert.ToInt64(serialId)),
+            ("serialNumber", serialNumber),
+            ("previousStation", previousStation),
+            ("routeBackStation", routeBackStation),
+            ("cancelledStations", cancelledStations),
+            ("changedBy", changedBy),
+            ("reason", reason));
+    }
+
+    private static object BuildRouteBackSummary(
+        string? query,
+        string source,
+        Dictionary<string, object?> serial,
+        List<Dictionary<string, object?>> routeRows,
+        Dictionary<string, Dictionary<string, object?>> activePassLogs)
+    {
+        var currentOrder = routeRows.Count == 0 ? 0 : ResolveRouteBackCurrentOrder(serial, routeRows);
+        var selectableStations = routeRows
+            .Where(row => currentOrder == 0 || Convert.ToInt32(row["station_order"]) <= currentOrder)
+            .Select(row => new
+            {
+                station_code = row["station_code"],
+                station_name = row["station_name"],
+                station_order = row["station_order"]
+            })
+            .ToList();
+
+        return new
+        {
+            query,
+            source,
+            serial = new
+            {
+                id = serial["id"],
+                sn = serial["sn"],
+                rsn = serial["rsn"],
+                status = serial["serial_status"],
+                condition = serial["condition"],
+                current_station_code = serial["current_station_code"],
+                current_station_order = currentOrder == 0 ? serial["current_station_order"] : currentOrder,
+                pn = serial["pn"],
+                work_order = serial["wo"]
+            },
+            routeSummary = routeRows.Select(row =>
+            {
+                var order = Convert.ToInt32(row["station_order"]);
+                var stationCode = row["station_code"]?.ToString() ?? string.Empty;
+                var hasPass = activePassLogs.ContainsKey(stationCode);
+                var status = currentOrder > 0 && order == currentOrder
+                    ? "Current"
+                    : hasPass
+                        ? "PASS"
+                        : currentOrder > 0 && order < currentOrder ? "Cancelled / Needs Retest" : "Pending";
+                return new
+                {
+                    station = stationCode,
+                    description = row["station_name"],
+                    qmsReport = row["report_mode"],
+                    sample = row["sample_mode"],
+                    finalStatus = status,
+                    stationOrder = order
+                };
+            }),
+            selectableStations
+        };
+    }
+
+    private static async Task EnsureRouteBackSchemaAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(
+            connection,
+            """
+            ALTER TABLE serial_station_logs
+            ALTER COLUMN action_result TYPE VARCHAR(40),
+            ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            ADD COLUMN IF NOT EXISTS route_back_cancelled_at TIMESTAMP,
+            ADD COLUMN IF NOT EXISTS route_back_cancelled_by VARCHAR(100),
+            ADD COLUMN IF NOT EXISTS route_back_reason TEXT
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            ALTER TABLE workflow_serial_station_logs
+            ALTER COLUMN action_result TYPE VARCHAR(40),
+            ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            ADD COLUMN IF NOT EXISTS route_back_cancelled_at TIMESTAMP,
+            ADD COLUMN IF NOT EXISTS route_back_cancelled_by VARCHAR(100),
+            ADD COLUMN IF NOT EXISTS route_back_reason TEXT
+            """);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS serial_route_back_audit (
+              id BIGSERIAL PRIMARY KEY,
+              serial_source VARCHAR(30) NOT NULL,
+              serial_id BIGINT NOT NULL,
+              serial_number VARCHAR(220) NOT NULL,
+              previous_station_code VARCHAR(80),
+              route_back_station_code VARCHAR(80),
+              cancelled_stations TEXT[] NOT NULL DEFAULT '{}',
+              changed_by VARCHAR(100) NOT NULL DEFAULT 'system',
+              reason TEXT NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """);
+    }
+
     private static void MapLabels(WebApplication app)
     {
         app.MapGet("/api/labels", async () =>
@@ -6579,6 +6550,322 @@ public static class ConvertedEndpoints
                 stations
             });
         });
+
+        app.MapGet("/api/reports/activity-quality", async (HttpRequest request) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            await EnsureWorkflowSchemaAsync(connection);
+
+            var now = DateTime.Now;
+            var fromDate = ReadDateQuery(request, "fromDate") ?? now.Date;
+            var toDate = ReadDateQuery(request, "toDate") ?? now;
+            if (toDate.Date == toDate)
+            {
+                toDate = toDate.Date.AddDays(1).AddTicks(-1);
+            }
+
+            var startHour = ReadIntQuery(request, "startHour");
+            if (startHour is >= 0 and <= 23)
+            {
+                fromDate = fromDate.Date.AddHours(startHour.Value);
+            }
+
+            var pivotBy = NormalizeActivityQualityPivot(request.Query["pivotBy"].ToString());
+            var pivotExpression = ActivityQualityPivotExpression(pivotBy);
+            var siteValues = ReadQueryList(request, "siteIds");
+            var stationValues = ReadQueryList(request, "stationIds");
+            var productLineValues = ReadQueryList(request, "productLineIds");
+            var partNumbers = ReadQueryList(request, "partNumbers");
+            var workOrders = ReadQueryList(request, "workOrders");
+            var pcValues = ReadQueryList(request, "pcIds");
+            var userValues = ReadQueryList(request, "userIds");
+
+            const string activityCte = """
+                WITH activity AS (
+                  SELECT
+                    l.created_at AS date_time,
+                    sn.site_id::text AS site_id,
+                    COALESCE(s.name, '') AS site,
+                    l.station_code AS station,
+                    COALESCE(l.station_name, l.station_code) AS station_name,
+                    COALESCE(pl.description, pl.code, '') AS product_line,
+                    i.pn AS part_number,
+                    wo.wo AS work_order,
+                    COALESCE(l.pc_name, '') AS pc,
+                    COALESCE(l.changed_by, '') AS user_name,
+                    sn.sn AS serial_number,
+                    UPPER(l.action_result) AS result,
+                    COALESCE(NULLIF(l.remark, ''), NULLIF(l.additional_info, ''), '') AS symptom
+                  FROM serial_station_logs l
+                  JOIN serial_numbers sn ON sn.id = l.serial_id
+                  JOIN work_orders wo ON wo.id = l.work_order_id
+                  JOIN items i ON i.id = l.item_id
+                  LEFT JOIN sites s ON s.id = sn.site_id
+                  LEFT JOIN product_lines pl ON pl.id = i.product_line_id
+                  WHERE UPPER(l.action_result) IN ('PASS', 'FAIL')
+
+                  UNION ALL
+
+                  SELECT
+                    l.created_at AS date_time,
+                    w.site_id::text AS site_id,
+                    COALESCE(w.site_name, '') AS site,
+                    l.station_code AS station,
+                    COALESCE(l.station_name, l.station_code) AS station_name,
+                    COALESCE(p.item_type, '') AS product_line,
+                    p.pn AS part_number,
+                    w.wo AS work_order,
+                    '' AS pc,
+                    COALESCE(l.changed_by, '') AS user_name,
+                    sn.sn AS serial_number,
+                    UPPER(l.action_result) AS result,
+                    COALESCE(l.remark, '') AS symptom
+                  FROM workflow_serial_station_logs l
+                  JOIN workflow_serial_numbers sn ON sn.id = l.workflow_serial_id
+                  JOIN workflow_part_numbers p ON p.id = l.workflow_part_id
+                  JOIN workflow_work_orders w ON w.id = l.workflow_work_order_id
+                  WHERE UPPER(l.action_result) IN ('PASS', 'FAIL')
+                ),
+                filtered AS (
+                  SELECT *
+                  FROM activity
+                  WHERE date_time >= @fromDate
+                    AND date_time <= @toDate
+                    AND (cardinality(@siteValues) = 0 OR site_id = ANY(@siteValues) OR site = ANY(@siteValues))
+                    AND (cardinality(@stationValues) = 0 OR station = ANY(@stationValues) OR station_name = ANY(@stationValues))
+                    AND (cardinality(@productLineValues) = 0 OR product_line = ANY(@productLineValues))
+                    AND (cardinality(@partNumbers) = 0 OR part_number = ANY(@partNumbers))
+                    AND (cardinality(@workOrders) = 0 OR work_order = ANY(@workOrders))
+                    AND (cardinality(@pcValues) = 0 OR pc = ANY(@pcValues))
+                    AND (cardinality(@userValues) = 0 OR user_name = ANY(@userValues))
+                )
+                """;
+
+            var parameters = new (string Name, object? Value)[]
+            {
+                ("fromDate", fromDate),
+                ("toDate", toDate),
+                ("siteValues", siteValues),
+                ("stationValues", stationValues),
+                ("productLineValues", productLineValues),
+                ("partNumbers", partNumbers),
+                ("workOrders", workOrders),
+                ("pcValues", pcValues),
+                ("userValues", userValues)
+            };
+
+            var summaryRows = await QueryRowsAsync(
+                connection,
+                activityCte + """
+                SELECT
+                  COUNT(*)::int AS total_tested,
+                  COUNT(*) FILTER (WHERE result = 'PASS')::int AS total_pass,
+                  COUNT(*) FILTER (WHERE result = 'FAIL')::int AS total_fail,
+                  COUNT(DISTINCT station) FILTER (WHERE station <> '')::int AS active_stations,
+                  COUNT(DISTINCT work_order) FILTER (WHERE work_order <> '')::int AS active_work_orders,
+                  COUNT(DISTINCT user_name) FILTER (WHERE user_name <> '')::int AS active_users
+                FROM filtered
+                """,
+                parameters);
+
+            var summary = summaryRows[0];
+            var totalTested = Convert.ToInt32(summary["total_tested"] ?? 0);
+            var totalPass = Convert.ToInt32(summary["total_pass"] ?? 0);
+            var totalFail = Convert.ToInt32(summary["total_fail"] ?? 0);
+            var passRate = totalTested == 0 ? 0 : Math.Round(totalPass * 100m / totalTested, 2);
+            var failRate = totalTested == 0 ? 0 : Math.Round(totalFail * 100m / totalTested, 2);
+
+            var chartRows = await QueryRowsAsync(
+                connection,
+                activityCte + $"""
+                SELECT
+                  {pivotExpression} AS pivot_key,
+                  COUNT(*) FILTER (WHERE result = 'PASS')::int AS pass_count,
+                  COUNT(*) FILTER (WHERE result = 'FAIL')::int AS fail_count,
+                  COUNT(*)::int AS total_count
+                FROM filtered
+                GROUP BY pivot_key
+                ORDER BY MIN(date_time), pivot_key
+                LIMIT 120
+                """,
+                parameters);
+
+            var detailRows = await QueryRowsAsync(
+                connection,
+                activityCte + """
+                SELECT date_time, site, station_name AS station, product_line, part_number, work_order, pc, user_name,
+                       serial_number, result, symptom AS failure_reason
+                FROM filtered
+                ORDER BY date_time DESC
+                LIMIT 500
+                """,
+                parameters);
+
+            var symptomRows = await QueryRowsAsync(
+                connection,
+                activityCte + """
+                SELECT COALESCE(NULLIF(symptom, ''), 'Unspecified') AS symptom,
+                       COUNT(*)::int AS count
+                FROM filtered
+                WHERE result = 'FAIL'
+                GROUP BY COALESCE(NULLIF(symptom, ''), 'Unspecified')
+                ORDER BY count DESC, symptom ASC
+                LIMIT 10
+                """,
+                parameters);
+
+            var stationRows = await QueryRowsAsync(
+                connection,
+                activityCte + """
+                SELECT COALESCE(NULLIF(station_name, ''), station) AS station,
+                       COUNT(*) FILTER (WHERE result = 'FAIL')::int AS fail_count,
+                       COUNT(*)::int AS total_count
+                FROM filtered
+                GROUP BY COALESCE(NULLIF(station_name, ''), station)
+                HAVING COUNT(*) > 0
+                ORDER BY (COUNT(*) FILTER (WHERE result = 'FAIL'))::decimal / NULLIF(COUNT(*), 0) DESC, station ASC
+                LIMIT 10
+                """,
+                parameters);
+
+            return Results.Json(new
+            {
+                kpiSummary = new
+                {
+                    totalPass,
+                    totalFail,
+                    totalTested,
+                    passRate,
+                    failRate,
+                    activeStations = summary["active_stations"],
+                    activeWorkOrders = summary["active_work_orders"],
+                    activeUsers = summary["active_users"]
+                },
+                chartData = chartRows.Select(row =>
+                {
+                    var total = Convert.ToInt32(row["total_count"] ?? 0);
+                    var passed = Convert.ToInt32(row["pass_count"] ?? 0);
+                    return new
+                    {
+                        label = FormatActivityQualityPivot(row["pivot_key"], pivotBy),
+                        passCount = passed,
+                        failCount = Convert.ToInt32(row["fail_count"] ?? 0),
+                        passRate = total == 0 ? 0 : Math.Round(passed * 100m / total, 2)
+                    };
+                }),
+                detailedRows = detailRows,
+                symptomsPareto = BuildParetoRows(symptomRows),
+                stationFailRates = stationRows.Select(row =>
+                {
+                    var total = Convert.ToInt32(row["total_count"] ?? 0);
+                    var failed = Convert.ToInt32(row["fail_count"] ?? 0);
+                    return new
+                    {
+                        station = row["station"],
+                        failCount = failed,
+                        totalCount = total,
+                        failRate = total == 0 ? 0 : Math.Round(failed * 100m / total, 2)
+                    };
+                })
+            });
+        });
+    }
+
+    private static string NormalizeActivityQualityPivot(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        return normalized switch
+        {
+            "perHour" or "hour" => "perHour",
+            "perDay" or "day" => "perDay",
+            "perWeek" or "week" => "perWeek",
+            "perMonth" or "month" => "perMonth",
+            "perSite" or "site" => "perSite",
+            "perPc" or "pc" => "perPc",
+            "perStation" or "station" => "perStation",
+            "perProductLine" or "productLine" or "pl" => "perProductLine",
+            "perPartNumber" or "partNumber" or "pn" => "perPartNumber",
+            "perWorkOrder" or "workOrder" or "wo" => "perWorkOrder",
+            "perUser" or "user" => "perUser",
+            _ => "perHour"
+        };
+    }
+
+    private static string ActivityQualityPivotExpression(string pivotBy)
+    {
+        return pivotBy switch
+        {
+            "perHour" => "date_trunc('hour', date_time)",
+            "perDay" => "date_trunc('day', date_time)",
+            "perWeek" => "date_trunc('week', date_time)",
+            "perMonth" => "date_trunc('month', date_time)",
+            "perSite" => "COALESCE(NULLIF(site, ''), 'Unassigned site')",
+            "perPc" => "COALESCE(NULLIF(pc, ''), 'Unassigned PC')",
+            "perStation" => "COALESCE(NULLIF(station_name, ''), station, 'Unassigned station')",
+            "perProductLine" => "COALESCE(NULLIF(product_line, ''), 'Unassigned PL')",
+            "perPartNumber" => "COALESCE(NULLIF(part_number, ''), 'Unassigned PN')",
+            "perWorkOrder" => "COALESCE(NULLIF(work_order, ''), 'Unassigned WO')",
+            "perUser" => "COALESCE(NULLIF(user_name, ''), 'Unassigned user')",
+            _ => "date_trunc('hour', date_time)"
+        };
+    }
+
+    private static string FormatActivityQualityPivot(object? value, string pivotBy)
+    {
+        if (value is DateTime dateTime)
+        {
+            return pivotBy switch
+            {
+                "perHour" => dateTime.ToString("yyyy-MM-dd HH:00", CultureInfo.InvariantCulture),
+                "perDay" => dateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                "perWeek" => $"Week of {dateTime:yyyy-MM-dd}",
+                "perMonth" => dateTime.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                _ => dateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+            };
+        }
+
+        return Convert.ToString(value) ?? string.Empty;
+    }
+
+    private static DateTime? ReadDateQuery(HttpRequest request, string key)
+    {
+        var value = request.Query[key].ToString();
+        return DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static int? ReadIntQuery(HttpRequest request, string key)
+    {
+        var value = request.Query[key].ToString();
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+    }
+
+    private static string[] ReadQueryList(HttpRequest request, string key)
+    {
+        return request.Query[key]
+            .SelectMany(value => (value ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static IEnumerable<object> BuildParetoRows(List<Dictionary<string, object?>> rows)
+    {
+        var total = rows.Sum(row => Convert.ToInt32(row["count"] ?? 0));
+        var cumulative = 0;
+        foreach (var row in rows)
+        {
+            var count = Convert.ToInt32(row["count"] ?? 0);
+            cumulative += count;
+            yield return new
+            {
+                symptom = row["symptom"],
+                count,
+                percentage = total == 0 ? 0 : Math.Round(count * 100m / total, 2),
+                cumulativePercentage = total == 0 ? 0 : Math.Round(cumulative * 100m / total, 2)
+            };
+        }
     }
 
     private static async Task EnsureLabelsSchemaAsync(NpgsqlConnection connection)
@@ -6999,11 +7286,6 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_label_printing_part ON public.workflow_station_label_printing (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_wo ON public.workflow_serial_numbers (workflow_work_order_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_part ON public.workflow_serial_numbers (workflow_part_id)");
-        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_status VARCHAR(30)");
-        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_condition VARCHAR(30)");
-        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_reason TEXT");
-        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrapped_by VARCHAR(100)");
-        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrapped_at TIMESTAMP");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_bind_parent_station ON public.workflow_serial_bom_bindings (parent_workflow_serial_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_bind_child ON public.workflow_serial_bom_bindings (child_workflow_serial_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_serial ON public.workflow_serial_station_logs (workflow_serial_id, created_at DESC)");
@@ -7176,11 +7458,6 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_numbers_sn_upper ON serial_numbers (UPPER(sn))");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_numbers_wo ON serial_numbers (work_order_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_numbers_item ON serial_numbers (item_id)");
-        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_status VARCHAR(30)");
-        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_condition VARCHAR(30)");
-        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_reason TEXT");
-        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrapped_by VARCHAR(100)");
-        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrapped_at TIMESTAMP");
         await ExecuteAsync(
             connection,
             """
@@ -7255,20 +7532,6 @@ public static class ConvertedEndpoints
               CONSTRAINT uq_packing_serial UNIQUE (serial_id)
             )
             """);
-    }
-
-    private static async Task EnsureScrapTrackingColumnsAsync(NpgsqlConnection connection)
-    {
-        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_status VARCHAR(30)");
-        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_condition VARCHAR(30)");
-        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_reason TEXT");
-        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrapped_by VARCHAR(100)");
-        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrapped_at TIMESTAMP");
-        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_status VARCHAR(30)");
-        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_condition VARCHAR(30)");
-        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_reason TEXT");
-        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrapped_by VARCHAR(100)");
-        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrapped_at TIMESTAMP");
     }
 
     private static string GetConnectionString()

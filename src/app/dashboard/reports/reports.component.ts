@@ -15,10 +15,64 @@ import {
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { AuthService } from '../../services/auth.service';
 
-type ReportsView = 'menu' | 'standard' | 'scrapSn' | 'undoScrap';
+type ReportsView = 'menu' | 'standard' | 'activityQuality';
 type ReportsTab = 'tree' | 'station';
+type DateSelection = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
+
+interface ActivityQualityKpiSummary {
+  totalPass: number;
+  totalFail: number;
+  totalTested: number;
+  passRate: number;
+  failRate: number;
+  activeStations: number;
+  activeWorkOrders: number;
+  activeUsers: number;
+}
+
+interface ActivityQualityChartPoint {
+  label: string;
+  passCount: number;
+  failCount: number;
+  passRate: number;
+}
+
+interface ActivityQualityDetailRow {
+  date_time: string;
+  site: string;
+  station: string;
+  product_line: string;
+  part_number: string;
+  work_order: string;
+  pc: string;
+  user_name: string;
+  serial_number: string;
+  result: string;
+  failure_reason: string;
+}
+
+interface ActivityQualityParetoPoint {
+  symptom: string;
+  count: number;
+  percentage: number;
+  cumulativePercentage: number;
+}
+
+interface ActivityQualityStationFailRate {
+  station: string;
+  failCount: number;
+  totalCount: number;
+  failRate: number;
+}
+
+interface ActivityQualityResponse {
+  kpiSummary: ActivityQualityKpiSummary;
+  chartData: ActivityQualityChartPoint[];
+  detailedRows: ActivityQualityDetailRow[];
+  symptomsPareto: ActivityQualityParetoPoint[];
+  stationFailRates?: ActivityQualityStationFailRate[];
+}
 
 type ReportFlowNode = {
   id: string;
@@ -87,29 +141,6 @@ interface WorkOrderTreeReport {
   stations: WorkOrderTreeStation[];
 }
 
-interface ScrapActionResponse {
-  message: string;
-  action: 'SCRAP' | 'UNDO_SCRAP';
-  data: {
-    serial: {
-      sn: string;
-      rsn: string;
-      status: string;
-      condition: string;
-      current_station_code: string | null;
-      current_station_name: string | null;
-      updated_at: string;
-      last_moved_at: string | null;
-    };
-    device: {
-      pn: string;
-      revision: string;
-      work_order: string;
-      description: string;
-    };
-  };
-}
-
 @Component({
   selector: 'app-reports',
   standalone: false,
@@ -118,21 +149,66 @@ interface ScrapActionResponse {
 })
 export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked, OnDestroy {
   readonly reportsApi = `${environment.apiUrl}/api/reports/work-order-tree`;
-  readonly scrapSnApi = `${environment.apiUrl}/api/reports/scrap-sn`;
-  readonly undoScrapApi = `${environment.apiUrl}/api/reports/undo-scrap`;
+  readonly activityQualityApi = `${environment.apiUrl}/api/reports/activity-quality`;
 
   activeView: ReportsView = 'menu';
   activeTab: ReportsTab = 'tree';
   currentWorkOrder = '';
   loading = false;
   errorMessage = '';
-  successMessage = '';
-  scrapQuery = '';
-  scrapReason = '';
-  scrapLoading = false;
-  scrapResult: ScrapActionResponse | null = null;
   report: WorkOrderTreeReport | null = null;
   selectedStation: WorkOrderTreeStation | null = null;
+  activityLoading = false;
+  activityErrorMessage = '';
+  showExportMenu = false;
+  showPassSeries = true;
+  showFailSeries = true;
+  selectedChartPoint: ActivityQualityChartPoint | null = null;
+  rerunEnabled = false;
+  fullScreenEnabled = false;
+  rerunTimer: number | null = null;
+  readonly dateSelections: { value: DateSelection; label: string }[] = [
+    { value: 'today', label: 'Today' },
+    { value: 'yesterday', label: 'Yesterday' },
+    { value: 'thisWeek', label: 'This Week' },
+    { value: 'thisMonth', label: 'This Month' },
+    { value: 'custom', label: 'Custom' },
+  ];
+  readonly pivotOptions = [
+    { value: 'perHour', label: 'Per hour', group: 'Time' },
+    { value: 'perDay', label: 'Per day', group: 'Time' },
+    { value: 'perWeek', label: 'Per week', group: 'Time' },
+    { value: 'perMonth', label: 'Per month', group: 'Time' },
+    { value: 'perSite', label: 'Per site', group: 'Physical' },
+    { value: 'perPc', label: 'Per PC', group: 'Physical' },
+    { value: 'perStation', label: 'Per station', group: 'Process' },
+    { value: 'perProductLine', label: 'Per PL', group: 'Product' },
+    { value: 'perPartNumber', label: 'Per PN', group: 'Product' },
+    { value: 'perWorkOrder', label: 'Per WO', group: 'Product' },
+    { value: 'perUser', label: 'Per user', group: 'Human' },
+  ];
+  activityFilters = {
+    fromDate: '',
+    toDate: '',
+    dateSelection: 'today' as DateSelection,
+    startHour: 0,
+    site: '',
+    station: '',
+    productLine: '',
+    partNumber: '',
+    workOrder: '',
+    pc: '',
+    user: '',
+    pivotBy: 'perHour',
+    allSites: true,
+    allStations: true,
+    allProductLines: true,
+    allPartNumbers: true,
+    allWorkOrders: true,
+    allPcs: true,
+    allUsers: true,
+  };
+  activityData: ActivityQualityResponse = this.emptyActivityQualityResponse();
   flowCardsPerRow = this.getFlowCardsPerRow();
   connectorPath = '';
   connectorWidth = 0;
@@ -147,11 +223,11 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     private http: HttpClient,
     private router: Router,
     private route: ActivatedRoute,
-    private authService: AuthService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.applyDateSelection();
     this.routeSubscription = this.route.queryParamMap.subscribe((params) => {
       const wo = String(params.get('wo') || params.get('q') || '').trim();
       if (!wo) {
@@ -165,6 +241,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
   ngOnDestroy(): void {
     this.routeSubscription?.unsubscribe();
+    this.stopRerun();
     if (this.connectorFrame !== null) {
       window.cancelAnimationFrame(this.connectorFrame);
     }
@@ -193,70 +270,214 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.activeView = 'standard';
     this.activeTab = 'tree';
     this.errorMessage = '';
-    this.successMessage = '';
   }
 
-  openScrapSnReports(): void {
-    this.openReportsModule('scrapSn');
-  }
-
-  openUndoScrapReports(): void {
-    this.openReportsModule('undoScrap');
+  openActivityQualityDashboard(): void {
+    this.activeView = 'activityQuality';
+    this.activityErrorMessage = '';
+    if (this.activityData.chartData.length === 0 && !this.activityLoading) {
+      this.loadActivityQualityDashboard();
+    }
   }
 
   backToMenu(): void {
     this.activeView = 'menu';
     this.errorMessage = '';
-    this.successMessage = '';
     this.report = null;
     this.selectedStation = null;
     this.currentWorkOrder = '';
-    this.resetScrapForm();
+    this.showExportMenu = false;
+    this.fullScreenEnabled = false;
     this.router.navigate(['/dashboard/reports']);
   }
 
-  get activeModuleTitle(): string {
-    if (this.activeView === 'scrapSn') {
-      return 'Scrap SN';
-    }
+  loadActivityQualityDashboard(): void {
+    this.applyDateSelection();
+    this.activityLoading = true;
+    this.activityErrorMessage = '';
+    this.selectedChartPoint = null;
 
-    if (this.activeView === 'undoScrap') {
-      return 'Undo Scrap';
-    }
-
-    return 'Reports';
+    this.http.get<ActivityQualityResponse>(this.activityQualityApi, { params: this.buildActivityQualityParams() }).subscribe({
+      next: (response) => {
+        this.activityData = {
+          ...this.emptyActivityQualityResponse(),
+          ...response,
+          kpiSummary: { ...this.emptyActivityQualityResponse().kpiSummary, ...(response.kpiSummary || {}) },
+          chartData: response.chartData || [],
+          detailedRows: response.detailedRows || [],
+          symptomsPareto: response.symptomsPareto || [],
+          stationFailRates: response.stationFailRates || [],
+        };
+        this.activityLoading = false;
+      },
+      error: (error) => {
+        this.activityData = this.emptyActivityQualityResponse();
+        this.activityLoading = false;
+        this.activityErrorMessage = error?.error?.message || error?.error?.error || 'Unable to load Activity & Quality Dashboard.';
+      }
+    });
   }
 
-  get activeModuleIcon(): string {
-    return this.activeView === 'undoScrap' ? 'undo' : 'delete_sweep';
+  resetActivityFilters(): void {
+    this.stopRerun();
+    this.rerunEnabled = false;
+    this.activityFilters = {
+      ...this.activityFilters,
+      dateSelection: 'today',
+      startHour: 0,
+      site: '',
+      station: '',
+      productLine: '',
+      partNumber: '',
+      workOrder: '',
+      pc: '',
+      user: '',
+      pivotBy: 'perHour',
+      allSites: true,
+      allStations: true,
+      allProductLines: true,
+      allPartNumbers: true,
+      allWorkOrders: true,
+      allPcs: true,
+      allUsers: true,
+    };
+    this.applyDateSelection();
+    this.loadActivityQualityDashboard();
   }
 
-  get activeModulePrompt(): string {
-    if (this.activeView === 'scrapSn') {
-      return 'Enter serial number in search bar';
-    }
-
-    if (this.activeView === 'undoScrap') {
-      return 'Enter scrapped serial number in search bar';
-    }
-
-    return '';
+  onActivityDateSelectionChange(): void {
+    this.applyDateSelection();
   }
 
-  get activeModuleButtonLabel(): string {
-    return this.activeView === 'undoScrap' ? 'Undo Scrap' : 'Scrap SN';
+  get showStartHour(): boolean {
+    return this.activityFilters.dateSelection === 'today' || this.activityFilters.dateSelection === 'yesterday';
   }
 
-  get activeModuleHelp(): string {
-    if (this.activeView === 'scrapSn') {
-      return 'Scrap marks a damaged or beyond-repair SN as SCRAP, blocks production actions, and saves the action in SN History.';
+  onRerunToggle(): void {
+    if (this.rerunEnabled) {
+      this.loadActivityQualityDashboard();
+      this.stopRerun();
+      this.rerunTimer = window.setInterval(() => this.loadActivityQualityDashboard(), 5 * 60 * 1000);
+      return;
     }
 
-    if (this.activeView === 'undoScrap') {
-      return 'Undo Scrap removes the SCRAP mark, restores the previous New condition, and saves the action in SN History.';
+    this.stopRerun();
+  }
+
+  stopRerun(): void {
+    if (this.rerunTimer !== null) {
+      window.clearInterval(this.rerunTimer);
+      this.rerunTimer = null;
+    }
+    this.rerunEnabled = false;
+  }
+
+  toggleFullScreen(): void {
+    this.fullScreenEnabled = !this.fullScreenEnabled;
+  }
+
+  toggleSeries(series: 'pass' | 'fail'): void {
+    if (series === 'pass') {
+      this.showPassSeries = !this.showPassSeries;
+      return;
     }
 
-    return '';
+    this.showFailSeries = !this.showFailSeries;
+  }
+
+  selectChartPoint(point: ActivityQualityChartPoint): void {
+    this.selectedChartPoint = point;
+  }
+
+  exportActivityData(): void {
+    const headers = ['Date/Time', 'Site', 'Station', 'Product Line', 'Part Number', 'Work Order', 'PC', 'User', 'Serial Number', 'Result', 'Failure Reason'];
+    const rows = this.activityData.detailedRows.map((row) => [
+      row.date_time,
+      row.site,
+      row.station,
+      row.product_line,
+      row.part_number,
+      row.work_order,
+      row.pc,
+      row.user_name,
+      row.serial_number,
+      row.result,
+      row.failure_reason,
+    ]);
+    this.downloadText('activity-quality-dashboard.csv', [headers, ...rows].map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n'));
+    this.showExportMenu = false;
+  }
+
+  exportChartImage(): void {
+    const svg = document.querySelector('.aq-chart-svg');
+    if (!(svg instanceof SVGElement)) {
+      return;
+    }
+
+    const source = new XMLSerializer().serializeToString(svg);
+    const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+    this.downloadBlob('activity-quality-chart.svg', blob);
+    this.showExportMenu = false;
+  }
+
+  viewUnderlyingData(): void {
+    const table = document.querySelector('.aq-table-card');
+    table?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    this.showExportMenu = false;
+  }
+
+  get maxChartCount(): number {
+    return Math.max(1, ...this.activityData.chartData.map((item) => Math.max(item.passCount, item.failCount)));
+  }
+
+  chartBarHeight(value: number): number {
+    return Math.max(value > 0 ? 8 : 0, Math.round((value / this.maxChartCount) * 170));
+  }
+
+  get yieldPolyline(): string {
+    const points = this.activityData.chartData;
+    if (points.length === 0) {
+      return '';
+    }
+
+    const width = 1000;
+    const height = 180;
+    const step = points.length === 1 ? 0 : width / (points.length - 1);
+    return points
+      .map((point, index) => {
+        const x = points.length === 1 ? width / 2 : index * step;
+        const y = height - ((Math.max(0, Math.min(100, point.passRate)) / 100) * height);
+        return `${x},${y}`;
+      })
+      .join(' ');
+  }
+
+  get filteredDetailRows(): ActivityQualityDetailRow[] {
+    if (!this.selectedChartPoint) {
+      return this.activityData.detailedRows;
+    }
+
+    return this.activityData.detailedRows.filter((row) => this.rowMatchesSelectedPoint(row));
+  }
+
+  optionValues(field: keyof ActivityQualityDetailRow): string[] {
+    return Array.from(new Set(this.activityData.detailedRows.map((row) => String(row[field] || '').trim()).filter(Boolean))).sort();
+  }
+
+  trackByChartPoint(index: number, point: ActivityQualityChartPoint): string {
+    return `${index}-${point.label}`;
+  }
+
+  trackByActivityRow(index: number, row: ActivityQualityDetailRow): string {
+    return `${index}-${row.serial_number}-${row.date_time}`;
+  }
+
+  trackByPareto(index: number, row: ActivityQualityParetoPoint): string {
+    return `${index}-${row.symptom}`;
+  }
+
+  trackByStationFail(index: number, row: ActivityQualityStationFailRate): string {
+    return `${index}-${row.station}`;
   }
 
   loadWorkOrderReport(wo: string): void {
@@ -291,24 +512,6 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     });
   }
 
-  private openReportsModule(view: Extract<ReportsView, 'scrapSn' | 'undoScrap'>): void {
-    this.activeView = view;
-    this.errorMessage = '';
-    this.successMessage = '';
-    this.report = null;
-    this.selectedStation = null;
-    this.currentWorkOrder = '';
-    this.resetScrapForm();
-    this.setConnector('', 0, 0);
-  }
-
-  private resetScrapForm(): void {
-    this.scrapQuery = '';
-    this.scrapReason = '';
-    this.scrapLoading = false;
-    this.scrapResult = null;
-  }
-
   selectStation(station: WorkOrderTreeStation): void {
     this.activateStation(station);
   }
@@ -337,62 +540,6 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
     this.router.navigate(['/dashboard/sn-result'], {
       queryParams: { q: query, t: Date.now() }
-    });
-  }
-
-  openScrapResultHistory(): void {
-    const query = this.scrapResult?.data?.serial?.sn || this.scrapQuery.trim();
-    if (!query) {
-      return;
-    }
-
-    this.router.navigate(['/dashboard/sn-result'], {
-      queryParams: { q: query, t: Date.now() },
-    });
-  }
-
-  submitScrapModule(): void {
-    const query = this.scrapQuery.trim();
-    const reason = this.scrapReason.trim();
-    this.errorMessage = '';
-    this.successMessage = '';
-    this.scrapResult = null;
-
-    if (!query) {
-      this.errorMessage = 'SN or RSN is required.';
-      return;
-    }
-
-    if (!reason) {
-      this.errorMessage = `${this.activeModuleButtonLabel} reason is required.`;
-      return;
-    }
-
-    if (this.activeView !== 'scrapSn' && this.activeView !== 'undoScrap') {
-      return;
-    }
-
-    const user = this.authService.getCurrentUser();
-    const payload = {
-      query,
-      reason,
-      changed_by: user?.user_name || user?.login_id || 'WEB-CLIENT',
-      pc_name: 'WEB-CLIENT',
-    };
-    const endpoint = this.activeView === 'undoScrap' ? this.undoScrapApi : this.scrapSnApi;
-
-    this.scrapLoading = true;
-    this.http.post<ScrapActionResponse>(endpoint, payload).subscribe({
-      next: (response) => {
-        this.scrapLoading = false;
-        this.scrapResult = response;
-        this.successMessage = response.message;
-        this.scrapReason = '';
-      },
-      error: (error) => {
-        this.scrapLoading = false;
-        this.errorMessage = error?.error?.message || error?.error?.error || `Unable to complete ${this.activeModuleButtonLabel}.`;
-      }
     });
   }
 
@@ -505,6 +652,128 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     );
 
     return Math.max(2, Math.min(8, estimatedCards));
+  }
+
+  private buildActivityQualityParams(): HttpParams {
+    let params = new HttpParams()
+      .set('fromDate', this.activityFilters.fromDate)
+      .set('toDate', this.activityFilters.toDate)
+      .set('pivotBy', this.activityFilters.pivotBy);
+
+    if (this.showStartHour) {
+      params = params.set('startHour', String(this.activityFilters.startHour || 0));
+    }
+
+    const filterMap = [
+      { all: this.activityFilters.allSites, value: this.activityFilters.site, key: 'siteIds' },
+      { all: this.activityFilters.allStations, value: this.activityFilters.station, key: 'stationIds' },
+      { all: this.activityFilters.allProductLines, value: this.activityFilters.productLine, key: 'productLineIds' },
+      { all: this.activityFilters.allPartNumbers, value: this.activityFilters.partNumber, key: 'partNumbers' },
+      { all: this.activityFilters.allWorkOrders, value: this.activityFilters.workOrder, key: 'workOrders' },
+      { all: this.activityFilters.allPcs, value: this.activityFilters.pc, key: 'pcIds' },
+      { all: this.activityFilters.allUsers, value: this.activityFilters.user, key: 'userIds' },
+    ];
+
+    filterMap.forEach((filter) => {
+      if (!filter.all && filter.value.trim()) {
+        params = params.set(filter.key, filter.value.trim());
+      }
+    });
+
+    return params;
+  }
+
+  private applyDateSelection(): void {
+    const today = new Date();
+    let from = new Date(today);
+    let to = new Date(today);
+
+    if (this.activityFilters.dateSelection === 'yesterday') {
+      from = new Date(today);
+      from.setDate(today.getDate() - 1);
+      to = new Date(from);
+    } else if (this.activityFilters.dateSelection === 'thisWeek') {
+      const day = today.getDay() || 7;
+      from = new Date(today);
+      from.setDate(today.getDate() - day + 1);
+    } else if (this.activityFilters.dateSelection === 'thisMonth') {
+      from = new Date(today.getFullYear(), today.getMonth(), 1);
+    } else if (this.activityFilters.dateSelection === 'custom') {
+      return;
+    }
+
+    this.activityFilters.fromDate = this.formatInputDate(from);
+    this.activityFilters.toDate = this.formatInputDate(to);
+  }
+
+  private formatInputDate(value: Date): string {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private rowMatchesSelectedPoint(row: ActivityQualityDetailRow): boolean {
+    const label = this.selectedChartPoint?.label;
+    if (!label) {
+      return true;
+    }
+
+    const date = row.date_time ? new Date(row.date_time) : null;
+    switch (this.activityFilters.pivotBy) {
+      case 'perSite':
+        return (row.site || 'Unassigned site') === label;
+      case 'perPc':
+        return (row.pc || 'Unassigned PC') === label;
+      case 'perStation':
+        return (row.station || 'Unassigned station') === label;
+      case 'perProductLine':
+        return (row.product_line || 'Unassigned PL') === label;
+      case 'perPartNumber':
+        return (row.part_number || 'Unassigned PN') === label;
+      case 'perWorkOrder':
+        return (row.work_order || 'Unassigned WO') === label;
+      case 'perUser':
+        return (row.user_name || 'Unassigned user') === label;
+      case 'perDay':
+        return date ? this.formatInputDate(date) === label : false;
+      case 'perMonth':
+        return date ? label === `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : false;
+      default:
+        return date ? `${this.formatInputDate(date)} ${String(date.getHours()).padStart(2, '0')}:00` === label : false;
+    }
+  }
+
+  private emptyActivityQualityResponse(): ActivityQualityResponse {
+    return {
+      kpiSummary: {
+        totalPass: 0,
+        totalFail: 0,
+        totalTested: 0,
+        passRate: 0,
+        failRate: 0,
+        activeStations: 0,
+        activeWorkOrders: 0,
+        activeUsers: 0,
+      },
+      chartData: [],
+      detailedRows: [],
+      symptomsPareto: [],
+      stationFailRates: [],
+    };
+  }
+
+  private downloadText(fileName: string, content: string): void {
+    this.downloadBlob(fileName, new Blob([content], { type: 'text/csv;charset=utf-8;' }));
+  }
+
+  private downloadBlob(fileName: string, blob: Blob): void {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   private buildConnectorSignature(): string {

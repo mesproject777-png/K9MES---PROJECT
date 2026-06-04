@@ -198,12 +198,6 @@ export class OperationsAssemblyComponent {
           return;
         }
 
-        if (serialStatus === 'SCRAP') {
-          this.isLoading = false;
-          this.errorMessage = 'SN is SCRAP. Assembly cannot be done until Undo Scrap is completed.';
-          return;
-        }
-
         const routing = Array.isArray(trace?.routing) ? trace.routing : [];
         const currentStep = routing.find((step) => step.is_current) || null;
         const currentCode = String(currentStep?.station_code || trace?.serial?.current_station_code || '').trim().toUpperCase();

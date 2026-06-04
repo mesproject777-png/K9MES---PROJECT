@@ -43,6 +43,7 @@ import { LabelComponent } from './dashboard/label/label.component';
 import { ReportsComponent } from './dashboard/reports/reports.component';
 import { OperationsAssemblyComponent } from './dashboard/operations/assembly/assembly.component';
 import { OperationsmenuComponent } from './dashboard/operations/operationsmenu/operationsmenu.component';
+import { SnRouteBackComponent } from './dashboard/operations/sn-route-back/sn-route-back.component';
 import { OpenPackagesComponent } from './dashboard/operations/packing/open-packages/open-packages.component';
 import { ClosedPackagesComponent } from './dashboard/operations/packing/closed-packages/closed-packages.component';
 import { ShippedPackagesComponent } from './dashboard/operations/packing/shipped-packages/shipped-packages.component';
@@ -78,6 +79,7 @@ const routes: Routes = [
       { path: 'myroute', component: MyrouteComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/myroute' } },
       { path: 'operations', component: OperationsmenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/operations/assembly' } },
       { path: 'operations/assembly', component: OperationsAssemblyComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/operations/assembly' } },
+      { path: 'operations/sn-route-back', component: SnRouteBackComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/operations/assembly' } },
       { path: 'operations/packing/open', component: OpenPackagesComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/packaging' } },
       { path: 'operations/packing/closed', component: ClosedPackagesComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/packaging' } },
       { path: 'operations/packing/shipped', component: ShippedPackagesComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/packaging' } },
