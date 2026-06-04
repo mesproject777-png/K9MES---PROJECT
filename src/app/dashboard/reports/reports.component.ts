@@ -15,8 +15,9 @@ import {
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { AuthService } from '../../services/auth.service';
 
-type ReportsView = 'menu' | 'standard' | 'activityQuality';
+type ReportsView = 'menu' | 'standard' | 'scrapSn' | 'undoScrap' | 'activityQuality';
 type ReportsTab = 'tree' | 'station';
 type DateSelection = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
 
@@ -141,6 +142,29 @@ interface WorkOrderTreeReport {
   stations: WorkOrderTreeStation[];
 }
 
+interface ScrapActionResponse {
+  message: string;
+  action: 'SCRAP' | 'UNDO_SCRAP';
+  data: {
+    serial: {
+      sn: string;
+      rsn: string;
+      status: string;
+      condition: string;
+      current_station_code: string | null;
+      current_station_name: string | null;
+      updated_at: string;
+      last_moved_at: string | null;
+    };
+    device: {
+      pn: string;
+      revision: string;
+      work_order: string;
+      description: string;
+    };
+  };
+}
+
 @Component({
   selector: 'app-reports',
   standalone: false,
@@ -149,6 +173,8 @@ interface WorkOrderTreeReport {
 })
 export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked, OnDestroy {
   readonly reportsApi = `${environment.apiUrl}/api/reports/work-order-tree`;
+  readonly scrapSnApi = `${environment.apiUrl}/api/reports/scrap-sn`;
+  readonly undoScrapApi = `${environment.apiUrl}/api/reports/undo-scrap`;
   readonly activityQualityApi = `${environment.apiUrl}/api/reports/activity-quality`;
 
   activeView: ReportsView = 'menu';
@@ -156,6 +182,11 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   currentWorkOrder = '';
   loading = false;
   errorMessage = '';
+  successMessage = '';
+  scrapQuery = '';
+  scrapReason = '';
+  scrapLoading = false;
+  scrapResult: ScrapActionResponse | null = null;
   report: WorkOrderTreeReport | null = null;
   selectedStation: WorkOrderTreeStation | null = null;
   activityLoading = false;
@@ -223,6 +254,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     private http: HttpClient,
     private router: Router,
     private route: ActivatedRoute,
+    private authService: AuthService,
     private cdr: ChangeDetectorRef
   ) {}
 
@@ -270,6 +302,15 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.activeView = 'standard';
     this.activeTab = 'tree';
     this.errorMessage = '';
+    this.successMessage = '';
+  }
+
+  openScrapSnReports(): void {
+    this.openReportsModule('scrapSn');
+  }
+
+  openUndoScrapReports(): void {
+    this.openReportsModule('undoScrap');
   }
 
   openActivityQualityDashboard(): void {
@@ -283,12 +324,58 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   backToMenu(): void {
     this.activeView = 'menu';
     this.errorMessage = '';
+    this.successMessage = '';
     this.report = null;
     this.selectedStation = null;
     this.currentWorkOrder = '';
+    this.resetScrapForm();
     this.showExportMenu = false;
     this.fullScreenEnabled = false;
     this.router.navigate(['/dashboard/reports']);
+  }
+
+  get activeModuleTitle(): string {
+    if (this.activeView === 'scrapSn') {
+      return 'Scrap SN';
+    }
+
+    if (this.activeView === 'undoScrap') {
+      return 'Undo Scrap';
+    }
+
+    return 'Reports';
+  }
+
+  get activeModuleIcon(): string {
+    return this.activeView === 'undoScrap' ? 'undo' : 'delete_sweep';
+  }
+
+  get activeModulePrompt(): string {
+    if (this.activeView === 'scrapSn') {
+      return 'Enter serial number in search bar';
+    }
+
+    if (this.activeView === 'undoScrap') {
+      return 'Enter scrapped serial number in search bar';
+    }
+
+    return '';
+  }
+
+  get activeModuleButtonLabel(): string {
+    return this.activeView === 'undoScrap' ? 'Undo Scrap' : 'Scrap SN';
+  }
+
+  get activeModuleHelp(): string {
+    if (this.activeView === 'scrapSn') {
+      return 'Scrap marks a damaged or beyond-repair SN as SCRAP, blocks production actions, and saves the action in SN History.';
+    }
+
+    if (this.activeView === 'undoScrap') {
+      return 'Undo Scrap removes the SCRAP mark, restores the previous New condition, and saves the action in SN History.';
+    }
+
+    return '';
   }
 
   loadActivityQualityDashboard(): void {
@@ -512,6 +599,24 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     });
   }
 
+  private openReportsModule(view: Extract<ReportsView, 'scrapSn' | 'undoScrap'>): void {
+    this.activeView = view;
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.report = null;
+    this.selectedStation = null;
+    this.currentWorkOrder = '';
+    this.resetScrapForm();
+    this.setConnector('', 0, 0);
+  }
+
+  private resetScrapForm(): void {
+    this.scrapQuery = '';
+    this.scrapReason = '';
+    this.scrapLoading = false;
+    this.scrapResult = null;
+  }
+
   selectStation(station: WorkOrderTreeStation): void {
     this.activateStation(station);
   }
@@ -540,6 +645,62 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
     this.router.navigate(['/dashboard/sn-result'], {
       queryParams: { q: query, t: Date.now() }
+    });
+  }
+
+  openScrapResultHistory(): void {
+    const query = this.scrapResult?.data?.serial?.sn || this.scrapQuery.trim();
+    if (!query) {
+      return;
+    }
+
+    this.router.navigate(['/dashboard/sn-result'], {
+      queryParams: { q: query, t: Date.now() },
+    });
+  }
+
+  submitScrapModule(): void {
+    const query = this.scrapQuery.trim();
+    const reason = this.scrapReason.trim();
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.scrapResult = null;
+
+    if (!query) {
+      this.errorMessage = 'SN or RSN is required.';
+      return;
+    }
+
+    if (!reason) {
+      this.errorMessage = `${this.activeModuleButtonLabel} reason is required.`;
+      return;
+    }
+
+    if (this.activeView !== 'scrapSn' && this.activeView !== 'undoScrap') {
+      return;
+    }
+
+    const user = this.authService.getCurrentUser();
+    const payload = {
+      query,
+      reason,
+      changed_by: user?.user_name || user?.login_id || 'WEB-CLIENT',
+      pc_name: 'WEB-CLIENT',
+    };
+    const endpoint = this.activeView === 'undoScrap' ? this.undoScrapApi : this.scrapSnApi;
+
+    this.scrapLoading = true;
+    this.http.post<ScrapActionResponse>(endpoint, payload).subscribe({
+      next: (response) => {
+        this.scrapLoading = false;
+        this.scrapResult = response;
+        this.successMessage = response.message;
+        this.scrapReason = '';
+      },
+      error: (error) => {
+        this.scrapLoading = false;
+        this.errorMessage = error?.error?.message || error?.error?.error || `Unable to complete ${this.activeModuleButtonLabel}.`;
+      }
     });
   }
 
