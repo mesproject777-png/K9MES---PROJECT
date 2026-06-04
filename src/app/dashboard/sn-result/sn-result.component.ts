@@ -482,8 +482,12 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
 
   formatHistoryResult(result: string): string {
     const normalized = (result || '').toUpperCase();
-    if (normalized === 'PASS' || normalized === 'FAIL') {
+    if (normalized === 'PASS' || normalized === 'FAIL' || normalized === 'SCRAP') {
       return normalized;
+    }
+
+    if (normalized === 'UNDO_SCRAP') {
+      return 'UNDO SCRAP';
     }
 
     return result || '-';
@@ -624,6 +628,10 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       return true;
     }
 
+    if (result === 'SCRAP' || result === 'UNDO_SCRAP') {
+      return true;
+    }
+
     if (eventType && eventType !== 'PASS') {
       return false;
     }
@@ -639,6 +647,8 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
 
     return action.startsWith('PASS')
+      || action.startsWith('SCRAP')
+      || action.startsWith('UNDO SCRAP')
       || action.startsWith('SN_GENERATED')
       || action.includes('BOM_BIND')
       || action.includes('BINDED')

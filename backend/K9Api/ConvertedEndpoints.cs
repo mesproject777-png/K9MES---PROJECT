@@ -2242,6 +2242,12 @@ public static class ConvertedEndpoints
                     return JsonMessage("SN/RSN not found", 404);
                 }
 
+                if (string.Equals(serial["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase))
+                {
+                    await transaction.RollbackAsync();
+                    return JsonMessage("SN is scrapped. Production actions are blocked until Undo Scrap is completed.", 409);
+                }
+
                 var routeRows = await GetRouteRowsForItemAsync(connection, Convert.ToInt32(serial["item_id"]));
                 if (routeRows.Count == 0)
                 {
@@ -2321,6 +2327,110 @@ public static class ConvertedEndpoints
                 var trace = await BuildTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!);
                 await transaction.CommitAsync();
                 return Results.Json(new { message = result == "PASS" ? "PASS submitted successfully" : "FAIL submitted successfully", action = result, data = trace });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+
+        app.MapPost("/api/reports/scrap-sn", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var query = ReadString(payload, "query")?.Trim();
+            var reason = ReadString(payload, "reason")?.Trim();
+            var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
+            var pcName = ReadString(payload, "pc_name")?.Trim() ?? "WEB-CLIENT";
+
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return JsonMessage("SN or RSN is required", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return JsonMessage("Scrap reason is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            await EnsureWorkflowSchemaAsync(connection);
+            await EnsureScrapTrackingColumnsAsync(connection);
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            try
+            {
+                var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
+                if (workflowSerial is not null)
+                {
+                    var result = await ScrapWorkflowSerialAsync(connection, workflowSerial, reason, changedBy);
+                    await transaction.CommitAsync();
+                    return result;
+                }
+
+                var serial = await GetSerialByQueryAsync(connection, query);
+                if (serial is not null)
+                {
+                    var result = await ScrapSerialAsync(connection, serial, reason, changedBy, pcName);
+                    await transaction.CommitAsync();
+                    return result;
+                }
+
+                await transaction.RollbackAsync();
+                return JsonMessage("SN/RSN not found", 404);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+
+        app.MapPost("/api/reports/undo-scrap", async (HttpContext context) =>
+        {
+            var payload = await ReadJsonBodyAsync(context.Request);
+            var query = ReadString(payload, "query")?.Trim();
+            var reason = ReadString(payload, "reason")?.Trim();
+            var changedBy = ReadString(payload, "changed_by")?.Trim() ?? "system";
+            var pcName = ReadString(payload, "pc_name")?.Trim() ?? "WEB-CLIENT";
+
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return JsonMessage("SN or RSN is required", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return JsonMessage("Undo Scrap reason is required", 400);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            await EnsureWorkflowSchemaAsync(connection);
+            await EnsureScrapTrackingColumnsAsync(connection);
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            try
+            {
+                var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
+                if (workflowSerial is not null)
+                {
+                    var result = await UndoScrapWorkflowSerialAsync(connection, workflowSerial, reason, changedBy);
+                    await transaction.CommitAsync();
+                    return result;
+                }
+
+                var serial = await GetSerialByQueryAsync(connection, query);
+                if (serial is not null)
+                {
+                    var result = await UndoScrapSerialAsync(connection, serial, reason, changedBy, pcName);
+                    await transaction.CommitAsync();
+                    return result;
+                }
+
+                await transaction.RollbackAsync();
+                return JsonMessage("SN/RSN not found", 404);
             }
             catch
             {
@@ -2500,7 +2610,8 @@ public static class ConvertedEndpoints
                 }
 
                 if (string.Equals(serial["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(serial["serial_status"]?.ToString(), "Failed", StringComparison.OrdinalIgnoreCase))
+                    string.Equals(serial["serial_status"]?.ToString(), "Failed", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(serial["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase))
                 {
                     return JsonMessage("SN is not eligible for packing", 409);
                 }
@@ -2561,6 +2672,11 @@ public static class ConvertedEndpoints
                 return JsonMessage("SN/RSN not found", 404);
             }
 
+            if (string.Equals(serial["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonMessage("SN is SCRAP. Assembly cannot be done until Undo Scrap is completed.", 409);
+            }
+
             var required = await GetAssemblyLinesForStationAsync(connection, Convert.ToInt32(serial["item_id"]), serial["revision"]?.ToString(), stationCode);
             var bound = await QueryRowsAsync(
                 connection,
@@ -2604,6 +2720,16 @@ public static class ConvertedEndpoints
                 if (Equals(parent["id"], child["id"]))
                 {
                     return JsonMessage("Parent and child cannot be same", 400);
+                }
+
+                if (string.Equals(parent["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase))
+                {
+                    return JsonMessage("Parent SN is SCRAP. Assembly cannot be done until Undo Scrap is completed.", 409);
+                }
+
+                if (string.Equals(child["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase))
+                {
+                    return JsonMessage("Child SN is SCRAP and cannot be bound.", 409);
                 }
 
                 if (!string.Equals(child["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase))
@@ -3373,6 +3499,334 @@ public static class ConvertedEndpoints
         return result;
     }
 
+    private static async Task<IResult> ScrapSerialAsync(
+        NpgsqlConnection connection,
+        Dictionary<string, object?> serial,
+        string reason,
+        string changedBy,
+        string pcName)
+    {
+        var status = serial["serial_status"]?.ToString() ?? "New";
+        if (string.Equals(status, "SCRAP", StringComparison.OrdinalIgnoreCase))
+        {
+            return JsonMessage("SN is already marked as SCRAP.", 409);
+        }
+
+        var stationCode = serial["current_station_code"]?.ToString() ?? "SCRAP";
+        var stationName = await ResolveLegacyStationNameAsync(connection, serial, stationCode);
+
+        await ExecuteAsync(
+            connection,
+            """
+            UPDATE serial_numbers
+            SET status = 'SCRAP',
+                condition = 'NG',
+                scrap_previous_status = @previousStatus,
+                scrap_previous_condition = @previousCondition,
+                scrap_reason = @reason,
+                scrapped_by = @changedBy,
+                scrapped_at = NOW(),
+                updated_at = NOW()
+            WHERE id = @id
+            """,
+            ("previousStatus", status),
+            ("previousCondition", serial["condition"] ?? "Good"),
+            ("reason", reason),
+            ("changedBy", changedBy),
+            ("id", serial["id"]));
+
+        await InsertSerialScrapLogAsync(
+            connection,
+            serial,
+            stationCode,
+            stationName,
+            "SCRAP",
+            reason,
+            changedBy,
+            pcName,
+            $"Scrap mark saved. Previous status: {status}; Reason: {reason}");
+
+        var refreshed = await GetSerialByQueryAsync(connection, serial["rsn"]!.ToString()!);
+        return Results.Json(new
+        {
+            message = "SN marked as SCRAP.",
+            action = "SCRAP",
+            data = await BuildTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!)
+        });
+    }
+
+    private static async Task<IResult> UndoScrapSerialAsync(
+        NpgsqlConnection connection,
+        Dictionary<string, object?> serial,
+        string reason,
+        string changedBy,
+        string pcName)
+    {
+        var status = serial["serial_status"]?.ToString() ?? "";
+        if (!string.Equals(status, "SCRAP", StringComparison.OrdinalIgnoreCase))
+        {
+            return JsonMessage("Only SCRAP SN can be restored.", 409);
+        }
+
+        var previousStatus = serial["scrap_previous_status"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(previousStatus) && !string.Equals(previousStatus, "New", StringComparison.OrdinalIgnoreCase))
+        {
+            return JsonMessage("Only New SN can be returned from scrap.", 409);
+        }
+
+        var restoredStatus = string.IsNullOrWhiteSpace(previousStatus) ? "New" : previousStatus;
+        var restoredCondition = serial["scrap_previous_condition"]?.ToString();
+        if (string.IsNullOrWhiteSpace(restoredCondition))
+        {
+            restoredCondition = "Good";
+        }
+
+        var stationCode = serial["current_station_code"]?.ToString() ?? "UNDO_SCRAP";
+        var stationName = await ResolveLegacyStationNameAsync(connection, serial, stationCode);
+
+        await ExecuteAsync(
+            connection,
+            """
+            UPDATE serial_numbers
+            SET status = @restoredStatus,
+                condition = @restoredCondition,
+                scrap_previous_status = NULL,
+                scrap_previous_condition = NULL,
+                scrap_reason = NULL,
+                scrapped_by = NULL,
+                scrapped_at = NULL,
+                updated_at = NOW()
+            WHERE id = @id
+            """,
+            ("restoredStatus", restoredStatus),
+            ("restoredCondition", restoredCondition),
+            ("id", serial["id"]));
+
+        await InsertSerialScrapLogAsync(
+            connection,
+            serial,
+            stationCode,
+            stationName,
+            "UNDO_SCRAP",
+            reason,
+            changedBy,
+            pcName,
+            $"Undo Scrap saved. Restored status: {restoredStatus}; Reason: {reason}");
+
+        var refreshed = await GetSerialByQueryAsync(connection, serial["rsn"]!.ToString()!);
+        return Results.Json(new
+        {
+            message = "SCRAP mark removed from SN.",
+            action = "UNDO_SCRAP",
+            data = await BuildTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!)
+        });
+    }
+
+    private static async Task<IResult> ScrapWorkflowSerialAsync(
+        NpgsqlConnection connection,
+        Dictionary<string, object?> serial,
+        string reason,
+        string changedBy)
+    {
+        var status = serial["serial_status"]?.ToString() ?? "New";
+        if (string.Equals(status, "SCRAP", StringComparison.OrdinalIgnoreCase))
+        {
+            return JsonMessage("SN is already marked as SCRAP.", 409);
+        }
+
+        var stationCode = serial["current_station_code"]?.ToString() ?? "SCRAP";
+        var stationName = await ResolveWorkflowStationNameAsync(connection, serial, stationCode);
+
+        await ExecuteAsync(
+            connection,
+            """
+            UPDATE workflow_serial_numbers
+            SET status = 'SCRAP',
+                condition = 'NG',
+                scrap_previous_status = @previousStatus,
+                scrap_previous_condition = @previousCondition,
+                scrap_reason = @reason,
+                scrapped_by = @changedBy,
+                scrapped_at = NOW(),
+                updated_at = NOW()
+            WHERE id = @id
+            """,
+            ("previousStatus", status),
+            ("previousCondition", serial["condition"] ?? "Good"),
+            ("reason", reason),
+            ("changedBy", changedBy),
+            ("id", serial["id"]));
+
+        await InsertWorkflowScrapLogAsync(
+            connection,
+            serial,
+            stationCode,
+            stationName,
+            "SCRAP",
+            reason,
+            changedBy,
+            $"Scrap mark saved. Previous status: {status}; Reason: {reason}");
+
+        var refreshed = await GetWorkflowSerialByQueryAsync(connection, serial["rsn"]!.ToString()!);
+        return Results.Json(new
+        {
+            message = "SN marked as SCRAP.",
+            action = "SCRAP",
+            data = await BuildWorkflowTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!)
+        });
+    }
+
+    private static async Task<IResult> UndoScrapWorkflowSerialAsync(
+        NpgsqlConnection connection,
+        Dictionary<string, object?> serial,
+        string reason,
+        string changedBy)
+    {
+        var status = serial["serial_status"]?.ToString() ?? "";
+        if (!string.Equals(status, "SCRAP", StringComparison.OrdinalIgnoreCase))
+        {
+            return JsonMessage("Only SCRAP SN can be restored.", 409);
+        }
+
+        var previousStatus = serial["scrap_previous_status"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(previousStatus) && !string.Equals(previousStatus, "New", StringComparison.OrdinalIgnoreCase))
+        {
+            return JsonMessage("Only New SN can be returned from scrap.", 409);
+        }
+
+        var restoredStatus = string.IsNullOrWhiteSpace(previousStatus) ? "New" : previousStatus;
+        var restoredCondition = serial["scrap_previous_condition"]?.ToString();
+        if (string.IsNullOrWhiteSpace(restoredCondition))
+        {
+            restoredCondition = "Good";
+        }
+
+        var stationCode = serial["current_station_code"]?.ToString() ?? "UNDO_SCRAP";
+        var stationName = await ResolveWorkflowStationNameAsync(connection, serial, stationCode);
+
+        await ExecuteAsync(
+            connection,
+            """
+            UPDATE workflow_serial_numbers
+            SET status = @restoredStatus,
+                condition = @restoredCondition,
+                scrap_previous_status = NULL,
+                scrap_previous_condition = NULL,
+                scrap_reason = NULL,
+                scrapped_by = NULL,
+                scrapped_at = NULL,
+                updated_at = NOW()
+            WHERE id = @id
+            """,
+            ("restoredStatus", restoredStatus),
+            ("restoredCondition", restoredCondition),
+            ("id", serial["id"]));
+
+        await InsertWorkflowScrapLogAsync(
+            connection,
+            serial,
+            stationCode,
+            stationName,
+            "UNDO_SCRAP",
+            reason,
+            changedBy,
+            $"Undo Scrap saved. Restored status: {restoredStatus}; Reason: {reason}");
+
+        var refreshed = await GetWorkflowSerialByQueryAsync(connection, serial["rsn"]!.ToString()!);
+        return Results.Json(new
+        {
+            message = "SCRAP mark removed from SN.",
+            action = "UNDO_SCRAP",
+            data = await BuildWorkflowTracePayloadAsync(connection, serial["rsn"]!.ToString()!, refreshed!)
+        });
+    }
+
+    private static async Task InsertSerialScrapLogAsync(
+        NpgsqlConnection connection,
+        Dictionary<string, object?> serial,
+        string stationCode,
+        string stationName,
+        string action,
+        string reason,
+        string changedBy,
+        string pcName,
+        string additionalInfo)
+    {
+        await ExecuteAsync(
+            connection,
+            """
+            INSERT INTO serial_station_logs
+              (serial_id, item_id, work_order_id, station_code, station_name, action_result, remark, changed_by,
+               before_station_code, before_station_order, after_station_code, after_station_order,
+               station_length, pc_name, additional_info)
+            VALUES
+              (@serialId, @itemId, @workOrderId, @stationCode, @stationName, @action, @reason, @changedBy,
+               @beforeCode, @beforeOrder, @afterCode, @afterOrder, NULL, @pcName, @additionalInfo)
+            """,
+            ("serialId", serial["id"]),
+            ("itemId", serial["item_id"]),
+            ("workOrderId", serial["work_order_id"]),
+            ("stationCode", stationCode),
+            ("stationName", stationName),
+            ("action", action),
+            ("reason", reason),
+            ("changedBy", changedBy),
+            ("beforeCode", serial["current_station_code"]),
+            ("beforeOrder", serial["current_station_order"]),
+            ("afterCode", serial["current_station_code"]),
+            ("afterOrder", serial["current_station_order"]),
+            ("pcName", pcName),
+            ("additionalInfo", additionalInfo));
+    }
+
+    private static async Task InsertWorkflowScrapLogAsync(
+        NpgsqlConnection connection,
+        Dictionary<string, object?> serial,
+        string stationCode,
+        string stationName,
+        string action,
+        string reason,
+        string changedBy,
+        string additionalInfo)
+    {
+        await ExecuteAsync(
+            connection,
+            """
+            INSERT INTO workflow_serial_station_logs
+              (workflow_serial_id, workflow_part_id, workflow_work_order_id, station_code, station_name, action_result,
+               remark, changed_by, before_station_code, before_station_order, after_station_code, after_station_order)
+            VALUES
+              (@serialId, @partId, @workOrderId, @stationCode, @stationName, @action,
+               @remark, @changedBy, @beforeCode, @beforeOrder, @afterCode, @afterOrder)
+            """,
+            ("serialId", serial["id"]),
+            ("partId", serial["workflow_part_id"]),
+            ("workOrderId", serial["workflow_work_order_id"]),
+            ("stationCode", stationCode),
+            ("stationName", stationName),
+            ("action", action),
+            ("remark", additionalInfo),
+            ("changedBy", changedBy),
+            ("beforeCode", serial["current_station_code"]),
+            ("beforeOrder", serial["current_station_order"]),
+            ("afterCode", serial["current_station_code"]),
+            ("afterOrder", serial["current_station_order"]));
+    }
+
+    private static async Task<string> ResolveLegacyStationNameAsync(NpgsqlConnection connection, Dictionary<string, object?> serial, string stationCode)
+    {
+        var routeRows = await GetRouteRowsForItemAsync(connection, Convert.ToInt32(serial["item_id"]));
+        return routeRows.FirstOrDefault(step => string.Equals(step["station_code"]?.ToString(), stationCode, StringComparison.OrdinalIgnoreCase))?["station_name"]?.ToString()
+            ?? stationCode;
+    }
+
+    private static async Task<string> ResolveWorkflowStationNameAsync(NpgsqlConnection connection, Dictionary<string, object?> serial, string stationCode)
+    {
+        var routeRows = await GetWorkflowRouteRowsForPartAsync(connection, Convert.ToInt32(serial["workflow_part_id"]));
+        return routeRows.FirstOrDefault(step => string.Equals(step["station_code"]?.ToString(), stationCode, StringComparison.OrdinalIgnoreCase))?["station_name"]?.ToString()
+            ?? stationCode;
+    }
+
     private static async Task<Dictionary<string, object?>?> GetSerialByQueryAsync(NpgsqlConnection connection, string query)
     {
         var rows = await QueryRowsAsync(
@@ -3380,6 +3834,7 @@ public static class ConvertedEndpoints
             """
             SELECT snr.id, snr.sn, snr.rsn, snr.status AS serial_status, snr.condition,
                    snr.current_station_code, snr.current_station_order, snr.last_moved_at,
+                   snr.scrap_previous_status, snr.scrap_previous_condition,
                    snr.created_at, snr.updated_at,
                    wo.id AS work_order_id, wo.wo, wo.status AS wo_status, wo.qty AS wo_qty, wo.balance AS wo_balance,
                    i.id AS item_id, i.pn, i.description AS item_description,
@@ -3408,6 +3863,7 @@ public static class ConvertedEndpoints
             """
             SELECT snr.id, snr.sn, snr.rsn, snr.status AS serial_status, snr.condition,
                    snr.current_station_code, snr.current_station_order, snr.last_moved_at,
+                   snr.scrap_previous_status, snr.scrap_previous_condition,
                    snr.created_at, snr.updated_at,
                    w.id AS workflow_work_order_id, w.wo, w.status AS wo_status, w.qty AS wo_qty,
                    GREATEST(COALESCE(w.qty, 0) - (
@@ -3487,7 +3943,7 @@ public static class ConvertedEndpoints
                    COALESCE(additional_info, remark, '') AS additional_info
             FROM serial_station_logs
             WHERE serial_id = @serialId
-              AND UPPER(action_result) IN ('PASS', 'FAIL')
+              AND UPPER(action_result) IN ('PASS', 'FAIL', 'SCRAP', 'UNDO_SCRAP')
             ORDER BY created_at DESC, id DESC
             LIMIT 300
             """,
@@ -3590,7 +4046,7 @@ public static class ConvertedEndpoints
                    COALESCE(remark, '') AS additional_info
             FROM workflow_serial_station_logs
             WHERE workflow_serial_id = @serialId
-              AND UPPER(action_result) IN ('PASS', 'FAIL')
+              AND UPPER(action_result) IN ('PASS', 'FAIL', 'SCRAP', 'UNDO_SCRAP')
             ORDER BY created_at DESC, id DESC
             LIMIT 300
             """,
@@ -6543,6 +6999,11 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_label_printing_part ON public.workflow_station_label_printing (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_wo ON public.workflow_serial_numbers (workflow_work_order_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_part ON public.workflow_serial_numbers (workflow_part_id)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_status VARCHAR(30)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_condition VARCHAR(30)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_reason TEXT");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrapped_by VARCHAR(100)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrapped_at TIMESTAMP");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_bind_parent_station ON public.workflow_serial_bom_bindings (parent_workflow_serial_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_bind_child ON public.workflow_serial_bom_bindings (child_workflow_serial_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_serial ON public.workflow_serial_station_logs (workflow_serial_id, created_at DESC)");
@@ -6715,6 +7176,11 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_numbers_sn_upper ON serial_numbers (UPPER(sn))");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_numbers_wo ON serial_numbers (work_order_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_numbers_item ON serial_numbers (item_id)");
+        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_status VARCHAR(30)");
+        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_condition VARCHAR(30)");
+        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_reason TEXT");
+        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrapped_by VARCHAR(100)");
+        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrapped_at TIMESTAMP");
         await ExecuteAsync(
             connection,
             """
@@ -6789,6 +7255,20 @@ public static class ConvertedEndpoints
               CONSTRAINT uq_packing_serial UNIQUE (serial_id)
             )
             """);
+    }
+
+    private static async Task EnsureScrapTrackingColumnsAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_status VARCHAR(30)");
+        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_condition VARCHAR(30)");
+        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrap_reason TEXT");
+        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrapped_by VARCHAR(100)");
+        await ExecuteAsync(connection, "ALTER TABLE serial_numbers ADD COLUMN IF NOT EXISTS scrapped_at TIMESTAMP");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_status VARCHAR(30)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_condition VARCHAR(30)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_reason TEXT");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrapped_by VARCHAR(100)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrapped_at TIMESTAMP");
     }
 
     private static string GetConnectionString()
