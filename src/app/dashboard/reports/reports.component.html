@@ -342,7 +342,8 @@
       </button>
     </div>
 
-    <p class="message error" *ngIf="errorMessage">{{ errorMessage }}</p>
+    <ng-container *ngIf="activeView === 'standard'; else reportModuleView">
+      <p class="message error" *ngIf="errorMessage">{{ errorMessage }}</p>
 
     <section class="report-prompt" *ngIf="!report && !loading">
       <span class="material-symbols-outlined" aria-hidden="true">manage_search</span>
@@ -355,7 +356,7 @@
       <p>{{ currentWorkOrder }}</p>
     </section>
 
-    <section class="sn-result-page report-result" *ngIf="report">
+      <section class="sn-result-page report-result" *ngIf="report">
       <div class="sn-result-window">
         <div class="workflow-tabs sn-tabs" role="tablist" aria-label="Standard report sections">
           <button type="button" class="workflow-tab" [class.active]="activeTab === 'tree'" (click)="activeTab = 'tree'">
@@ -544,6 +545,99 @@
           </section>
         </div>
       </div>
-    </section>
+      </section>
+    </ng-container>
+
+    <ng-template #reportModuleView>
+      <section class="scrap-module">
+        <div class="scrap-module__heading">
+          <span class="material-symbols-outlined" aria-hidden="true">{{ activeModuleIcon }}</span>
+          <div>
+            <h1>{{ activeModuleTitle }}</h1>
+            <p>{{ activeModuleHelp }}</p>
+          </div>
+        </div>
+
+        <p class="message error" *ngIf="errorMessage">{{ errorMessage }}</p>
+        <p class="message success" *ngIf="successMessage">{{ successMessage }}</p>
+
+        <form class="scrap-form" (ngSubmit)="submitScrapModule()">
+          <label>
+            <span>SN / RSN</span>
+            <input
+              type="text"
+              name="scrapQuery"
+              [(ngModel)]="scrapQuery"
+              [placeholder]="activeModulePrompt"
+              autocomplete="off"
+            />
+          </label>
+
+          <label>
+            <span>Reason</span>
+            <textarea
+              name="scrapReason"
+              [(ngModel)]="scrapReason"
+              rows="4"
+              placeholder="Enter audit reason"
+            ></textarea>
+          </label>
+
+          <div class="scrap-actions">
+            <button type="submit" class="primary-action" [disabled]="scrapLoading">
+              <span class="material-symbols-outlined" aria-hidden="true">{{ scrapLoading ? 'hourglass_top' : activeModuleIcon }}</span>
+              <span>{{ scrapLoading ? 'Saving...' : activeModuleButtonLabel }}</span>
+            </button>
+          </div>
+        </form>
+
+        <div class="scrap-result" *ngIf="scrapResult">
+          <div class="scrap-result__title">
+            <span class="material-symbols-outlined" aria-hidden="true">fact_check</span>
+            <strong>Updated SN Details</strong>
+          </div>
+
+          <dl>
+            <div>
+              <dt>SN</dt>
+              <dd>{{ scrapResult.data.serial.sn }}</dd>
+            </div>
+            <div>
+              <dt>RSN</dt>
+              <dd>{{ scrapResult.data.serial.rsn }}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{{ scrapResult.data.serial.status }}</dd>
+            </div>
+            <div>
+              <dt>Condition</dt>
+              <dd>{{ scrapResult.data.serial.condition }}</dd>
+            </div>
+            <div>
+              <dt>Work Order</dt>
+              <dd>{{ scrapResult.data.device.work_order }}</dd>
+            </div>
+            <div>
+              <dt>Part Number</dt>
+              <dd>{{ scrapResult.data.device.pn }}</dd>
+            </div>
+            <div>
+              <dt>Last Station</dt>
+              <dd>{{ scrapResult.data.serial.current_station_code || '-' }}</dd>
+            </div>
+            <div>
+              <dt>Updated</dt>
+              <dd>{{ scrapResult.data.serial.updated_at | date: 'yyyy-MM-dd HH:mm:ss' }}</dd>
+            </div>
+          </dl>
+
+          <button type="button" class="secondary-action" (click)="openScrapResultHistory()">
+            <span class="material-symbols-outlined" aria-hidden="true">history</span>
+            <span>Open SN History</span>
+          </button>
+        </div>
+      </section>
+    </ng-template>
   </ng-template>
 </section>
