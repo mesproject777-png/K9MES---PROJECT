@@ -495,7 +495,10 @@ public static class ConvertedEndpoints
         app.MapGet("/api/items", async (HttpRequest request) =>
         {
             var page = ParsePositiveInt(request.Query["page"], 1);
-            var limit = Math.Min(ParsePositiveInt(request.Query["limit"], 15), 500);
+            var requestedLimit = request.Query["limit"].ToString();
+            var limit = string.Equals(requestedLimit, "all", StringComparison.OrdinalIgnoreCase)
+                ? 5000
+                : Math.Min(ParsePositiveInt(requestedLimit, 15), 500);
             var search = request.Query["search"].ToString().Trim();
             var offset = (page - 1) * limit;
             var parameters = new List<(string Name, object? Value)>();
@@ -6855,6 +6858,303 @@ public static class ConvertedEndpoints
 
     private static void MapReports(WebApplication app)
     {
+        app.MapGet("/api/reports/todays-dashboard/options", async (HttpRequest request) =>
+        {
+            var site = request.Query["site"].ToString().Trim();
+            var station = request.Query["station"].ToString().Trim();
+            var pn = request.Query["pn"].ToString().Trim();
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+
+            var sites = await QueryRowsAsync(
+                connection,
+                """
+                SELECT MIN(COALESCE(site_id, 0)) AS id, site_name AS name
+                FROM workflow_work_orders
+                WHERE BTRIM(COALESCE(site_name, '')) <> ''
+                GROUP BY site_name
+                ORDER BY name ASC
+                """);
+
+            var filters = new List<string>();
+            var parameters = new List<(string Name, object? Value)>();
+
+            if (!string.IsNullOrWhiteSpace(site))
+            {
+                filters.Add("UPPER(BTRIM(w.site_name)) = UPPER(BTRIM(@site))");
+                parameters.Add(("site", site));
+            }
+
+            if (!string.IsNullOrWhiteSpace(station))
+            {
+                filters.Add("UPPER(BTRIM(r.station_code)) = UPPER(BTRIM(@station))");
+                parameters.Add(("station", station));
+            }
+
+            if (!string.IsNullOrWhiteSpace(pn))
+            {
+                filters.Add("UPPER(BTRIM(p.pn)) = UPPER(BTRIM(@pn))");
+                parameters.Add(("pn", pn));
+            }
+
+            var whereSql = filters.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", filters);
+
+            var stations = await QueryRowsAsync(
+                connection,
+                $"""
+                SELECT DISTINCT r.station_code, r.station_name
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                JOIN workflow_routing_steps r ON r.workflow_part_id = p.id
+                {(string.IsNullOrWhiteSpace(site) ? string.Empty : "WHERE UPPER(BTRIM(w.site_name)) = UPPER(BTRIM(@site))")}
+                ORDER BY r.station_code ASC
+                """,
+                string.IsNullOrWhiteSpace(site) ? Array.Empty<(string Name, object? Value)>() : new[] { ("site", (object?)site) });
+
+            var partNumbers = await QueryRowsAsync(
+                connection,
+                $"""
+                SELECT DISTINCT p.id, p.pn, p.description
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                JOIN workflow_routing_steps r ON r.workflow_part_id = p.id
+                {whereSql}
+                ORDER BY p.pn ASC
+                """,
+                parameters.ToArray());
+
+            var workOrders = await QueryRowsAsync(
+                connection,
+                $"""
+                SELECT DISTINCT w.id, w.wo, p.pn AS part_number, w.site_name AS site
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                JOIN workflow_routing_steps r ON r.workflow_part_id = p.id
+                {whereSql}
+                ORDER BY w.wo ASC
+                """,
+                parameters.ToArray());
+
+            return Results.Json(new { sites, stations, partNumbers, workOrders });
+        });
+
+        app.MapGet("/api/reports/todays-dashboard/data", async (HttpRequest request) =>
+        {
+            var site = request.Query["site"].ToString().Trim();
+            var station = request.Query["station"].ToString().Trim();
+            var pn = request.Query["pn"].ToString().Trim();
+            var wo = request.Query["wo"].ToString().Trim();
+            var fromDateRaw = request.Query["fromDate"].ToString().Trim();
+            var toDateRaw = request.Query["toDate"].ToString().Trim();
+
+            var fromDate = DateTime.TryParse(fromDateRaw, out var parsedFrom)
+                ? parsedFrom.Date
+                : DateTime.Today;
+            var toDate = DateTime.TryParse(toDateRaw, out var parsedTo)
+                ? parsedTo.Date
+                : DateTime.Today;
+
+            if (toDate < fromDate)
+            {
+                (fromDate, toDate) = (toDate, fromDate);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT
+                  sn.id,
+                  sn.sn,
+                  sn.rsn,
+                  sn.status AS serial_status,
+                  sn.condition,
+                  sn.current_station_code,
+                  sn.created_at AS serial_created_at,
+                  sn.last_moved_at,
+                  p.pn,
+                  w.wo,
+                  w.site_name,
+                  COALESCE(latest_log.station_code, sn.current_station_code, '') AS station_code,
+                  COALESCE(latest_log.station_name, route.station_name, latest_log.station_code, sn.current_station_code, '') AS station_name,
+                  latest_log.action_result,
+                  latest_log.remark,
+                  latest_log.changed_by,
+                  latest_log.created_at AS log_created_at,
+                  COALESCE(latest_log.created_at, sn.last_moved_at, sn.created_at) AS event_time
+                FROM workflow_serial_numbers sn
+                JOIN workflow_work_orders w ON w.id = sn.workflow_work_order_id
+                JOIN workflow_part_numbers p ON p.id = sn.workflow_part_id
+                LEFT JOIN LATERAL (
+                  SELECT l.station_code, l.station_name, l.action_result, l.remark, l.changed_by, l.created_at
+                  FROM workflow_serial_station_logs l
+                  WHERE l.workflow_serial_id = sn.id
+                    AND (@station = '' OR UPPER(BTRIM(l.station_code)) = UPPER(BTRIM(@station)))
+                  ORDER BY l.created_at DESC, l.id DESC
+                  LIMIT 1
+                ) latest_log ON TRUE
+                LEFT JOIN workflow_routing_steps route
+                  ON route.workflow_part_id = sn.workflow_part_id
+                 AND UPPER(BTRIM(route.station_code)) = UPPER(BTRIM(COALESCE(latest_log.station_code, sn.current_station_code, '')))
+                WHERE (@site = '' OR UPPER(BTRIM(w.site_name)) = UPPER(BTRIM(@site)))
+                  AND (@pn = '' OR UPPER(BTRIM(p.pn)) = UPPER(BTRIM(@pn)))
+                  AND (@wo = '' OR UPPER(BTRIM(w.wo)) = UPPER(BTRIM(@wo)))
+                  AND (
+                    @station = ''
+                    OR latest_log.station_code IS NOT NULL
+                    OR UPPER(BTRIM(sn.current_station_code)) = UPPER(BTRIM(@station))
+                  )
+                  AND COALESCE(latest_log.created_at, sn.last_moved_at, sn.created_at)::date >= @fromDate::date
+                  AND COALESCE(latest_log.created_at, sn.last_moved_at, sn.created_at)::date <= @toDate::date
+                ORDER BY event_time DESC, sn.id DESC
+                """,
+                ("site", site),
+                ("station", station),
+                ("pn", pn),
+                ("wo", wo),
+                ("fromDate", fromDate),
+                ("toDate", toDate));
+
+            string Read(Dictionary<string, object?> row, string key) => Convert.ToString(row[key]) ?? string.Empty;
+            DateTime ReadDate(Dictionary<string, object?> row, string key)
+            {
+                var value = row[key];
+                if (value is DateTime date) return date;
+                return DateTime.TryParse(Convert.ToString(value), out var parsed) ? parsed : DateTime.MinValue;
+            }
+
+            string NormalizeStatus(Dictionary<string, object?> row)
+            {
+                var action = Read(row, "action_result").Trim().ToUpperInvariant();
+                var status = Read(row, "serial_status").Trim().ToUpperInvariant();
+                var condition = Read(row, "condition").Trim().ToUpperInvariant();
+                var remark = Read(row, "remark").Trim().ToUpperInvariant();
+
+                if (remark.Contains("REWORK")) return "Rework";
+                if (remark.Contains("NFF") || remark.Contains("NO FAULT")) return "NFF";
+                if (action == "PASS" || status == "COMPLETED") return "Pass";
+                if (action == "FAIL" || status == "FAILED" || condition is "NG" or "FAIL") return "Fail";
+                return "Pending";
+            }
+
+            string ResultText(Dictionary<string, object?> row, string status)
+            {
+                var remark = Read(row, "remark").Trim();
+                if (!string.IsNullOrWhiteSpace(remark)) return remark;
+                return status switch
+                {
+                    "Pass" => "All Test Passed",
+                    "Fail" => "Fail",
+                    "Rework" => "Rework Required",
+                    "NFF" => "No Fault Found",
+                    _ => "In Process"
+                };
+            }
+
+            object ToSerial(Dictionary<string, object?> row)
+            {
+                var status = NormalizeStatus(row);
+                var createdAt = ReadDate(row, "serial_created_at");
+                var eventTime = ReadDate(row, "event_time");
+                return new
+                {
+                    sn = Read(row, "sn"),
+                    pn = Read(row, "pn"),
+                    wo = Read(row, "wo"),
+                    station = Read(row, "station_code"),
+                    stationName = Read(row, "station_name"),
+                    @operator = string.IsNullOrWhiteSpace(Read(row, "changed_by")) ? "-" : Read(row, "changed_by"),
+                    status,
+                    startTime = createdAt == DateTime.MinValue ? "-" : createdAt.ToString("hh:mm:ss tt"),
+                    endTime = eventTime == DateTime.MinValue || status == "Pending" ? "-" : eventTime.ToString("hh:mm:ss tt"),
+                    cycleSeconds = eventTime == DateTime.MinValue || createdAt == DateTime.MinValue ? 0 : Math.Max(0, Math.Round((eventTime - createdAt).TotalSeconds, 1)),
+                    result = ResultText(row, status),
+                    eventTime
+                };
+            }
+
+            object BuildBucket(string label, IEnumerable<Dictionary<string, object?>> bucketRows)
+            {
+                var list = bucketRows.ToList();
+                var statuses = list.Select(NormalizeStatus).ToList();
+                return new
+                {
+                    label,
+                    pass = statuses.Count(value => value == "Pass"),
+                    fail = statuses.Count(value => value == "Fail"),
+                    rework = statuses.Count(value => value == "Rework"),
+                    nff = statuses.Count(value => value == "NFF"),
+                    pending = statuses.Count(value => value == "Pending"),
+                    sns = list.Select(ToSerial).ToArray()
+                };
+            }
+
+            var hourlyBuckets = Enumerable.Range(0, 24)
+                .Select(hour =>
+                {
+                    var label = DateTime.Today.AddHours(hour).ToString("hh tt");
+                    var bucketRows = rows.Where(row => ReadDate(row, "event_time").Hour == hour);
+                    return BuildBucket(label, bucketRows);
+                })
+                .ToArray();
+
+            var dailyLabel = fromDate == toDate
+                ? toDate.ToString("dd MMM yyyy")
+                : $"{fromDate:dd MMM yyyy} - {toDate:dd MMM yyyy}";
+            var dailyBucket = BuildBucket(dailyLabel, rows);
+            var dailyBuckets = Enumerable.Range(0, (toDate - fromDate).Days + 1)
+                .Select(offset =>
+                {
+                    var day = fromDate.AddDays(offset);
+                    var bucketRows = rows.Where(row => ReadDate(row, "event_time").Date == day.Date);
+                    return BuildBucket(day.ToString("dd MMM"), bucketRows);
+                })
+                .ToArray();
+
+            var statusValues = rows.Select(NormalizeStatus).ToList();
+            var total = rows.Count;
+            var failRows = rows.Where(row => NormalizeStatus(row) == "Fail").ToList();
+            var topFailingStation = failRows
+                .GroupBy(row => Read(row, "station_code"))
+                .OrderByDescending(group => group.Count())
+                .FirstOrDefault();
+            var highestLoadStation = rows
+                .GroupBy(row => Read(row, "station_code"))
+                .OrderByDescending(group => group.Count())
+                .FirstOrDefault();
+
+            return Results.Json(new
+            {
+                lastUpdated = DateTime.Now,
+                summary = new
+                {
+                    totalSn = total,
+                    passCount = statusValues.Count(value => value == "Pass"),
+                    failCount = statusValues.Count(value => value == "Fail"),
+                    reworkCount = statusValues.Count(value => value == "Rework"),
+                    nffCount = statusValues.Count(value => value == "NFF"),
+                    pendingCount = statusValues.Count(value => value == "Pending"),
+                    fpy = total == 0 ? 0 : Math.Round(statusValues.Count(value => value == "Pass") * 100.0 / total, 2),
+                    wipCount = statusValues.Count(value => value is "Pending" or "Rework" or "NFF"),
+                    avgCycleTime = rows.Count == 0 ? 0 : Math.Round(rows
+                        .Select(row => (ReadDate(row, "event_time") - ReadDate(row, "serial_created_at")).TotalSeconds)
+                        .Where(seconds => seconds >= 0)
+                        .DefaultIfEmpty(0)
+                        .Average(), 1),
+                    topFailingStation = topFailingStation?.Key ?? "-",
+                    topFailingStationFails = topFailingStation?.Count() ?? 0,
+                    highestLoadStation = highestLoadStation?.Key ?? "-",
+                    highestLoadStationSn = highestLoadStation?.Count() ?? 0
+                },
+                hourlyBuckets,
+                dailyBuckets,
+                dailyBucket
+            });
+        });
+
         app.MapGet("/api/reports/work-order-tree", async (HttpRequest request) =>
         {
             var wo = request.Query["wo"].ToString().Trim();

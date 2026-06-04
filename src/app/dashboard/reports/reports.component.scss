@@ -10,6 +10,11 @@
   background: linear-gradient(135deg, #dff1ff 0%, #f7fbff 58%, #ffffff 100%);
 }
 
+.reports-page.todays-mode {
+  padding: 0;
+  background: #ffffff;
+}
+
 .action-grid {
   width: min(1120px, 100%);
   margin: 12px auto 0;

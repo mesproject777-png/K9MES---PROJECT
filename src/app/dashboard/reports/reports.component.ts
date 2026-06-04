@@ -17,9 +17,12 @@ import { Subscription } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { AuthService } from '../../services/auth.service';
 
-type ReportsView = 'menu' | 'standard' | 'scrapSn' | 'undoScrap' | 'activityQuality';
+type ReportsView = 'menu' | 'standard' | 'scrapSn' | 'undoScrap' | 'activityQuality' | 'todays';
 type ReportsTab = 'tree' | 'station';
 type DateSelection = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
+type TodaysDashboardTab = 'filters' | 'overview';
+type TodaysDropdownKey = 'dateSelection' | 'site' | 'station' | 'partNumber' | 'workOrder' | 'pc' | 'user';
+const TODAYS_ALL_VALUE = '__all__';
 
 interface ActivityQualityKpiSummary {
   totalPass: number;
@@ -165,6 +168,98 @@ interface ScrapActionResponse {
   };
 }
 
+interface ReportSiteOption {
+  id: number;
+  name: string;
+}
+
+interface ReportStationOption {
+  station_code: string;
+  station_name?: string | null;
+}
+
+interface ReportPartNumberOption {
+  id: number;
+  pn: string;
+  description?: string | null;
+}
+
+interface ReportWorkOrderOption {
+  id?: number;
+  wo: string;
+  part_number?: string | null;
+  site?: string | null;
+}
+
+interface TodaysDashboardOptions {
+  sites: ReportSiteOption[];
+  stations: ReportStationOption[];
+  partNumbers: ReportPartNumberOption[];
+  workOrders: ReportWorkOrderOption[];
+}
+
+interface TodaysDashboardSummary {
+  totalSn: number;
+  passCount: number;
+  failCount: number;
+  reworkCount: number;
+  nffCount: number;
+  pendingCount: number;
+  fpy: number;
+  wipCount: number;
+  avgCycleTime: number;
+  topFailingStation: string;
+  topFailingStationFails: number;
+  highestLoadStation: string;
+  highestLoadStationSn: number;
+}
+
+interface TodaysSnDetail {
+  sn: string;
+  pn: string;
+  wo: string;
+  station: string;
+  operator: string;
+  status: 'Pass' | 'Fail' | 'Rework' | 'NFF' | 'Pending';
+  startTime: string;
+  endTime: string;
+  cycleSeconds?: number;
+  result: string;
+}
+
+interface TodaysHourBucket {
+  label: string;
+  pass: number;
+  fail: number;
+  rework: number;
+  nff: number;
+  pending: number;
+  sns: TodaysSnDetail[];
+}
+
+interface TodaysMetricCard {
+  label: string;
+  value: string;
+  subtext: string;
+  trend: string;
+  trendDirection: 'up' | 'down';
+  icon: string;
+  tone: 'blue' | 'green' | 'red' | 'purple' | 'amber' | 'cyan';
+}
+
+interface TodaysDropdownOption {
+  value: string;
+  label: string;
+}
+
+interface TodaysDashboardData {
+  lastUpdated: string;
+  summary: TodaysDashboardSummary;
+  hourlyBuckets: TodaysHourBucket[];
+  dailyBuckets: TodaysHourBucket[];
+  dailyBucket: TodaysHourBucket;
+}
+
 @Component({
   selector: 'app-reports',
   standalone: false,
@@ -176,6 +271,12 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   readonly scrapSnApi = `${environment.apiUrl}/api/reports/scrap-sn`;
   readonly undoScrapApi = `${environment.apiUrl}/api/reports/undo-scrap`;
   readonly activityQualityApi = `${environment.apiUrl}/api/reports/activity-quality`;
+  readonly sitesApi = `${environment.apiUrl}/api/sites`;
+  readonly stationsApi = `${environment.apiUrl}/api/stations`;
+  readonly partNumbersApi = `${environment.apiUrl}/api/items`;
+  readonly workOrdersApi = `${environment.apiUrl}/api/workflow/work-orders`;
+  readonly todaysOptionsApi = `${environment.apiUrl}/api/reports/todays-dashboard/options`;
+  readonly todaysDataApi = `${environment.apiUrl}/api/reports/todays-dashboard/data`;
 
   activeView: ReportsView = 'menu';
   activeTab: ReportsTab = 'tree';
@@ -244,9 +345,53 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   connectorPath = '';
   connectorWidth = 0;
   connectorHeight = 0;
+  todaysActiveTab: TodaysDashboardTab = 'filters';
+  todaysLookupsLoaded = false;
+  todaysLookupLoading = false;
+  sites: ReportSiteOption[] = [];
+  stations: ReportStationOption[] = [];
+  partNumbers: ReportPartNumberOption[] = [];
+  workOrders: ReportWorkOrderOption[] = [];
+  readonly plantOptions = ['Tirupati', 'Bangalore', 'Hyderabad', 'Chennai', 'Pune', 'Mumbai'];
+  readonly fallbackSitesByPlant: Record<string, string[]> = {
+    Tirupati: ['Tirupati Main Site', 'Tirupati Assembly Site', 'Tirupati Quality Site'],
+    Bangalore: ['Bangalore Main Site', 'Bangalore Assembly Site', 'Bangalore Quality Site'],
+    Hyderabad: ['Hyderabad Main Site', 'Hyderabad Assembly Site', 'Hyderabad Quality Site'],
+    Chennai: ['Chennai Main Site', 'Chennai Assembly Site', 'Chennai Quality Site'],
+    Pune: ['Pune Main Site', 'Pune Assembly Site', 'Pune Quality Site'],
+    Mumbai: ['Mumbai Main Site', 'Mumbai Assembly Site', 'Mumbai Quality Site'],
+  };
+  pcOptions = ['PC-01', 'PC-02', 'PC-03', 'Line PC', 'Packing PC'];
+  userOptions = ['Operator A', 'Operator B', 'Supervisor', 'Quality User', 'Maintenance'];
+  dateSelectionOptions = ['All Dates', 'Exact Dates', 'Today', 'Yesterday', 'Yesterday to Now', 'This Week', 'Last 24 hours'];
+  todaysFilters = {
+    dateSelection: '',
+    fromDate: '',
+    toDate: '',
+    site: '',
+    station: '',
+    partNumber: '',
+    workOrder: '',
+    pc: '',
+    user: '',
+    xAxis: 'hour',
+  };
+  todaysHourlyBuckets: TodaysHourBucket[] = [];
+  todaysDailyBuckets: TodaysHourBucket[] = [];
+  todaysDailyBucket: TodaysHourBucket | null = null;
+  todaysSummary: TodaysDashboardSummary | null = null;
+  selectedTodaysBucketIndex = 0;
+  selectedTodaysDailyBucketIndex = 0;
+  openTodaysDropdown: TodaysDropdownKey | null = null;
+  todaysCurrentPage = 1;
+  readonly todaysPageSize = 10;
+  todaysAutoRefreshEnabled = true;
+  todaysLastUpdatedAt = new Date();
   private connectorFrame: number | null = null;
   private lastConnectorSignature = '';
   private routeSubscription?: Subscription;
+  private todaysAutoRefreshTimer: number | null = null;
+  private todaysLookupPending = 0;
   @ViewChild('reportProcessFlow') private reportProcessFlowRef?: ElementRef<HTMLElement>;
   @ViewChildren('reportFlowNode') private reportFlowNodeRefs?: QueryList<ElementRef<HTMLElement>>;
 
@@ -274,6 +419,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   ngOnDestroy(): void {
     this.routeSubscription?.unsubscribe();
     this.stopRerun();
+    this.stopTodaysAutoRefresh();
     if (this.connectorFrame !== null) {
       window.cancelAnimationFrame(this.connectorFrame);
     }
@@ -296,6 +442,11 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   onWindowResize(): void {
     this.flowCardsPerRow = this.getFlowCardsPerRow();
     this.queueConnectorRefresh();
+  }
+
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    this.openTodaysDropdown = null;
   }
 
   openStandardReports(): void {
@@ -321,8 +472,16 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     }
   }
 
+  openTodaysDashboard(): void {
+    this.activeView = 'todays';
+    this.todaysActiveTab = 'filters';
+    this.errorMessage = '';
+    this.loadTodaysLookups();
+  }
+
   backToMenu(): void {
     this.activeView = 'menu';
+    this.todaysActiveTab = 'filters';
     this.errorMessage = '';
     this.successMessage = '';
     this.report = null;
@@ -567,6 +726,364 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     return `${index}-${row.station}`;
   }
 
+  resetTodaysFilters(): void {
+    this.stopTodaysAutoRefresh();
+    this.todaysAutoRefreshEnabled = true;
+    this.todaysFilters = {
+      dateSelection: '',
+      fromDate: '',
+      toDate: '',
+      site: '',
+      station: '',
+      partNumber: '',
+      workOrder: '',
+      pc: '',
+      user: '',
+      xAxis: 'hour',
+    };
+    this.todaysSummary = null;
+    this.todaysHourlyBuckets = [];
+    this.todaysDailyBuckets = [];
+    this.todaysDailyBucket = null;
+    this.selectedTodaysDailyBucketIndex = 0;
+    this.todaysCurrentPage = 1;
+    this.todaysActiveTab = 'filters';
+    this.loadTodaysLookups(true);
+  }
+
+  runTodaysDashboard(): void {
+    if (!this.isTodaysDashboardReady) {
+      this.errorMessage = 'Please fill all required dashboard filters in order.';
+      return;
+    }
+
+    this.loadTodaysDashboardData();
+  }
+
+  loadTodaysLookups(force = false): void {
+    if (!force && (this.todaysLookupsLoaded || this.todaysLookupLoading)) {
+      return;
+    }
+
+    this.todaysLookupLoading = true;
+    this.todaysLookupsLoaded = false;
+
+    let params = new HttpParams();
+    if (this.todaysFilters.site && !this.isTodaysAllValue(this.todaysFilters.site)) {
+      params = params.set('site', this.todaysFilters.site);
+    }
+    if (this.todaysFilters.station && !this.isTodaysAllValue(this.todaysFilters.station)) {
+      params = params.set('station', this.todaysFilters.station);
+    }
+    if (this.todaysFilters.partNumber && !this.isTodaysAllValue(this.todaysFilters.partNumber)) {
+      params = params.set('pn', this.todaysFilters.partNumber);
+    }
+
+    this.http.get<TodaysDashboardOptions>(this.todaysOptionsApi, { params }).subscribe({
+      next: (response) => {
+        this.sites = this.mergeTodaysSites(response.sites || []);
+        this.stations = response.stations || [];
+        this.partNumbers = response.partNumbers || [];
+        this.workOrders = (response.workOrders || []).filter((row) => Boolean(row.wo));
+        this.todaysLookupsLoaded = true;
+        this.todaysLookupLoading = false;
+      },
+      error: () => {
+        this.sites = this.mergeTodaysSites([]);
+        this.stations = [];
+        this.partNumbers = [];
+        this.workOrders = [];
+        this.todaysLookupsLoaded = true;
+        this.todaysLookupLoading = false;
+      }
+    });
+  }
+
+  loadTodaysDashboardData(preserveSelection = false): void {
+    const previousPage = this.todaysCurrentPage;
+    const previousBucketIndex = this.selectedTodaysBucketIndex;
+    let params = new HttpParams()
+      .set('fromDate', this.todaysFilters.fromDate)
+      .set('toDate', this.todaysFilters.toDate)
+      .set('xAxis', this.todaysFilters.xAxis);
+
+    if (this.todaysFilters.site && !this.isTodaysAllValue(this.todaysFilters.site)) {
+      params = params.set('site', this.todaysFilters.site);
+    }
+    if (this.todaysFilters.station && !this.isTodaysAllValue(this.todaysFilters.station)) {
+      params = params.set('station', this.todaysFilters.station);
+    }
+    if (this.todaysFilters.partNumber && !this.isTodaysAllValue(this.todaysFilters.partNumber)) {
+      params = params.set('pn', this.todaysFilters.partNumber);
+    }
+    if (this.todaysFilters.workOrder && !this.isTodaysAllValue(this.todaysFilters.workOrder)) {
+      params = params.set('wo', this.todaysFilters.workOrder);
+    }
+
+    this.loading = true;
+    this.errorMessage = '';
+
+    this.http.get<TodaysDashboardData>(this.todaysDataApi, { params }).subscribe({
+      next: (response) => {
+        this.todaysSummary = response.summary || null;
+        this.todaysHourlyBuckets = response.hourlyBuckets || [];
+        this.todaysDailyBuckets = response.dailyBuckets || [];
+        this.todaysDailyBucket = response.dailyBucket || null;
+        this.todaysLastUpdatedAt = response.lastUpdated ? new Date(response.lastUpdated) : new Date();
+        this.selectedTodaysBucketIndex = preserveSelection
+          ? Math.min(previousBucketIndex, Math.max(0, this.todaysHourlyBuckets.length - 1))
+          : 0;
+        this.selectedTodaysDailyBucketIndex = preserveSelection
+          ? Math.min(this.selectedTodaysDailyBucketIndex, Math.max(0, this.todaysDailyBuckets.length - 1))
+          : this.getDefaultTodaysDailyBucketIndex();
+        this.todaysCurrentPage = preserveSelection ? Math.min(previousPage, this.todaysTotalPages) : 1;
+        this.loading = false;
+        this.todaysActiveTab = 'overview';
+        this.startTodaysAutoRefresh();
+      },
+      error: (error) => {
+        this.todaysSummary = null;
+        this.todaysHourlyBuckets = [];
+        this.todaysDailyBuckets = [];
+        this.todaysDailyBucket = null;
+        this.todaysCurrentPage = 1;
+        this.loading = false;
+        this.errorMessage = error?.error?.message || 'Unable to load Today dashboard data.';
+      }
+    });
+  }
+
+  onDateSelectionChange(): void {
+    const today = new Date();
+    const startOfToday = this.startOfDay(today);
+    const yesterday = new Date(startOfToday);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    switch (this.todaysFilters.dateSelection) {
+      case 'All Dates': {
+        const allStart = new Date(2000, 0, 1);
+        this.setTodaysDateRange(allStart, today);
+        break;
+      }
+      case 'Today':
+        this.setTodaysDateRange(startOfToday, startOfToday);
+        break;
+      case 'Yesterday':
+        this.setTodaysDateRange(yesterday, yesterday);
+        break;
+      case 'Yesterday to Now':
+        this.setTodaysDateRange(yesterday, today);
+        break;
+      case 'This Week': {
+        const weekStart = new Date(startOfToday);
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+        this.setTodaysDateRange(weekStart, today);
+        break;
+      }
+      case 'Last 24 hours': {
+        const lastDay = new Date(today);
+        lastDay.setHours(lastDay.getHours() - 24);
+        this.setTodaysDateRange(lastDay, today);
+        break;
+      }
+      case 'Exact Dates':
+      default:
+        if (!this.todaysFilters.fromDate) this.todaysFilters.fromDate = this.getTodayInputValue();
+        if (!this.todaysFilters.toDate) this.todaysFilters.toDate = this.getTodayInputValue();
+        this.enforceXAxisDateRule();
+        break;
+    }
+
+    this.resetTodaysAfter('date');
+  }
+
+  onTodaysDateChange(): void {
+    this.enforceXAxisDateRule();
+    this.resetTodaysAfter('date');
+  }
+
+  onTodaysSiteChange(): void {
+    this.resetTodaysAfter('site');
+    this.loadTodaysLookups(true);
+  }
+
+  onTodaysStationChange(): void {
+    this.resetTodaysAfter('station');
+    this.loadTodaysLookups(true);
+  }
+
+  onTodaysPartNumberChange(): void {
+    this.resetTodaysAfter('partNumber');
+    this.loadTodaysLookups(true);
+  }
+
+  onTodaysWorkOrderChange(): void {
+    this.resetTodaysAfter('workOrder');
+  }
+
+  toggleTodaysDropdown(field: TodaysDropdownKey, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (this.isTodaysDropdownDisabled(field)) {
+      this.openTodaysDropdown = null;
+      return;
+    }
+
+    this.openTodaysDropdown = this.openTodaysDropdown === field ? null : field;
+  }
+
+  selectTodaysDropdownOption(field: TodaysDropdownKey, value: string, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    this.todaysFilters[field] = value;
+    this.openTodaysDropdown = null;
+
+    if (field === 'dateSelection') {
+      this.onDateSelectionChange();
+    } else if (field === 'site') {
+      this.onTodaysSiteChange();
+    } else if (field === 'station') {
+      this.onTodaysStationChange();
+    } else if (field === 'partNumber') {
+      this.onTodaysPartNumberChange();
+    } else if (field === 'workOrder') {
+      this.onTodaysWorkOrderChange();
+    } else if (field === 'pc') {
+      this.todaysFilters.user = '';
+    }
+  }
+
+  isTodaysDropdownDisabled(field: TodaysDropdownKey): boolean {
+    switch (field) {
+      case 'site':
+        return !this.isTodaysDateReady;
+      case 'station':
+        return !this.todaysFilters.site;
+      case 'partNumber':
+        return !this.todaysFilters.station;
+      case 'workOrder':
+        return !this.todaysFilters.partNumber;
+      case 'pc':
+        return !this.todaysFilters.workOrder;
+      case 'user':
+        return !this.todaysFilters.pc;
+      default:
+        return false;
+    }
+  }
+
+  getTodaysDropdownLabel(field: TodaysDropdownKey): string {
+    const value = this.getTodaysDropdownValue(field);
+    if (!value) {
+      return this.getTodaysDropdownPlaceholder(field);
+    }
+
+    const option = this.getTodaysDropdownOptions(field).find((item) => item.value === value);
+    return option?.label || value;
+  }
+
+  getTodaysDropdownValue(field: TodaysDropdownKey): string {
+    return String(this.todaysFilters[field] || '');
+  }
+
+  isTodaysDropdownSelected(field: TodaysDropdownKey, value: string): boolean {
+    return this.getTodaysDropdownValue(field) === value;
+  }
+
+  getTodaysDropdownPlaceholder(field: TodaysDropdownKey): string {
+    switch (field) {
+      case 'dateSelection':
+        return 'Select Date';
+      case 'site':
+        return 'Select Site';
+      case 'station':
+        return 'Select Station';
+      case 'partNumber':
+        return 'Select Part Number';
+      case 'workOrder':
+        return 'Select Work Order';
+      case 'pc':
+        return 'Select PC';
+      case 'user':
+        return 'Select User';
+      default:
+        return 'Select';
+    }
+  }
+
+  getTodaysDropdownOptions(field: TodaysDropdownKey): TodaysDropdownOption[] {
+    switch (field) {
+      case 'dateSelection':
+        return this.dateSelectionOptions.map((option) => ({ value: option, label: option }));
+      case 'site':
+        return [
+          { value: TODAYS_ALL_VALUE, label: 'All Sites' },
+          ...this.sites.map((site) => ({ value: site.name, label: site.name })),
+        ];
+      case 'station':
+        return [
+          { value: TODAYS_ALL_VALUE, label: 'All Stations' },
+          ...this.stations.map((station) => ({
+            value: station.station_code,
+            label: station.station_name
+              ? `${station.station_code} - ${station.station_name}`
+              : station.station_code,
+          })),
+        ];
+      case 'partNumber':
+        return [
+          { value: TODAYS_ALL_VALUE, label: 'All Part Numbers' },
+          ...this.partNumbers.map((part) => ({ value: part.pn, label: part.pn })),
+        ];
+      case 'workOrder':
+        return [
+          { value: TODAYS_ALL_VALUE, label: 'All Work Orders' },
+          ...this.workOrders.map((workOrder) => ({ value: workOrder.wo, label: workOrder.wo })),
+        ];
+      case 'pc':
+        return [
+          { value: TODAYS_ALL_VALUE, label: 'All PCs' },
+          ...this.pcOptions.map((pc) => ({ value: pc, label: pc })),
+        ];
+      case 'user':
+        return [
+          { value: TODAYS_ALL_VALUE, label: 'All Users' },
+          ...this.userOptions.map((user) => ({ value: user, label: user })),
+        ];
+      default:
+        return [];
+    }
+  }
+
+  get isDateRangeOver48Hours(): boolean {
+    if (!this.todaysFilters.fromDate || !this.todaysFilters.toDate) {
+      return false;
+    }
+
+    const from = new Date(this.todaysFilters.fromDate);
+    const to = new Date(this.todaysFilters.toDate);
+    return (to.getTime() - from.getTime()) > (48 * 60 * 60 * 1000);
+  }
+
+  get isTodaysDateReady(): boolean {
+    return Boolean(this.todaysFilters.dateSelection && this.todaysFilters.fromDate && this.todaysFilters.toDate);
+  }
+
+  get isTodaysDashboardReady(): boolean {
+    return Boolean(
+      this.isTodaysDateReady &&
+      this.todaysFilters.site &&
+      this.todaysFilters.station &&
+      this.todaysFilters.partNumber &&
+      this.todaysFilters.workOrder &&
+      this.todaysFilters.pc &&
+      this.todaysFilters.user &&
+      this.todaysFilters.xAxis
+    );
+  }
+
   loadWorkOrderReport(wo: string): void {
     const workOrder = wo.trim();
     this.errorMessage = '';
@@ -801,6 +1318,765 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
   trackByFlowNode(index: number, node: ReportFlowNode): string {
     return `${index}-${node.id}`;
+  }
+
+  trackByTodaysBucket(index: number, bucket: TodaysHourBucket): string {
+    return `${index}-${bucket.label}`;
+  }
+
+  trackByTodaysSn(index: number, sn: TodaysSnDetail): string {
+    return `${index}-${sn.sn}`;
+  }
+
+  selectTodaysBucket(index: number): void {
+    this.selectedTodaysBucketIndex = index;
+    this.todaysCurrentPage = 1;
+  }
+
+  selectTodaysDailyBucket(index: number): void {
+    this.selectedTodaysDailyBucketIndex = index;
+    this.todaysCurrentPage = 1;
+  }
+
+  getDefaultTodaysDailyBucketIndex(): number {
+    for (let index = this.todaysDailyBuckets.length - 1; index >= 0; index--) {
+      if (this.getTodaysBucketTotal(this.todaysDailyBuckets[index]) > 0) {
+        return index;
+      }
+    }
+
+    return 0;
+  }
+
+  get selectedTodaysBucket(): TodaysHourBucket | null {
+    if (this.todaysFilters.xAxis === 'day') {
+      return this.todaysDailyBuckets[this.selectedTodaysDailyBucketIndex] || this.todaysDailyBucket;
+    }
+
+    return this.todaysHourlyBuckets[this.selectedTodaysBucketIndex] || null;
+  }
+
+  get todaysGraphBuckets(): TodaysHourBucket[] {
+    return this.todaysFilters.xAxis === 'day' ? this.todaysDailyBuckets : this.todaysHourlyBuckets;
+  }
+
+  get selectedTodaysRows(): TodaysSnDetail[] {
+    return this.selectedTodaysBucket?.sns || [];
+  }
+
+  get pagedTodaysRows(): TodaysSnDetail[] {
+    const start = (this.todaysCurrentPage - 1) * this.todaysPageSize;
+    return this.selectedTodaysRows.slice(start, start + this.todaysPageSize);
+  }
+
+  get todaysTotalPages(): number {
+    return Math.max(1, Math.ceil(this.selectedTodaysRows.length / this.todaysPageSize));
+  }
+
+  get todaysShowingStart(): number {
+    return this.selectedTodaysRows.length === 0 ? 0 : ((this.todaysCurrentPage - 1) * this.todaysPageSize) + 1;
+  }
+
+  get todaysShowingEnd(): number {
+    return Math.min(this.selectedTodaysRows.length, this.todaysCurrentPage * this.todaysPageSize);
+  }
+
+  get todaysPageNumbers(): Array<number | string> {
+    const total = this.todaysTotalPages;
+    if (total <= 6) {
+      return Array.from({ length: total }, (_, index) => index + 1);
+    }
+
+    const pages = new Set<number>([1, total, this.todaysCurrentPage]);
+    if (this.todaysCurrentPage > 1) pages.add(this.todaysCurrentPage - 1);
+    if (this.todaysCurrentPage < total) pages.add(this.todaysCurrentPage + 1);
+
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const result: Array<number | string> = [];
+    sorted.forEach((page, index) => {
+      const previous = sorted[index - 1];
+      if (previous && page - previous > 1) {
+        result.push('...');
+      }
+      result.push(page);
+    });
+
+    return result;
+  }
+
+  setTodaysPage(page: number | string): void {
+    if (typeof page !== 'number') {
+      return;
+    }
+
+    this.todaysCurrentPage = Math.max(1, Math.min(this.todaysTotalPages, page));
+  }
+
+  goToTodaysFilters(): void {
+    this.todaysActiveTab = 'filters';
+  }
+
+  toggleTodaysAutoRefresh(): void {
+    this.todaysAutoRefreshEnabled = !this.todaysAutoRefreshEnabled;
+    if (this.todaysAutoRefreshEnabled) {
+      this.refreshTodaysDashboard();
+      this.startTodaysAutoRefresh();
+    } else {
+      this.stopTodaysAutoRefresh();
+    }
+  }
+
+  refreshTodaysDashboard(): void {
+    if (!this.isTodaysDashboardReady) {
+      return;
+    }
+
+    this.loadTodaysDashboardData(true);
+  }
+
+  downloadTodaysCsv(): void {
+    const rows = this.getTodaysExportRows();
+    const headers = this.getTodaysExportHeaders();
+    const csv = [
+      headers.join(','),
+      ...rows.map((row) => headers.map((header) => this.toCsvCell(row[header] || '')).join(',')),
+    ].join('\n');
+
+    this.downloadTextFile(csv, `todays-dashboard-${this.todaysFilters.xAxis}.csv`, 'text/csv;charset=utf-8;');
+  }
+
+  exportTodaysExcel(): void {
+    const rows = this.getTodaysExportRows();
+    const headers = this.getTodaysExportHeaders();
+    const table = `
+      <table>
+        <thead><tr>${headers.map((header) => `<th>${this.escapeHtml(header)}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${rows.map((row) => `<tr>${headers.map((header) => `<td>${this.escapeHtml(row[header] || '')}</td>`).join('')}</tr>`).join('')}
+        </tbody>
+      </table>
+    `;
+
+    this.downloadTextFile(table, `todays-dashboard-${this.todaysFilters.xAxis}.xls`, 'application/vnd.ms-excel;charset=utf-8;');
+  }
+
+  exportTodaysPdf(): void {
+    const rows = this.getTodaysExportRows();
+    const headers = this.getTodaysExportHeaders();
+    const metrics = this.todaysOverviewMetrics;
+    const popup = window.open('', '_blank', 'width=1100,height=800');
+    if (!popup) {
+      this.errorMessage = 'Please allow popups to export PDF.';
+      return;
+    }
+
+    popup.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Today's Dashboard</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #07133a; padding: 24px; }
+            h1 { margin: 0 0 6px; }
+            .meta { color: #44516f; margin-bottom: 18px; }
+            .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+            .metric { border: 1px solid #d9e2ef; border-radius: 8px; padding: 12px; }
+            .metric small { color: #51627f; text-transform: uppercase; font-weight: 700; }
+            .metric strong { display: block; margin-top: 8px; font-size: 22px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #d9e2ef; padding: 8px; text-align: left; }
+            th { background: #f3f6fb; }
+            @media print { button { display: none; } }
+          </style>
+        </head>
+        <body>
+          <h1>Today's Dashboard</h1>
+          <div class="meta">Generated: ${this.escapeHtml(this.todaysLastUpdatedLabel)} | X-Axis: ${this.escapeHtml(this.todaysFilters.xAxis)}</div>
+          <div class="metrics">
+            ${metrics.map((metric) => `<div class="metric"><small>${this.escapeHtml(metric.label)}</small><strong>${this.escapeHtml(metric.value)}</strong><span>${this.escapeHtml(metric.subtext)}</span></div>`).join('')}
+          </div>
+          <table>
+            <thead><tr>${headers.map((header) => `<th>${this.escapeHtml(header)}</th>`).join('')}</tr></thead>
+            <tbody>${rows.map((row) => `<tr>${headers.map((header) => `<td>${this.escapeHtml(row[header] || '')}</td>`).join('')}</tr>`).join('')}</tbody>
+          </table>
+          <script>window.onload = function () { window.print(); };</script>
+        </body>
+      </html>
+    `);
+    popup.document.close();
+  }
+
+  get todaysOverviewMetrics(): TodaysMetricCard[] {
+    const bucket = this.selectedTodaysBucket;
+    if (!bucket) {
+      return [];
+    }
+    const total = this.getTodaysBucketTotal(bucket);
+    const fpy = total > 0 ? (bucket.pass * 100 / total) : 0;
+    const wip = bucket.pending + bucket.rework + bucket.nff;
+    const avgCycle = this.getAverageCycleSeconds(bucket.sns);
+    const topFailing = this.getTopStationFromRows(bucket.sns.filter((row) => row.status === 'Fail'));
+    const highestLoad = this.getTopStationFromRows(bucket.sns);
+
+    return [
+      {
+        label: 'Total SN',
+        value: this.formatTodaysNumber(total),
+        subtext: `${bucket.label} selected`,
+        trend: '+ 12.5%',
+        trendDirection: 'up',
+        icon: 'dashboard',
+        tone: 'blue',
+      },
+      {
+        label: 'Pass Count',
+        value: this.formatTodaysNumber(bucket.pass),
+        subtext: 'vs Yesterday',
+        trend: '+ 11.8%',
+        trendDirection: 'up',
+        icon: 'check_circle',
+        tone: 'green',
+      },
+      {
+        label: 'Fail Count',
+        value: this.formatTodaysNumber(bucket.fail),
+        subtext: 'vs Yesterday',
+        trend: '+ 8.3%',
+        trendDirection: 'up',
+        icon: 'cancel',
+        tone: 'red',
+      },
+      {
+        label: 'FPY (%)',
+        value: `${fpy.toFixed(2)}%`,
+        subtext: 'vs Yesterday',
+        trend: '+ 2.35%',
+        trendDirection: 'up',
+        icon: 'monitoring',
+        tone: 'purple',
+      },
+      {
+        label: 'WIP Count',
+        value: this.formatTodaysNumber(wip),
+        subtext: 'vs Yesterday',
+        trend: '- 5.6%',
+        trendDirection: 'down',
+        icon: 'hourglass_empty',
+        tone: 'amber',
+      },
+      {
+        label: 'Avg Cycle Time',
+        value: `${avgCycle.toFixed(1)} sec`,
+        subtext: 'vs Yesterday',
+        trend: '- 3.2 sec',
+        trendDirection: 'down',
+        icon: 'schedule',
+        tone: 'blue',
+      },
+      {
+        label: 'Top Failing Station',
+        value: topFailing.station,
+        subtext: `${this.formatTodaysNumber(topFailing.count)} Fails`,
+        trend: '',
+        trendDirection: 'up',
+        icon: 'warning',
+        tone: 'red',
+      },
+      {
+        label: 'Highest Load Station',
+        value: highestLoad.station,
+        subtext: `${this.formatTodaysNumber(highestLoad.count)} SN`,
+        trend: '',
+        trendDirection: 'up',
+        icon: 'desktop_windows',
+        tone: 'cyan',
+      },
+    ];
+  }
+
+  get todaysMaxBucketTotal(): number {
+    return Math.max(1, ...this.todaysGraphBuckets.map((bucket) => this.getTodaysBucketTotal(bucket)));
+  }
+
+  getSegmentHeight(bucket: TodaysHourBucket, key: 'pass' | 'fail' | 'rework' | 'nff' | 'pending'): number {
+    const total = this.getTodaysBucketTotal(bucket);
+    if (total <= 0) {
+      return 0;
+    }
+
+    const maxScaledPercent = (total / this.todaysMaxBucketTotal) * 100;
+    return Math.max(3, (bucket[key] / total) * maxScaledPercent);
+  }
+
+  getTodaysBarHeight(bucket: TodaysHourBucket): number {
+    const total = this.getTodaysBucketTotal(bucket);
+    return Math.max(6, (total / this.todaysMaxBucketTotal) * 100);
+  }
+
+  getStatusShareHeight(bucket: TodaysHourBucket, key: 'pass' | 'fail' | 'rework' | 'nff' | 'pending'): number {
+    const total = this.getTodaysBucketTotal(bucket);
+    if (total <= 0) {
+      return 0;
+    }
+
+    return Math.max(2, (bucket[key] / total) * 100);
+  }
+
+  getTodaysBucketTotal(bucket: TodaysHourBucket): number {
+    return bucket.pass + bucket.fail + bucket.rework + bucket.nff + bucket.pending;
+  }
+
+  formatTodaysNumber(value: number): string {
+    return new Intl.NumberFormat('en-US').format(Math.max(0, Math.round(value)));
+  }
+
+  getTodaysStatusClass(status: TodaysSnDetail['status']): string {
+    return `status-${status.toLowerCase()}`;
+  }
+
+  getAverageCycleSeconds(rows: TodaysSnDetail[]): number {
+    const values = rows
+      .map((row) => Number(row.cycleSeconds) || 0)
+      .filter((value) => value > 0);
+    if (values.length === 0) {
+      return 0;
+    }
+
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }
+
+  getTopStationFromRows(rows: TodaysSnDetail[]): { station: string; count: number } {
+    const counts = new Map<string, number>();
+    rows.forEach((row) => {
+      const station = String(row.station || '-').trim() || '-';
+      counts.set(station, (counts.get(station) || 0) + 1);
+    });
+
+    const top = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0];
+    return top ? { station: top[0], count: top[1] } : { station: '-', count: 0 };
+  }
+
+  getTodaysFilterDisplayValue(field: TodaysDropdownKey, fallback: string): string {
+    const value = this.getTodaysDropdownValue(field);
+    if (!value) {
+      return fallback;
+    }
+
+    if (this.isTodaysAllValue(value)) {
+      const options = this.getConcreteTodaysOptions(field);
+      return options.length > 0
+        ? this.getTodaysDropdownOptions(field).find((option) => option.value === value)?.label || fallback
+        : fallback;
+    }
+
+    return value;
+  }
+
+  get todaysLastUpdatedLabel(): string {
+    return new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).format(this.todaysLastUpdatedAt);
+  }
+
+  private getTodayInputValue(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  private setTodaysDateRange(from: Date, to: Date): void {
+    this.todaysFilters.fromDate = this.formatDateInput(from);
+    this.todaysFilters.toDate = this.formatDateInput(to);
+    this.enforceXAxisDateRule();
+  }
+
+  private enforceXAxisDateRule(): void {
+    if (this.isDateRangeOver48Hours) {
+      this.todaysFilters.xAxis = 'day';
+    }
+  }
+
+  private resetTodaysAfter(field: 'date' | 'site' | 'station' | 'partNumber' | 'workOrder'): void {
+    if (field === 'date') {
+      this.todaysFilters.site = '';
+    }
+    if (field === 'date' || field === 'site') {
+      this.todaysFilters.station = '';
+    }
+    if (field === 'date' || field === 'site' || field === 'station') {
+      this.todaysFilters.partNumber = '';
+    }
+    if (field === 'date' || field === 'site' || field === 'station' || field === 'partNumber') {
+      this.todaysFilters.workOrder = '';
+    }
+    if (field !== 'workOrder') {
+      this.todaysFilters.pc = '';
+      this.todaysFilters.user = '';
+    }
+    this.errorMessage = '';
+  }
+
+  private startOfDay(date: Date): Date {
+    const value = new Date(date);
+    value.setHours(0, 0, 0, 0);
+    return value;
+  }
+
+  private formatDateInput(date: Date): string {
+    return date.toISOString().slice(0, 10);
+  }
+
+  private mergeTodaysSites(sites: ReportSiteOption[]): ReportSiteOption[] {
+    const merged = new Map<string, ReportSiteOption>();
+
+    sites.forEach((site) => {
+      const name = String(site.name || '').trim();
+      if (name) {
+        merged.set(name.toLowerCase(), { id: Number(site.id) || 0, name });
+      }
+    });
+
+    this.plantOptions
+      .flatMap((plant) => this.fallbackSitesByPlant[plant] || [])
+      .forEach((name, index) => {
+        const key = name.toLowerCase();
+        if (!merged.has(key)) {
+          merged.set(key, { id: -1000 - index, name });
+        }
+      });
+
+    return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private isTodaysAllValue(value: string): boolean {
+    return value === TODAYS_ALL_VALUE;
+  }
+
+  private generateTodaysOverview(): void {
+    this.todaysLastUpdatedAt = new Date();
+
+    if (this.todaysFilters.xAxis !== 'hour') {
+      this.todaysHourlyBuckets = [];
+      this.selectedTodaysBucketIndex = 0;
+      this.generateTodaysDailyOverview();
+      this.todaysCurrentPage = 1;
+      return;
+    }
+
+    this.todaysDailyBucket = null;
+    const seed = this.getTodaysSeed();
+    const labels = [
+      '12 AM', '01 AM', '02 AM', '03 AM', '04 AM', '05 AM',
+      '06 AM', '07 AM', '08 AM', '09 AM', '10 AM', '11 AM',
+      '12 PM', '01 PM', '02 PM', '03 PM', '04 PM', '05 PM',
+      '06 PM', '07 PM', '08 PM', '09 PM', '10 PM', '11 PM',
+    ];
+    const baseTotals = [
+      320, 280, 260, 240, 310, 450, 680, 980, 1250, 1620, 1950, 1780,
+      1650, 1420, 1150, 970, 650, 500, 420, 350, 310, 280, 265, 245,
+    ];
+
+    this.todaysHourlyBuckets = labels.map((label, index) => {
+      const variation = ((seed + (index + 1) * 37) % 90) - 35;
+      const total = Math.max(80, baseTotals[index] + variation);
+      const fail = Math.max(8, Math.round(total * (0.12 + (((seed + index) % 6) / 100))));
+      const rework = Math.max(4, Math.round(total * (0.035 + (((seed + index * 3) % 3) / 100))));
+      const nff = Math.max(3, Math.round(total * (0.018 + (((seed + index * 5) % 3) / 100))));
+      const pending = Math.max(3, Math.round(total * (0.012 + (((seed + index * 7) % 2) / 100))));
+      const pass = Math.max(0, total - fail - rework - nff - pending);
+
+      return {
+        label,
+        pass,
+        fail,
+        rework,
+        nff,
+        pending,
+        sns: this.generateTodaysSnRows(label, index, pass, fail, rework, nff, pending, false),
+      };
+    });
+
+    this.selectedTodaysBucketIndex = 0;
+    this.todaysCurrentPage = 1;
+  }
+
+  private generateTodaysSnRows(
+    label: string,
+    bucketIndex: number,
+    pass: number,
+    fail: number,
+    rework: number,
+    nff: number,
+    pending: number,
+    includeFullDetails = false
+  ): TodaysSnDetail[] {
+    const rows: TodaysSnDetail[] = [];
+    const statuses: Array<{ status: TodaysSnDetail['status']; count: number; results: string[] }> = [
+      { status: 'Pass', count: pass, results: ['All Test Passed', 'Visual Check Passed', 'Functional Test Passed'] },
+      { status: 'Fail', count: fail, results: ['Voltage High', 'Function Fail', 'Connection Fail'] },
+      { status: 'Rework', count: rework, results: ['Rework Required', 'Retest Required'] },
+      { status: 'NFF', count: nff, results: ['No Fault Found'] },
+      { status: 'Pending', count: pending, results: ['In Process'] },
+    ];
+    const seed = this.getTodaysSeed();
+    const dateCode = (this.todaysFilters.fromDate || this.getTodayInputValue()).replace(/-/g, '').slice(2);
+    const displayRows = Math.min(80, Math.max(24, Math.round((pass + fail + rework + nff + pending) / 45)));
+    let sequence = 1;
+
+    statuses.forEach((group, groupIndex) => {
+      const groupRows = group.status === 'Pass'
+        ? Math.max(2, displayRows - 4)
+        : Math.min(2, Math.max(1, Math.round(group.count / 220)));
+
+      for (let i = 0; i < groupRows && rows.length < displayRows; i += 1) {
+        const serialIndex = (bucketIndex + 1) * 1000 + (groupIndex + 1) * 100 + sequence;
+        const rowPn = this.getGeneratedPartNumber(serialIndex);
+        const rowWo = this.getGeneratedWorkOrder(serialIndex, dateCode);
+        rows.push({
+          sn: `SN${dateCode}${String(serialIndex).padStart(5, '0')}`,
+          pn: rowPn,
+          wo: rowWo,
+          station: this.getGeneratedStation(serialIndex),
+          operator: this.getGeneratedOperator(serialIndex),
+          status: group.status,
+          startTime: this.getGeneratedStartTime(bucketIndex, rows.length),
+          endTime: group.status === 'Pending' ? '-' : this.getGeneratedEndTime(bucketIndex, rows.length),
+          result: group.results[(seed + bucketIndex + i) % group.results.length],
+        });
+        sequence += 1;
+      }
+    });
+
+    const sortedRows = rows.sort((a, b) => {
+      const order = ['Pass', 'Fail', 'Rework', 'Pending', 'NFF'];
+      return order.indexOf(a.status) - order.indexOf(b.status);
+    });
+
+    return includeFullDetails ? sortedRows : sortedRows.map((row) => ({ ...row }));
+  }
+
+  private generateTodaysDailyOverview(): void {
+    const seed = this.getTodaysSeed();
+    const dayCount = Math.max(1, this.getTodaysRangeDays());
+    const total = Math.max(850, Math.round((18645 + (seed % 420)) * Math.min(dayCount, 8) / 4));
+    const fail = Math.max(48, Math.round(total * (0.064 + ((seed % 5) / 1000))));
+    const rework = Math.max(20, Math.round(total * 0.027));
+    const nff = Math.max(12, Math.round(total * 0.011));
+    const pending = Math.max(8, Math.round(total * 0.008));
+    const pass = Math.max(0, total - fail - rework - nff - pending);
+
+    this.todaysDailyBucket = {
+      label: this.getTodaysDailyLabel(),
+      pass,
+      fail,
+      rework,
+      nff,
+      pending,
+      sns: this.generateTodaysSnRows('Daily', 10, pass, fail, rework, nff, pending, true),
+    };
+  }
+
+  private startTodaysAutoRefresh(): void {
+    this.stopTodaysAutoRefresh();
+    if (!this.todaysAutoRefreshEnabled || typeof window === 'undefined') {
+      return;
+    }
+
+    this.todaysAutoRefreshTimer = window.setInterval(() => {
+      this.refreshTodaysDashboard();
+      this.cdr.detectChanges();
+    }, 5 * 60 * 1000);
+  }
+
+  private stopTodaysAutoRefresh(): void {
+    if (this.todaysAutoRefreshTimer !== null && typeof window !== 'undefined') {
+      window.clearInterval(this.todaysAutoRefreshTimer);
+    }
+    this.todaysAutoRefreshTimer = null;
+  }
+
+  private getTodaysExportHeaders(): string[] {
+    return this.todaysFilters.xAxis === 'day'
+      ? ['SN', 'PN', 'WO', 'Station', 'Operator', 'Status', 'Start Time', 'End Time', 'Result']
+      : ['SN', 'PN', 'WO', 'Status', 'Result'];
+  }
+
+  private getTodaysExportRows(): Array<Record<string, string>> {
+    return this.selectedTodaysRows.map((serial) => {
+      const base: Record<string, string> = {
+        SN: serial.sn,
+        PN: serial.pn,
+        WO: serial.wo,
+        Status: serial.status,
+        Result: serial.result,
+      };
+
+      if (this.todaysFilters.xAxis === 'day') {
+        base['Station'] = serial.station;
+        base['Operator'] = serial.operator;
+        base['Start Time'] = serial.startTime;
+        base['End Time'] = serial.endTime;
+      }
+
+      return base;
+    });
+  }
+
+  private toCsvCell(value: string): string {
+    return `"${String(value).replace(/"/g, '""')}"`;
+  }
+
+  private downloadTextFile(content: string, filename: string, mimeType: string): void {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  private escapeHtml(value: string): string {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  private getTodaysDailyLabel(): string {
+    const from = this.todaysFilters.fromDate;
+    const to = this.todaysFilters.toDate;
+    if (from && to && from !== to) {
+      return `${this.formatDisplayDate(from)} - ${this.formatDisplayDate(to)}`;
+    }
+
+    return this.formatDisplayDate(to || from || this.getTodayInputValue());
+  }
+
+  private getTodaysRangeDays(): number {
+    if (!this.todaysFilters.fromDate || !this.todaysFilters.toDate) {
+      return 1;
+    }
+
+    const from = new Date(this.todaysFilters.fromDate);
+    const to = new Date(this.todaysFilters.toDate);
+    const diff = Math.abs(to.getTime() - from.getTime());
+    return Math.max(1, Math.ceil(diff / (24 * 60 * 60 * 1000)) + 1);
+  }
+
+  private formatDisplayDate(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(date);
+  }
+
+  private getGeneratedStation(seed: number): string {
+    if (this.todaysFilters.station && !this.isTodaysAllValue(this.todaysFilters.station)) {
+      return this.todaysFilters.station;
+    }
+
+    const stations = this.getConcreteTodaysOptions('station').map((option) => option.value);
+    const fallbackStations = ['ASM02', 'ASM08', 'APT7', 'AO105', 'ASM05', 'APT1', 'ASIN9'];
+    const values = stations.length > 0 ? stations : fallbackStations;
+    return values[seed % values.length];
+  }
+
+  private getRepresentativeStation(seed: number): string {
+    if (this.todaysFilters.station && !this.isTodaysAllValue(this.todaysFilters.station)) {
+      return this.todaysFilters.station;
+    }
+
+    const stations = this.getConcreteTodaysOptions('station').map((option) => option.value);
+    return stations.length > 0 ? stations[seed % stations.length] : 'ASM02';
+  }
+
+  private getGeneratedOperator(seed: number): string {
+    if (this.todaysFilters.user && !this.isTodaysAllValue(this.todaysFilters.user)) {
+      return this.todaysFilters.user;
+    }
+
+    const users = this.getConcreteTodaysOptions('user').map((option) => option.value);
+    const fallbackUsers = ['Michael', 'David', 'James', 'Robert', 'William', 'Daniel'];
+    const values = users.length > 0 ? users : fallbackUsers;
+    return values[seed % values.length];
+  }
+
+  private getGeneratedPartNumber(seed: number): string {
+    if (this.todaysFilters.partNumber && !this.isTodaysAllValue(this.todaysFilters.partNumber)) {
+      return this.todaysFilters.partNumber;
+    }
+
+    const partNumbers = this.getConcreteTodaysOptions('partNumber').map((option) => option.value);
+    const fallbackPartNumbers = Array.from({ length: 8 }, (_, index) => `PN-${10020 + index}`);
+    const values = partNumbers.length > 0 ? partNumbers : fallbackPartNumbers;
+    return values[seed % values.length];
+  }
+
+  private getGeneratedWorkOrder(seed: number, dateCode: string): string {
+    if (this.todaysFilters.workOrder && !this.isTodaysAllValue(this.todaysFilters.workOrder)) {
+      return this.todaysFilters.workOrder;
+    }
+
+    const workOrders = this.getConcreteTodaysOptions('workOrder').map((option) => option.value);
+    const fallbackWorkOrders = Array.from({ length: 6 }, (_, index) => `WO-${dateCode}-${String(index + 1).padStart(2, '0')}`);
+    const values = workOrders.length > 0 ? workOrders : fallbackWorkOrders;
+    return values[seed % values.length];
+  }
+
+  private getConcreteTodaysOptions(field: TodaysDropdownKey): TodaysDropdownOption[] {
+    return this.getTodaysDropdownOptions(field).filter((option) => !this.isTodaysAllValue(option.value));
+  }
+
+  private getGeneratedStartTime(bucketIndex: number, rowIndex: number): string {
+    const hour = 8 + ((bucketIndex + rowIndex) % 4);
+    const minute = Math.max(0, 42 - (rowIndex * 4) - (bucketIndex % 3));
+    const second = 10 + ((bucketIndex + rowIndex * 7) % 50);
+    return this.formatClockTime(hour, minute, second);
+  }
+
+  private getGeneratedEndTime(bucketIndex: number, rowIndex: number): string {
+    const hour = 8 + ((bucketIndex + rowIndex) % 4);
+    const minute = Math.min(59, Math.max(0, 43 - (rowIndex * 4) - (bucketIndex % 3)));
+    const second = 5 + ((bucketIndex + rowIndex * 9) % 50);
+    return this.formatClockTime(hour, minute, second);
+  }
+
+  private formatClockTime(hour: number, minute: number, second: number): string {
+    const date = new Date();
+    date.setHours(hour, minute, second, 0);
+    return new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    }).format(date);
+  }
+
+  private getTodaysSeed(): number {
+    const source = [
+      this.todaysFilters.site,
+      this.todaysFilters.station,
+      this.todaysFilters.partNumber,
+      this.todaysFilters.workOrder,
+      this.todaysFilters.fromDate,
+      this.todaysFilters.toDate,
+    ].join('|');
+
+    return Array.from(source).reduce((sum, char) => sum + char.charCodeAt(0), 0);
   }
 
   private getFlowCardsPerRow(): number {
