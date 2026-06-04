@@ -35,6 +35,7 @@ type SnType = {
   sn_type_name: string;
   number_of_fields?: number;
   field_count?: number;
+  used_by_pn?: string | null;
 };
 
 type FatherSnType = {
@@ -1705,9 +1706,36 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
   isSnTypeBlocked(snTypeName: string): boolean {
     const selectedName = String(snTypeName || '').trim().toLowerCase();
-    return !!selectedName && this.fatherSnTypes.some((item) =>
+    return !!selectedName && (this.fatherSnTypes.some((item) =>
+      String(item.sn_type_name || '').trim().toLowerCase() === selectedName
+    ) || this.isSnTypeGloballyUsedByAnotherPart(snTypeName));
+  }
+
+  getSnTypeBlockedReason(snTypeName: string): string {
+    const selectedName = String(snTypeName || '').trim().toLowerCase();
+    const globalOwner = this.getSnTypeGlobalOwner(snTypeName);
+    if (globalOwner) {
+      return `Already assigned to PN ${globalOwner}`;
+    }
+
+    const familyOwner = this.fatherSnTypes.find((item) =>
       String(item.sn_type_name || '').trim().toLowerCase() === selectedName
     );
+    return familyOwner ? 'Already assigned in this father-child family' : '';
+  }
+
+  private getSnTypeGlobalOwner(snTypeName: string): string {
+    const selectedName = String(snTypeName || '').trim().toLowerCase();
+    const currentPn = this.normalizeLookupValue(this.partNumberForm.get('pn')?.value);
+    const snType = this.snTypes.find((item) =>
+      String(item.sn_type_name || '').trim().toLowerCase() === selectedName
+    );
+    const ownerPn = String(snType?.used_by_pn || '').trim();
+    return ownerPn && this.normalizeLookupValue(ownerPn) !== currentPn ? ownerPn : '';
+  }
+
+  private isSnTypeGloballyUsedByAnotherPart(snTypeName: string): boolean {
+    return !!this.getSnTypeGlobalOwner(snTypeName);
   }
 
   private validateFatherSnTypeSelection(): boolean {
@@ -1720,7 +1748,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       return true;
     }
 
-    this.partNumberErrorMessage = 'this Sn type is already assigned in this father-child family';
+    this.partNumberErrorMessage = this.getSnTypeBlockedReason(selectedSnType) || 'This Serial Pattern is already assigned.';
     this.partNumberForm.get('sn_type_name')?.setValue('', { emitEvent: false });
     return false;
   }

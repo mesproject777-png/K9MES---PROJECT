@@ -152,7 +152,7 @@
                     [value]="snType.sn_type_name"
                     [disabled]="isSnTypeBlocked(snType.sn_type_name)"
                   >
-                    {{ snType.sn_type_name }} ({{ snType.number_of_fields || snType.field_count || 0 }} fields)
+                    {{ snType.sn_type_name }} ({{ snType.number_of_fields || snType.field_count || 0 }} fields)<ng-container *ngIf="getSnTypeBlockedReason(snType.sn_type_name)"> - {{ getSnTypeBlockedReason(snType.sn_type_name) }}</ng-container>
                   </option>
                 </select>
               </div>
@@ -746,9 +746,6 @@
                           [class.paused]="node.station?.status === 'Skipped'"
                           [class.pending]="node.station?.status === 'Pending'"
                           [class.high-sn-alert]="isHighSnCountStation(node.station)"
-                          [style.background]="isHighSnCountStation(node.station) ? '#fecaca' : null"
-                          [style.border-color]="isHighSnCountStation(node.station) ? '#dc2626' : null"
-                          [style.animation]="isHighSnCountStation(node.station) ? 'stationVibrate .35s linear infinite' : null"
                           (pointerdown)="openPreviewStationDetails($event, node.station)"
                           (click)="openPreviewStationDetails($event, node.station)"
                         >

@@ -846,6 +846,7 @@ public static class ConvertedEndpoints
                   st.remark,
                   st.created_at,
                   st.updated_at,
+                  used_by.pn AS used_by_pn,
                   COALESCE(sf.number_of_fields, 0)::int AS number_of_fields,
                   COALESCE(sf.number_of_fields, 0)::int AS field_count,
                   COUNT(*) OVER ()::int AS total_count
@@ -855,6 +856,13 @@ public static class ConvertedEndpoints
                   FROM sn_type_fields
                   GROUP BY sn_type_id
                 ) sf ON sf.sn_type_id = st.id
+                LEFT JOIN LATERAL (
+                  SELECT p.pn
+                  FROM workflow_part_numbers p
+                  WHERE p.sn_type_id = st.id
+                  ORDER BY p.updated_at DESC, p.id DESC
+                  LIMIT 1
+                ) used_by ON TRUE
                 ORDER BY st.created_at DESC, st.id DESC
                 """);
             var total = rows.Count > 0 ? Convert.ToInt32(rows[0]["total_count"]) : 0;
@@ -2936,7 +2944,7 @@ public static class ConvertedEndpoints
                     FROM item_routing_steps
                     WHERE item_id = @itemId
                       AND UPPER(station_login_id) = UPPER(@stationLoginId)
-                      AND (@stepId IS NULL OR id <> @stepId)
+                      AND (@stepId::integer IS NULL OR id <> @stepId::integer)
                     LIMIT 1
                     """,
                     ("itemId", itemId.Value),
@@ -3969,6 +3977,28 @@ public static class ConvertedEndpoints
                     connection,
                     "SELECT id FROM sn_types WHERE sn_type_name = @name LIMIT 1",
                     ("name", snTypeName));
+
+                if (snTypeId is not null)
+                {
+                    var snTypeOwnerRows = await QueryRowsAsync(
+                        connection,
+                        """
+                        SELECT pn
+                        FROM workflow_part_numbers
+                        WHERE sn_type_id = @snTypeId
+                          AND UPPER(BTRIM(pn)) <> UPPER(BTRIM(@pn))
+                        ORDER BY updated_at DESC, id DESC
+                        LIMIT 1
+                        """,
+                        ("snTypeId", snTypeId.Value),
+                        ("pn", pn));
+
+                    if (snTypeOwnerRows.Count > 0)
+                    {
+                        await transaction.RollbackAsync();
+                        return JsonMessage($"Serial Pattern is already assigned to PN {snTypeOwnerRows[0]["pn"]}", 409);
+                    }
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(snTypeName))
@@ -4012,6 +4042,7 @@ public static class ConvertedEndpoints
 
                 if (fatherSnTypeRows.Count > 0)
                 {
+                    await transaction.RollbackAsync();
                     return JsonMessage("this Sn type is already assigned in this father-child family", 409);
                 }
             }
@@ -6543,7 +6574,9 @@ public static class ConvertedEndpoints
                 JOIN workflow_part_numbers p ON p.id = r.workflow_part_id
                 LEFT JOIN workflow_work_orders w ON w.id = l.workflow_work_order_id
                 WHERE UPPER(l.station_login_id) = UPPER(@loginId)
-                  AND (@excludeLoginRowId IS NULL OR l.id <> @excludeLoginRowId)
+                  AND (@excludeLoginRowId::integer IS NULL OR l.id <> @excludeLoginRowId::integer)
+                  AND (@excludeRoutingStepId::integer IS NULL OR r.id <> @excludeRoutingStepId::integer)
+                  AND (@excludeWorkflowPartId::integer IS NULL OR r.workflow_part_id <> @excludeWorkflowPartId::integer)
             ) conflicts
             LIMIT 1
             """,

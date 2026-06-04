@@ -1178,14 +1178,124 @@ button.preview-node:focus-visible {
 .station-node.station-diamond.high-sn-alert {
   border-color: #dc2626;
   background: #fecaca !important;
-  animation: stationVibrate .35s linear infinite;
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18), 0 16px 34px rgba(185, 28, 28, 0.22);
+  z-index: 10;
+  box-shadow:
+    0 0 0 3px rgba(220, 38, 38, 0.18),
+    0 16px 34px rgba(185, 28, 28, 0.22);
+  will-change: transform, box-shadow;
+}
+
+.station-node.station-square.high-sn-alert {
+  animation: highSnHeartbeatSquare 0.72s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.station-node.station-diamond.high-sn-alert {
+  animation: highSnHeartbeatDiamond 0.72s ease-in-out infinite;
+  transform-origin: center;
 }
 
 .station-node.high-sn-alert .station-icon,
 .sn-count.high {
   background: #fcc;
   color: #b11;
+}
+
+.station-node.high-sn-alert::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  z-index: -1;
+  border: 2px solid rgba(220, 38, 38, 0.5);
+  border-radius: inherit;
+  animation: highSnPulseRing 1.15s ease-out infinite;
+}
+
+@keyframes highSnHeartbeatSquare {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow:
+      0 0 0 3px rgba(220, 38, 38, 0.18),
+      0 16px 34px rgba(185, 28, 28, 0.22);
+  }
+
+  16% {
+    transform: translateY(-10px) scale(1.18);
+    box-shadow:
+      0 0 0 8px rgba(220, 38, 38, 0.24),
+      0 30px 56px rgba(185, 28, 28, 0.42);
+  }
+
+  34% {
+    transform: translateY(5px) scale(0.94);
+    box-shadow:
+      0 0 0 2px rgba(220, 38, 38, 0.16),
+      0 10px 22px rgba(185, 28, 28, 0.18);
+  }
+
+  52% {
+    transform: translateY(-6px) scale(1.11);
+    box-shadow:
+      0 0 0 6px rgba(220, 38, 38, 0.22),
+      0 24px 46px rgba(185, 28, 28, 0.34);
+  }
+
+  74% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes highSnHeartbeatDiamond {
+  0%,
+  100% {
+    transform: translateY(0) rotate(45deg) scale(1);
+    box-shadow:
+      0 0 0 3px rgba(220, 38, 38, 0.18),
+      0 16px 34px rgba(185, 28, 28, 0.22);
+  }
+
+  16% {
+    transform: translateY(-10px) rotate(45deg) scale(1.18);
+    box-shadow:
+      0 0 0 8px rgba(220, 38, 38, 0.24),
+      0 30px 56px rgba(185, 28, 28, 0.42);
+  }
+
+  34% {
+    transform: translateY(5px) rotate(45deg) scale(0.94);
+    box-shadow:
+      0 0 0 2px rgba(220, 38, 38, 0.16),
+      0 10px 22px rgba(185, 28, 28, 0.18);
+  }
+
+  52% {
+    transform: translateY(-6px) rotate(45deg) scale(1.11);
+    box-shadow:
+      0 0 0 6px rgba(220, 38, 38, 0.22),
+      0 24px 46px rgba(185, 28, 28, 0.34);
+  }
+
+  74% {
+    transform: translateY(0) rotate(45deg) scale(1);
+  }
+}
+
+@keyframes highSnPulseRing {
+  0% {
+    opacity: 0.65;
+    transform: scale(0.96);
+  }
+
+  70% {
+    opacity: 0;
+    transform: scale(1.16);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.16);
+  }
 }
 
 .preview-empty-station {

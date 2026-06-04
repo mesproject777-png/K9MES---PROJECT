@@ -186,13 +186,32 @@ export class GenerateSnComponent implements OnInit, OnDestroy {
     });
   }
 
-  copyAllSns() {
+  async copyAllSns(): Promise<void> {
     const text = this.sns.join('\n');
+    if (!text) {
+      this.message = 'No SNs available to copy.';
+      this.success = false;
+      return;
+    }
 
-    navigator.clipboard.writeText(text).then(() => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        this.copyTextWithFallback(text);
+      }
       this.message = 'SNs copied!';
       this.success = true;
-    });
+    } catch {
+      try {
+        this.copyTextWithFallback(text);
+        this.message = 'SNs copied!';
+        this.success = true;
+      } catch {
+        this.message = 'Unable to copy SNs. Please select and copy manually.';
+        this.success = false;
+      }
+    }
   }
 
   openTracker(searchValue?: string): void {
@@ -262,5 +281,23 @@ export class GenerateSnComponent implements OnInit, OnDestroy {
 
   private isCurrentLookup(requestId: number, lookupWo: string): boolean {
     return requestId === this.lookupRequestId && this.isSameWo(this.wo, lookupWo);
+  }
+
+  private copyTextWithFallback(text: string): void {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    const copied = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    if (!copied) {
+      throw new Error('copy failed');
+    }
   }
 }
