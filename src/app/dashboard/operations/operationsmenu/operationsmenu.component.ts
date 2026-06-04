@@ -24,6 +24,13 @@ export class OperationsmenuComponent {
       route: '/dashboard/operations/assembly'
     },
     {
+      id: 'hlOperationsSnRouteBack',
+      title: 'SN Route Back',
+      description: 'Route back serial number to previous station.',
+      icon: 'undo',
+      route: '/dashboard/operations/sn-route-back'
+    },
+    {
       id: 'hlOperationsOpen',
       title: 'Open Packages',
       description: 'Manage open packages.',

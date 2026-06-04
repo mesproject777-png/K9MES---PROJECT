@@ -1,0 +1,105 @@
+<section class="route-back-page">
+  <header class="route-back-header">
+    <button type="button" class="icon-button" title="Back to Operations" (click)="cancel()">
+      <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+    </button>
+    <div>
+      <h1>SN Route Back</h1>
+      <p>Cancel passed station reports and send SN back to selected station.</p>
+    </div>
+  </header>
+
+  <section class="route-back-card search-card">
+    <label for="routeBackSn">Serial Number</label>
+    <div class="search-row">
+      <input
+        id="routeBackSn"
+        type="text"
+        [(ngModel)]="serialNumber"
+        placeholder="Scan / enter serial number"
+        autocomplete="off"
+        [disabled]="isLoading || isSaving"
+        (keydown.enter)="searchFromKeyboard($event)"
+        (keydown.tab)="searchFromKeyboard($event)"
+      />
+      <button type="button" class="primary-button" (click)="searchSerial()" [disabled]="isLoading || isSaving">
+        <span class="material-symbols-outlined" aria-hidden="true">search</span>
+        <span>Search</span>
+      </button>
+    </div>
+  </section>
+
+  <p class="message info" *ngIf="isLoading">Loading SN route summary...</p>
+  <p class="message success" *ngIf="successMessage">{{ successMessage }}</p>
+  <p class="message error" *ngIf="errorMessage">{{ errorMessage }}</p>
+
+  <section class="route-back-grid" *ngIf="routeData">
+    <article class="route-back-card summary-card">
+      <div class="card-title">
+        <div>
+          <h2>Route Summary</h2>
+          <p>{{ routeData.serial.sn }} | PN {{ routeData.serial.pn }} | WO {{ routeData.serial.work_order }}</p>
+        </div>
+        <span class="status-pill">{{ routeData.serial.status }}</span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Station</th>
+              <th>Description</th>
+              <th>QMS Report</th>
+              <th>Sample</th>
+              <th>Final Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of routeData.routeSummary; trackBy: trackByRouteRow" [class.current]="row.finalStatus === 'Current'" [class.passed]="row.finalStatus === 'PASS'">
+              <td>{{ row.station }}</td>
+              <td>{{ row.description || '-' }}</td>
+              <td>{{ row.qmsReport || '-' }}</td>
+              <td>{{ row.sample || '-' }}</td>
+              <td><span class="row-status">{{ row.finalStatus }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="route-back-card action-card">
+      <div class="card-title">
+        <div>
+          <h2>Route Back Action</h2>
+          <p>Current station: {{ routeData.serial.current_station_code || '-' }}</p>
+        </div>
+      </div>
+
+      <label for="routeBackStation">Select Route Back Station</label>
+      <select id="routeBackStation" [(ngModel)]="selectedStation" [disabled]="isSaving">
+        <option value="">Select station</option>
+        <option *ngFor="let station of routeData.selectableStations" [value]="station.station_code">
+          {{ station.station_code }} - {{ station.station_name }}
+        </option>
+      </select>
+
+      <label for="routeBackReason">Reason / Remarks</label>
+      <textarea
+        id="routeBackReason"
+        rows="5"
+        [(ngModel)]="reason"
+        [disabled]="isSaving"
+        placeholder="Enter route back reason"
+      ></textarea>
+
+      <div class="form-actions">
+        <button type="button" class="primary-button" (click)="routeBack()" [disabled]="isSaving">
+          <span class="material-symbols-outlined" aria-hidden="true">undo</span>
+          <span>Route Back</span>
+        </button>
+        <button type="button" class="secondary-button" (click)="cancel()" [disabled]="isSaving">Cancel</button>
+        <button type="button" class="text-button" (click)="reset()" [disabled]="isSaving">Clear</button>
+      </div>
+    </article>
+  </section>
+</section>
