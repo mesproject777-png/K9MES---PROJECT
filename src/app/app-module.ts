@@ -45,6 +45,7 @@ import { ReportsComponent } from './dashboard/reports/reports.component';
 import { SortPipe } from './pipes/sort.pipe';
 import { OperationsAssemblyComponent } from './dashboard/operations/assembly/assembly.component';
 import { OperationsmenuComponent } from './dashboard/operations/operationsmenu/operationsmenu.component';
+import { SnRouteBackComponent } from './dashboard/operations/sn-route-back/sn-route-back.component';
 import { OpenPackagesComponent } from './dashboard/operations/packing/open-packages/open-packages.component';
 import { ClosedPackagesComponent } from './dashboard/operations/packing/closed-packages/closed-packages.component';
 import { ShippedPackagesComponent } from './dashboard/operations/packing/shipped-packages/shipped-packages.component';
@@ -92,6 +93,7 @@ import { PackingHierarchyComponent } from './dashboard/operations/packing/packin
     ReportsComponent,
     OperationsAssemblyComponent,
     OperationsmenuComponent,
+    SnRouteBackComponent,
     OpenPackagesComponent,
     ClosedPackagesComponent,
     ShippedPackagesComponent,
