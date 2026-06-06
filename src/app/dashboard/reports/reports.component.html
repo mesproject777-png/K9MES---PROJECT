@@ -235,7 +235,6 @@
             <div class="aq-legend">
               <button type="button" [class.off]="!showPassSeries" (click)="toggleSeries('pass')"><i class="pass-dot"></i> Pass</button>
               <button type="button" [class.off]="!showFailSeries" (click)="toggleSeries('fail')"><i class="fail-dot"></i> Fail</button>
-              <span><i class="yield-dot"></i> Yield</span>
             </div>
           </div>
 
@@ -250,21 +249,95 @@
           </div>
 
           <div class="aq-chart" *ngIf="!activityLoading && activityData.chartData.length > 0">
-            <svg class="aq-chart-svg" viewBox="0 0 1000 180" preserveAspectRatio="none" aria-hidden="true">
-              <polyline *ngIf="yieldPolyline" [attr.points]="yieldPolyline" fill="none" stroke="#f59e0b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></polyline>
-            </svg>
             <div class="aq-bars">
-              <button type="button" class="aq-bar-group" *ngFor="let point of activityData.chartData; let i = index; trackBy: trackByChartPoint" (click)="selectChartPoint(point)" [class.selected]="selectedChartPoint?.label === point.label">
+              <div class="aq-bar-group" role="button" tabindex="0" *ngFor="let point of activityData.chartData; let i = index; trackBy: trackByChartPoint" (click)="selectChartPoint(point)" (keydown.enter)="selectChartPoint(point)" (keydown.space)="selectChartPoint(point)" [class.selected]="selectedChartPoint?.label === point.label">
+                <span class="aq-fail-rate-label" *ngIf="point.failCount > 0">{{ chartFailRate(point) }}%</span>
                 <span class="aq-bar-stack">
                   <i class="aq-bar pass-bar" *ngIf="showPassSeries" [style.height.px]="chartBarHeight(point.passCount)"></i>
-                  <i class="aq-bar fail-bar" *ngIf="showFailSeries" [style.height.px]="chartBarHeight(point.failCount)"></i>
+                  <i class="aq-bar fail-bar" *ngIf="showFailSeries && point.failCount > 0" [style.height.px]="chartBarHeight(point.failCount)">
+                    <span>{{ point.failCount }}</span>
+                  </i>
                 </span>
                 <strong>{{ point.label }}</strong>
                 <small>{{ point.passRate }}%</small>
-              </button>
+              </div>
             </div>
           </div>
         </section>
+
+        <div class="aq-details-modal-backdrop" *ngIf="selectedChartPoint as modalPoint" (click)="closeActivityDetailsPopup()">
+          <section class="aq-details-modal" (click)="$event.stopPropagation()">
+            <div class="aq-details-modal-title">
+              <div>
+                <h2>Activity Details</h2>
+                <p>{{ modalPoint.label }}</p>
+              </div>
+              <div class="aq-details-modal-actions">
+                <span class="aq-detail-count">{{ formatTodaysNumber(filteredDetailRows.length) }} rows</span>
+                <button type="button" title="Download bar data" aria-label="Download bar data" (click)="exportChartPointData(modalPoint)">
+                  <span class="material-symbols-outlined">download</span>
+                </button>
+                <button type="button" title="Close" aria-label="Close" (click)="closeActivityDetailsPopup()">
+                  <span class="material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+            <div class="aq-table-scroll modal-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date/Time</th>
+                    <th>Site</th>
+                    <th>Station</th>
+                    <th>Work Order</th>
+                    <th>Part Number</th>
+                    <th>Serial Number</th>
+                    <th>User</th>
+                    <th>PC</th>
+                    <th>Result</th>
+                    <th>Failure Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let row of pagedActivityDetailRows; trackBy: trackByActivityRow">
+                    <td>{{ row.date_time | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
+                    <td>{{ row.site || '-' }}</td>
+                    <td>{{ row.station || '-' }}</td>
+                    <td>{{ row.work_order || '-' }}</td>
+                    <td>{{ row.part_number || '-' }}</td>
+                    <td>{{ row.serial_number || '-' }}</td>
+                    <td>{{ row.user_name || '-' }}</td>
+                    <td>{{ row.pc || '-' }}</td>
+                    <td><span class="aq-result" [class.pass]="row.result === 'PASS'" [class.fail]="row.result === 'FAIL'">{{ row.result }}</span></td>
+                    <td>{{ row.failure_reason || '-' }}</td>
+                  </tr>
+                  <tr *ngIf="filteredDetailRows.length === 0">
+                    <td colspan="10" class="aq-no-rows">No detailed rows available.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="aq-table-footer">
+              <span>
+                Showing {{ formatTodaysNumber(activityDetailsShowingStart) }} to {{ formatTodaysNumber(activityDetailsShowingEnd) }} of
+                {{ formatTodaysNumber(filteredDetailRows.length) }} entries
+              </span>
+              <div class="aq-pagination" aria-label="Activity details popup pagination">
+                <button type="button" (click)="setActivityDetailsPage(activityDetailsCurrentPage - 1)" [disabled]="activityDetailsCurrentPage === 1">chevron_left</button>
+                <button
+                  type="button"
+                  *ngFor="let page of activityDetailsPageNumbers"
+                  [class.active]="page === activityDetailsCurrentPage"
+                  [disabled]="page === '...'"
+                  (click)="setActivityDetailsPage(page)"
+                >
+                  {{ page }}
+                </button>
+                <button type="button" (click)="setActivityDetailsPage(activityDetailsCurrentPage + 1)" [disabled]="activityDetailsCurrentPage === activityDetailsTotalPages">chevron_right</button>
+              </div>
+            </div>
+          </section>
+        </div>
 
         <section class="aq-analysis-grid">
           <article class="aq-analysis-card">
@@ -299,49 +372,6 @@
           </article>
         </section>
 
-        <section class="aq-table-card">
-          <div class="aq-card-title">
-            <div>
-              <h2>Activity Details</h2>
-              <p *ngIf="selectedChartPoint">Filtered by {{ selectedChartPoint.label }}</p>
-            </div>
-          </div>
-          <div class="aq-table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date/Time</th>
-                  <th>Site</th>
-                  <th>Station</th>
-                  <th>Work Order</th>
-                  <th>Part Number</th>
-                  <th>Serial Number</th>
-                  <th>User</th>
-                  <th>PC</th>
-                  <th>Result</th>
-                  <th>Failure Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let row of filteredDetailRows; trackBy: trackByActivityRow">
-                  <td>{{ row.date_time | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
-                  <td>{{ row.site || '-' }}</td>
-                  <td>{{ row.station || '-' }}</td>
-                  <td>{{ row.work_order || '-' }}</td>
-                  <td>{{ row.part_number || '-' }}</td>
-                  <td>{{ row.serial_number || '-' }}</td>
-                  <td>{{ row.user_name || '-' }}</td>
-                  <td>{{ row.pc || '-' }}</td>
-                  <td><span class="aq-result" [class.pass]="row.result === 'PASS'" [class.fail]="row.result === 'FAIL'">{{ row.result }}</span></td>
-                  <td>{{ row.failure_reason || '-' }}</td>
-                </tr>
-                <tr *ngIf="filteredDetailRows.length === 0">
-                  <td colspan="10" class="aq-no-rows">No detailed rows available.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
       </section>
     </ng-container>
   </ng-template>
