@@ -2035,7 +2035,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
       const exitRect = row.isReversed ? row.rects[0] : row.rects[row.rects.length - 1];
       const entryRect = nextRow.isReversed ? nextRow.rects[nextRow.rects.length - 1] : nextRow.rects[0];
-      pathSegments.push(this.buildPreviewRowTurnConnector(exitRect, entryRect, containerRect));
+      pathSegments.push(this.buildPreviewRowTurnConnector(exitRect, entryRect, containerRect, row.isReversed ? 'left' : 'right'));
     });
 
     this.setPreviewConnector(pathSegments.join(' '), containerRect.width, containerRect.height);
@@ -2052,21 +2052,29 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     return `M ${startX} ${y} L ${endX} ${y}`;
   }
 
-  private buildPreviewRowTurnConnector(currentRect: DOMRect, nextRect: DOMRect, containerRect: DOMRect): string {
+  private buildPreviewRowTurnConnector(
+    currentRect: DOMRect,
+    nextRect: DOMRect,
+    containerRect: DOMRect,
+    turnSide: 'left' | 'right'
+  ): string {
     const currentCenter = this.getRelativeRectCenter(currentRect, containerRect);
     const nextCenter = this.getRelativeRectCenter(nextRect, containerRect);
-    const flowsDown = nextCenter.y >= currentCenter.y;
-    const startX = currentCenter.x;
-    const startY = flowsDown ? currentRect.bottom - containerRect.top : currentRect.top - containerRect.top;
-    const endX = nextCenter.x;
-    const endY = flowsDown ? nextRect.top - containerRect.top : nextRect.bottom - containerRect.top;
+    const currentLeft = currentRect.left - containerRect.left;
+    const currentRight = currentRect.right - containerRect.left;
+    const nextLeft = nextRect.left - containerRect.left;
+    const nextRight = nextRect.right - containerRect.left;
+    const startX = turnSide === 'right' ? currentRight : currentLeft;
+    const endX = turnSide === 'right' ? nextRight : nextLeft;
+    const startY = currentCenter.y;
+    const endY = nextCenter.y;
     const midY = startY + ((endY - startY) / 2);
+    const gutterOffset = 28;
+    const gutterX = turnSide === 'right'
+      ? Math.min(containerRect.width - 6, Math.max(startX, endX) + gutterOffset)
+      : Math.max(6, Math.min(startX, endX) - gutterOffset);
 
-    if (Math.abs(startX - endX) < 4) {
-      return `M ${startX} ${startY} L ${endX} ${endY}`;
-    }
-
-    return `M ${startX} ${startY} L ${startX} ${midY} L ${endX} ${midY} L ${endX} ${endY}`;
+    return `M ${startX} ${startY} L ${gutterX} ${startY} L ${gutterX} ${midY} L ${gutterX} ${endY} L ${endX} ${endY}`;
   }
 
   private getRelativeRectCenter(rect: DOMRect, containerRect: DOMRect): { x: number; y: number } {

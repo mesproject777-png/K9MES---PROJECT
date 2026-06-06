@@ -981,8 +981,8 @@ button.preview-node:focus-visible {
 }
 
 .flow-line {
-  flex: 1 1 clamp(18px, 3vw, 34px);
-  min-width: 12px;
+  flex: 0 0 clamp(46px, 5vw, 76px);
+  min-width: 40px;
   height: 0;
   border-top: 0;
 }
@@ -994,7 +994,7 @@ button.preview-node:focus-visible {
 
 .flow-row-turn {
   position: relative;
-  height: 52px;
+  height: 76px;
   width: 100%;
   min-width: 0;
 }
@@ -1134,13 +1134,33 @@ button.preview-node:focus-visible {
 
 .station-node small {
   display: inline-grid;
-  min-width: 72px;
+  min-width: 82px;
   place-items: center;
   padding: 4px 7px;
   border-radius: 6px;
   font-size: 0.68rem;
   font-weight: 900;
   line-height: 1;
+}
+
+.station-status-chip.passed {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.station-status-chip.in-progress {
+  background: #dbeafe;
+  color: #0d61d8;
+}
+
+.station-status-chip.pending {
+  background: #eef3f8;
+  color: #536b86;
+}
+
+.station-status-chip.skipped {
+  background: #fee2e2;
+  color: #b42318;
 }
 
 .station-node.completed {
@@ -1195,8 +1215,7 @@ button.preview-node:focus-visible {
   transform-origin: center;
 }
 
-.station-node.high-sn-alert .station-icon,
-.sn-count.high {
+.station-node.high-sn-alert .station-icon {
   background: #fcc;
   color: #b11;
 }

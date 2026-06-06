@@ -15,6 +15,8 @@ interface SidebarItem {
   styleUrl: './sidebar.component.scss'
 })
 export class SidebarComponent {
+  isCollapsedAfterNavigation = false;
+
   readonly sidebarItems: SidebarItem[] = [
     { label: 'Dashboard', route: '/dashboard/home', icon: 'dashboard', pageKey: 'dashboard/home' },
     { label: 'Work Flow', route: '/dashboard/workflow', icon: 'account_tree', pageKey: 'dashboard/home' },
@@ -36,4 +38,12 @@ export class SidebarComponent {
     return this.authService.hasAccess(pageKey);
   }
 
+  collapseAfterNavigation(event: MouseEvent): void {
+    this.isCollapsedAfterNavigation = true;
+    (event.currentTarget as HTMLElement | null)?.blur();
+  }
+
+  releaseNavigationCollapse(): void {
+    this.isCollapsedAfterNavigation = false;
+  }
 }

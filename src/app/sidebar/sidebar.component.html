@@ -1,4 +1,8 @@
-<aside class="sidebar">
+<aside
+  class="sidebar"
+  [class.is-collapsed-after-navigation]="isCollapsedAfterNavigation"
+  (mouseleave)="releaseNavigationCollapse()"
+>
   <div class="sidebar-header">
     <div class="brand-mark" aria-label="K9">
       <span>K9</span>
@@ -10,7 +14,7 @@
 
   <ul class="sidebar-links">
     <li *ngFor="let item of sidebarItems" [hidden]="!canAccess(item.pageKey)">
-      <a [routerLink]="item.route" routerLinkActive="active-link">
+      <a [routerLink]="item.route" routerLinkActive="active-link" (click)="collapseAfterNavigation($event)">
         <span class="material-symbols-outlined">{{ item.icon }}</span>
         <span class="link-label">{{ item.label }}</span>
       </a>

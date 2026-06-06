@@ -755,10 +755,10 @@
                             </span>
                             <strong>{{ node.station?.station_code || node.station?.station_name }}</strong>
                             <small
-                              class="sn-count"
-                              [class.high]="isHighSnCountStation(node.station)"
+                              class="station-status-chip"
+                              [class]="node.station ? 'station-status-chip ' + getPreviewStatusClass(node.station.status) : 'station-status-chip'"
                             >
-                              {{ getPreviewStationSnCountLabel(node.station) }}
+                              {{ node.station?.status || 'Pending' }}
                             </small>
                           </span>
                         </button>
