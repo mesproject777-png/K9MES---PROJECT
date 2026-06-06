@@ -7259,6 +7259,7 @@ public static class ConvertedEndpoints
             var wo = request.Query["wo"].ToString().Trim();
             var fromDateRaw = request.Query["fromDate"].ToString().Trim();
             var toDateRaw = request.Query["toDate"].ToString().Trim();
+            var xAxis = request.Query["xAxis"].ToString().Trim().ToLowerInvariant();
 
             var fromDate = DateTime.TryParse(fromDateRaw, out var parsedFrom)
                 ? parsedFrom.Date
@@ -7404,6 +7405,17 @@ public static class ConvertedEndpoints
                 };
             }
 
+            object BuildFpyPoint(string label, IEnumerable<Dictionary<string, object?>> bucketRows)
+            {
+                var statuses = bucketRows.Select(NormalizeStatus).ToList();
+                var total = statuses.Count;
+                return new
+                {
+                    label,
+                    fpy = total == 0 ? 0 : Math.Round(statuses.Count(value => value == "Pass") * 100.0 / total, 2)
+                };
+            }
+
             var hourlyBuckets = Enumerable.Range(0, 24)
                 .Select(hour =>
                 {
@@ -7425,6 +7437,24 @@ public static class ConvertedEndpoints
                     return BuildBucket(day.ToString("dd MMM"), bucketRows);
                 })
                 .ToArray();
+
+            var fpyTrend = xAxis == "day"
+                ? Enumerable.Range(0, (toDate - fromDate).Days + 1)
+                    .Select(offset =>
+                    {
+                        var day = fromDate.AddDays(offset);
+                        var bucketRows = rows.Where(row => ReadDate(row, "event_time").Date == day.Date);
+                        return BuildFpyPoint(day.ToString("dd MMM"), bucketRows);
+                    })
+                    .ToArray()
+                : Enumerable.Range(0, 24)
+                    .Select(hour =>
+                    {
+                        var label = DateTime.Today.AddHours(hour).ToString("hh tt");
+                        var bucketRows = rows.Where(row => ReadDate(row, "event_time").Hour == hour);
+                        return BuildFpyPoint(label, bucketRows);
+                    })
+                    .ToArray();
 
             var statusValues = rows.Select(NormalizeStatus).ToList();
             var total = rows.Count;
@@ -7463,7 +7493,14 @@ public static class ConvertedEndpoints
                 },
                 hourlyBuckets,
                 dailyBuckets,
-                dailyBucket
+                dailyBucket,
+                fpyTrend,
+                failureByStation = failRows
+                    .GroupBy(row => string.IsNullOrWhiteSpace(Read(row, "station_code")) ? "-" : Read(row, "station_code"))
+                    .OrderByDescending(group => group.Count())
+                    .Take(10)
+                    .Select(group => new { station = group.Key, count = group.Count() })
+                    .ToArray()
             });
         });
 

@@ -380,7 +380,7 @@
 
   <ng-template #todaysReportsView>
     <ng-container *ngIf="activeView === 'todays'; else standardReportsView">
-      <section class="todays-dashboard-window">
+      <section class="todays-dashboard-window" [class.fullscreen]="fullScreenEnabled">
         <ng-template #todaysDropdown let-field="field">
           <span
             class="custom-select-shell"
@@ -417,456 +417,256 @@
           </span>
         </ng-template>
 
-        <div class="todays-tabs" role="tablist" aria-label="Today's dashboard sections">
-          <button type="button" class="todays-tab" [class.active]="todaysActiveTab === 'filters'" (click)="todaysActiveTab = 'filters'">
-            <span class="todays-tab-icon filter-icon material-symbols-outlined" aria-hidden="true">filter_alt</span>
-            <span>
-              <strong>Filters</strong>
-            </span>
+        <header class="todays-page-header">
+          <button type="button" class="icon-button todays-back" title="Back to reports" (click)="backToMenu()">
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
           </button>
-
-          <button type="button" class="todays-tab" [class.active]="todaysActiveTab === 'overview'" (click)="todaysActiveTab = 'overview'">
-            <span class="todays-tab-icon overview-icon material-symbols-outlined" aria-hidden="true">pie_chart</span>
-            <span>
-              <strong>Overview</strong>
-            </span>
-          </button>
-        </div>
-
-        <section class="todays-panel" *ngIf="todaysActiveTab === 'filters'">
-          <div class="date-panel">
-            <div class="section-heading">
-              <span class="section-icon date-icon material-symbols-outlined" aria-hidden="true">calendar_month</span>
-              <h2>Date Range</h2>
-            </div>
-
-            <div class="date-grid">
-              <label class="field-control">
-                <span>Date Selection</span>
-                <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'dateSelection' }"></ng-container>
-              </label>
-
-              <label class="field-control">
-                <span>From Date</span>
-                <span class="input-shell">
-                  <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
-                  <input type="date" [(ngModel)]="todaysFilters.fromDate" (change)="onTodaysDateChange()" [disabled]="todaysFilters.dateSelection !== 'Exact Dates'" required>
-                </span>
-              </label>
-
-              <label class="field-control">
-                <span>To Date</span>
-                <span class="input-shell">
-                  <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
-                  <input type="date" [(ngModel)]="todaysFilters.toDate" (change)="onTodaysDateChange()" [disabled]="todaysFilters.dateSelection !== 'Exact Dates'" required>
-                </span>
-              </label>
-            </div>
+          <span class="todays-title-icon material-symbols-outlined" aria-hidden="true">monitoring</span>
+          <div>
+            <h1>Today's Dashboard</h1>
+            <p>Real-time production monitoring and performance overview</p>
           </div>
+          <span class="header-spacer"></span>
+          <button type="button" class="auto-refresh-button" [class.off]="!todaysAutoRefreshEnabled" (click)="toggleTodaysAutoRefresh()">
+            Auto Refresh {{ todaysAutoRefreshEnabled ? 'ON' : 'OFF' }}
+          </button>
+        </header>
 
-          <div class="filters-grid">
+        <section class="todays-filter-panel">
+          <div class="todays-filter-grid">
             <label class="field-control">
-              <span class="field-label">
-                <span class="section-icon site-filter-icon material-symbols-outlined" aria-hidden="true">location_on</span>
-                Site
-              </span>
+              <span>Date Selection</span>
+              <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'dateSelection' }"></ng-container>
+            </label>
+            <label class="field-control">
+              <span>From Date</span>
+              <input type="date" class="todays-field-input" [(ngModel)]="todaysFilters.fromDate" (change)="onTodaysDateChange()" [disabled]="todaysFilters.dateSelection !== 'Exact Dates'" required>
+            </label>
+            <label class="field-control">
+              <span>To Date</span>
+              <input type="date" class="todays-field-input" [(ngModel)]="todaysFilters.toDate" (change)="onTodaysDateChange()" [disabled]="todaysFilters.dateSelection !== 'Exact Dates'" required>
+            </label>
+            <label class="field-control">
+              <span>Pivot</span>
+              <select [(ngModel)]="todaysFilters.xAxis" (change)="onTodaysDateChange()">
+                <option value="hour" [disabled]="isDateRangeOver48Hours">Time - Per hour</option>
+                <option value="day">Time - Per day</option>
+              </select>
+            </label>
+            <label class="field-control">
+              <span>Site</span>
               <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'site' }"></ng-container>
             </label>
-
             <label class="field-control">
-              <span class="field-label">
-                <span class="section-icon station-filter-icon material-symbols-outlined" aria-hidden="true">precision_manufacturing</span>
-                Station
-              </span>
+              <span>Station</span>
               <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'station' }"></ng-container>
             </label>
-
             <label class="field-control">
-              <span class="field-label">
-                <span class="section-icon pn-filter-icon material-symbols-outlined" aria-hidden="true">sell</span>
-                Part Number (PN)
-              </span>
+              <span>Product Line</span>
+              <span class="todays-field-input readonly">All Product Lines</span>
+            </label>
+            <label class="field-control">
+              <span>Part Number</span>
               <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'partNumber' }"></ng-container>
             </label>
-
             <label class="field-control">
-              <span class="field-label">
-                <span class="section-icon wo-filter-icon material-symbols-outlined" aria-hidden="true">assignment</span>
-                Work Order (WO)
-              </span>
+              <span>Work Order</span>
               <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'workOrder' }"></ng-container>
             </label>
-
             <label class="field-control">
-              <span class="field-label">
-                <span class="section-icon pc-filter-icon material-symbols-outlined" aria-hidden="true">deployed_code</span>
-                Choose PC
-              </span>
-              <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'pc' }"></ng-container>
-            </label>
-
-            <label class="field-control">
-              <span class="field-label">
-                <span class="section-icon user-filter-icon material-symbols-outlined" aria-hidden="true">person</span>
-                User
-              </span>
+              <span>User</span>
               <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'user' }"></ng-container>
             </label>
+            <label class="field-control">
+              <span>PC</span>
+              <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'pc' }"></ng-container>
+            </label>
           </div>
 
-          <div class="axis-panel">
-            <div class="section-heading">
-              <span class="section-icon axis-icon material-symbols-outlined" aria-hidden="true">monitor_heart</span>
-              <h2>X-Axis</h2>
-            </div>
-
-            <div class="axis-options">
-              <label class="axis-option" [class.active]="todaysFilters.xAxis === 'hour'" [class.disabled]="isDateRangeOver48Hours">
-                <input type="radio" name="todaysXAxis" value="hour" [(ngModel)]="todaysFilters.xAxis" [disabled]="isDateRangeOver48Hours">
-                <span class="radio-mark" aria-hidden="true"></span>
-                <span class="axis-option-icon material-symbols-outlined" aria-hidden="true">schedule</span>
-                <span>
-                  <strong>Per Hour</strong>
-                  <small>View data aggregated by hour</small>
-                </span>
-              </label>
-
-              <label class="axis-option" [class.active]="todaysFilters.xAxis === 'day'">
-                <input type="radio" name="todaysXAxis" value="day" [(ngModel)]="todaysFilters.xAxis">
-                <span class="radio-mark" aria-hidden="true"></span>
-                <span class="axis-option-icon material-symbols-outlined" aria-hidden="true">calendar_month</span>
-                <span>
-                  <strong>Per Day</strong>
-                  <small>View data aggregated by day</small>
-                </span>
-              </label>
-            </div>
-
-            <p class="axis-note" *ngIf="isDateRangeOver48Hours">Date ranges over 48 hours use Per Day automatically.</p>
+          <div class="todays-all-row">
+            <label><input type="checkbox" [checked]="isTodaysAllValue(todaysFilters.site)" (change)="setTodaysAllFilter('site', $any($event.target).checked)">All Sites</label>
+            <label><input type="checkbox" [checked]="isTodaysAllValue(todaysFilters.station)" (change)="setTodaysAllFilter('station', $any($event.target).checked)">All Stations</label>
+            <label><input type="checkbox" checked disabled>All PL</label>
+            <label><input type="checkbox" [checked]="isTodaysAllValue(todaysFilters.partNumber)" (change)="setTodaysAllFilter('partNumber', $any($event.target).checked)">All PN</label>
+            <label><input type="checkbox" [checked]="isTodaysAllValue(todaysFilters.workOrder)" (change)="setTodaysAllFilter('workOrder', $any($event.target).checked)">All WO</label>
+            <label><input type="checkbox" [checked]="isTodaysAllValue(todaysFilters.pc)" (change)="setTodaysAllFilter('pc', $any($event.target).checked)">All PC</label>
+            <label><input type="checkbox" [checked]="isTodaysAllValue(todaysFilters.user)" (change)="setTodaysAllFilter('user', $any($event.target).checked)">All Users</label>
           </div>
+
+          <div class="todays-filter-actions">
+            <button type="button" class="primary-action" (click)="runTodaysDashboard()" [disabled]="!isTodaysDashboardReady">Go</button>
+            <button type="button" class="secondary-action" (click)="resetTodaysFilters()">Reset</button>
+          </div>
+          <p class="axis-note" *ngIf="isDateRangeOver48Hours">Date ranges over 48 hours use Per Day automatically.</p>
         </section>
 
-        <section class="todays-panel overview-panel" *ngIf="todaysActiveTab === 'overview'">
-          <ng-container *ngIf="todaysFilters.xAxis === 'hour'; else perDayOverviewPending">
-            <div class="per-day-header">
-              <div class="per-day-title-wrap">
-                <span class="per-day-title-icon material-symbols-outlined" aria-hidden="true">monitoring</span>
-                <span>
-                  <h2>Today's Dashboard</h2>
-                  <small>Real-time production monitoring and performance overview</small>
-                </span>
-              </div>
+        <section class="todays-results" *ngIf="todaysSummary; else todaysEmptyState">
+          <div class="todays-metric-grid">
+            <article class="todays-metric-card" *ngFor="let metric of todaysOverviewMetrics" [ngClass]="'metric-' + metric.tone">
+              <span class="metric-icon material-symbols-outlined" aria-hidden="true">{{ metric.icon }}</span>
+              <span class="metric-label">{{ metric.label }}</span>
+              <strong>{{ metric.value }}</strong>
+              <small>
+                <span *ngIf="metric.trend" class="metric-trend" [class.down]="metric.trendDirection === 'down'">{{ metric.trend }}</span>
+                {{ metric.subtext }}
+              </small>
+            </article>
+          </div>
 
-              <div class="per-day-actions">
-                <span class="auto-refresh-label">Auto Refresh</span>
-                <button type="button" class="auto-refresh-toggle" [class.off]="!todaysAutoRefreshEnabled" (click)="toggleTodaysAutoRefresh()">
-                  {{ todaysAutoRefreshEnabled ? 'ON' : 'OFF' }}
-                </button>
-                <span class="last-updated">
-                  <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
-                  Last updated: {{ todaysLastUpdatedLabel }}
-                </span>
+          <section class="todays-chart-card">
+            <div class="todays-card-heading">
+              <h2>{{ todaysSnChartTitle }}</h2>
+              <div class="chart-legend" aria-label="Chart legend">
+                <span><i class="legend-pass"></i>Pass</span>
+                <span><i class="legend-fail"></i>Fail</span>
+                <span><i class="legend-rework"></i>Rework</span>
+                <span><i class="legend-nff"></i>NFF</span>
+                <span><i class="legend-pending"></i>Pending</span>
               </div>
             </div>
-
-            <div class="todays-metric-grid">
-              <article class="todays-metric-card" *ngFor="let metric of todaysOverviewMetrics" [ngClass]="'metric-' + metric.tone">
-                <span class="metric-icon material-symbols-outlined" aria-hidden="true">{{ metric.icon }}</span>
-                <span class="metric-label">{{ metric.label }}</span>
-                <strong>{{ metric.value }}</strong>
-                <small>
-                  <span *ngIf="metric.trend" class="metric-trend" [class.down]="metric.trendDirection === 'down'">
-                    {{ metric.trend }}
+            <div class="todays-chart-wrap">
+              <div class="todays-bar-chart" [class.day-bar-chart]="todaysFilters.xAxis === 'day'">
+                <button
+                  type="button"
+                  class="hour-bar"
+                  *ngFor="let bucket of todaysGraphBuckets; let i = index; trackBy: trackByTodaysBucket"
+                  [class.active]="selectedTodaysBucket === bucket"
+                  (click)="selectTodaysGraphBucket(i)"
+                  [attr.title]="'Open ' + bucket.label + ' SN details'"
+                >
+                  <strong>{{ formatTodaysNumber(getTodaysBucketTotal(bucket)) }}</strong>
+                  <span class="simple-bar-track">
+                    <span class="simple-hour-bar" [style.height.%]="getTodaysBarHeight(bucket)">
+                      <span class="bar-segment pass" [style.height.%]="getStatusShareHeight(bucket, 'pass')"></span>
+                      <span class="bar-segment fail" [style.height.%]="getStatusShareHeight(bucket, 'fail')"></span>
+                      <span class="bar-segment rework" [style.height.%]="getStatusShareHeight(bucket, 'rework')"></span>
+                      <span class="bar-segment nff" [style.height.%]="getStatusShareHeight(bucket, 'nff')"></span>
+                      <span class="bar-segment pending" [style.height.%]="getStatusShareHeight(bucket, 'pending')"></span>
+                    </span>
                   </span>
-                  {{ metric.subtext }}
-                </small>
-              </article>
+                  <span class="bar-label">{{ bucket.label }}</span>
+                </button>
+              </div>
             </div>
+          </section>
+
+          <div class="todays-analysis-grid">
+            <section class="todays-chart-card">
+              <div class="todays-card-heading">
+                <h2>{{ todaysFpyChartTitle }}</h2>
+              </div>
+              <div class="todays-fpy-chart">
+                <div class="fpy-y-axis" aria-hidden="true">
+                  <span>100%</span>
+                  <span>95%</span>
+                  <span>90%</span>
+                  <span>85%</span>
+                  <span>80%</span>
+                  <span>75%</span>
+                  <span>70%</span>
+                </div>
+                <svg viewBox="0 0 640 260" preserveAspectRatio="none" aria-hidden="true">
+                  <polygon class="fpy-area" [attr.points]="todaysFpyAreaPoints"></polygon>
+                  <polyline class="fpy-line" [attr.points]="todaysFpyLinePoints"></polyline>
+                </svg>
+                <button type="button" class="fpy-point" *ngFor="let point of todaysFpyTrend; let i = index" [style.left.%]="getTodaysFpyLeft(i)" [style.bottom.%]="getTodaysFpyBottom(point)" (click)="openTodaysFpyPoint(i)" [attr.title]="'Open ' + point.label + ' SN details'">
+                  <strong>{{ point.fpy | number:'1.1-1' }}%</strong>
+                </button>
+                <button
+                  type="button"
+                  class="fpy-hit-zone"
+                  *ngFor="let point of todaysFpyTrend; let i = index"
+                  [style.left.%]="getTodaysFpyLeft(i)"
+                  [style.width.%]="getTodaysFpyZoneWidth()"
+                  (click)="openTodaysFpyPoint(i)"
+                  [attr.title]="'Open ' + point.label + ' SN details'"
+                ></button>
+                <div class="fpy-x-axis" aria-hidden="true">
+                  <span *ngFor="let point of todaysFpyTrend; let i = index" [style.left.%]="getTodaysFpyLeft(i)" [class.hidden]="!getTodaysFpyLabelVisible(i)">{{ point.label }}</span>
+                </div>
+              </div>
+            </section>
 
             <section class="todays-chart-card">
               <div class="todays-card-heading">
-                <h2>SN Count By Hour</h2>
-                <div class="chart-legend" aria-label="Chart legend">
-                  <span><i class="legend-pass"></i>Pass</span>
-                  <span><i class="legend-fail"></i>Fail</span>
-                  <span><i class="legend-rework"></i>Rework</span>
-                  <span><i class="legend-nff"></i>NFF</span>
-                  <span><i class="legend-pending"></i>Pending</span>
-                </div>
-                <div class="chart-toggle" aria-label="Chart value type">
-                  <button type="button" class="active">Count</button>
-                  <button type="button">%</button>
-                </div>
+                <h2>Failure Count By Station</h2>
               </div>
-
-              <div class="todays-chart-wrap">
-                <div class="chart-scale" aria-hidden="true">
-                  <span>2.5K</span>
-                  <span>2K</span>
-                  <span>1.5K</span>
-                  <span>1K</span>
-                  <span>500</span>
-                  <span>0</span>
-                </div>
-
-                <div class="todays-bar-chart">
-                  <button
-                    type="button"
-                    class="hour-bar"
-                    *ngFor="let bucket of todaysHourlyBuckets; let i = index; trackBy: trackByTodaysBucket"
-                    [class.active]="selectedTodaysBucketIndex === i"
-                    (click)="selectTodaysBucket(i)"
-                    [attr.aria-label]="'Show ' + bucket.label + ' SN details'"
-                  >
-                    <strong>{{ formatTodaysNumber(getTodaysBucketTotal(bucket)) }}</strong>
-                    <span class="simple-bar-track">
-                      <span class="simple-hour-bar" [style.height.%]="getTodaysBarHeight(bucket)">
-                        <span class="bar-segment pass" [style.height.%]="getStatusShareHeight(bucket, 'pass')"></span>
-                        <span class="bar-segment fail" [style.height.%]="getStatusShareHeight(bucket, 'fail')"></span>
-                        <span class="bar-segment rework" [style.height.%]="getStatusShareHeight(bucket, 'rework')"></span>
-                        <span class="bar-segment nff" [style.height.%]="getStatusShareHeight(bucket, 'nff')"></span>
-                        <span class="bar-segment pending" [style.height.%]="getStatusShareHeight(bucket, 'pending')"></span>
-                      </span>
-                    </span>
-                    <span class="bar-label">{{ bucket.label }}</span>
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <section class="todays-sn-card">
-              <div class="todays-card-heading">
-                <h2>Recent SN Details</h2>
-                <span class="selected-hour-pill">{{ selectedTodaysBucket?.label }}</span>
-                <button type="button" class="per-day-outline-action" (click)="downloadTodaysCsv()">
-                  <span class="material-symbols-outlined" aria-hidden="true">download</span>
-                  Download
+              <div class="todays-station-bars">
+                <button type="button" class="station-fail-row" *ngFor="let row of todaysFailureByStation; trackBy: trackByTodaysFailureStation" (click)="openTodaysStationFailure(row)" [attr.title]="'Open ' + row.station + ' failed SN details'">
+                  <span>{{ row.station }}</span>
+                  <div><i [style.width.%]="getTodaysStationFailureWidth(row)"></i></div>
+                  <strong>{{ formatTodaysNumber(row.count) }}</strong>
                 </button>
-              </div>
-
-              <div class="todays-sn-table-wrap">
-                <table class="todays-sn-table">
-                  <thead>
-                    <tr>
-                      <th>SN</th>
-                      <th>PN</th>
-                      <th>WO</th>
-                      <th>Status</th>
-                      <th>Result</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr *ngFor="let serial of pagedTodaysRows; trackBy: trackByTodaysSn">
-                      <td>{{ serial.sn }}</td>
-                      <td>{{ serial.pn }}</td>
-                      <td>{{ serial.wo }}</td>
-                      <td>
-                        <span class="status-pill" [ngClass]="getTodaysStatusClass(serial.status)">
-                          {{ serial.status }}
-                        </span>
-                      </td>
-                      <td>
-                        <span class="result-text" [ngClass]="getTodaysStatusClass(serial.status)">
-                          {{ serial.result }}
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div class="todays-table-footer">
-                <span>
-                  Showing {{ todaysShowingStart }} to {{ todaysShowingEnd }} of
-                  {{ formatTodaysNumber(selectedTodaysRows.length) }}
-                  entries
-                </span>
-                <div class="todays-pagination" aria-label="SN table pagination">
-                  <button type="button" (click)="setTodaysPage(todaysCurrentPage - 1)" [disabled]="todaysCurrentPage === 1">chevron_left</button>
-                  <button
-                    type="button"
-                    *ngFor="let page of todaysPageNumbers"
-                    [class.active]="page === todaysCurrentPage"
-                    [disabled]="page === '...'"
-                    (click)="setTodaysPage(page)"
-                  >
-                    {{ page }}
-                  </button>
-                  <button type="button" (click)="setTodaysPage(todaysCurrentPage + 1)" [disabled]="todaysCurrentPage === todaysTotalPages">chevron_right</button>
-                </div>
+                <div class="todays-empty-mini" *ngIf="todaysFailureByStation.length === 0">No station failures for this selection.</div>
               </div>
             </section>
-          </ng-container>
-
-          <ng-template #perDayOverviewPending>
-            <section class="per-day-dashboard">
-              <div class="per-day-header">
-                <div class="per-day-title-wrap">
-                  <span class="per-day-title-icon material-symbols-outlined" aria-hidden="true">monitoring</span>
-                  <span>
-                    <h2>Today's Dashboard</h2>
-                    <small>Real-time production monitoring and performance overview</small>
-                  </span>
-                </div>
-
-                <div class="per-day-actions">
-                  <span class="auto-refresh-label">Auto Refresh</span>
-                  <button type="button" class="auto-refresh-toggle" [class.off]="!todaysAutoRefreshEnabled" (click)="toggleTodaysAutoRefresh()">
-                    {{ todaysAutoRefreshEnabled ? 'ON' : 'OFF' }}
-                  </button>
-                  <span class="last-updated">
-                    <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
-                    Last updated: {{ todaysLastUpdatedLabel }}
-                  </span>
-                </div>
-              </div>
-
-              <div class="todays-metric-grid per-day-metric-grid">
-                <article class="todays-metric-card" *ngFor="let metric of todaysOverviewMetrics" [ngClass]="'metric-' + metric.tone">
-                  <span class="metric-icon material-symbols-outlined" aria-hidden="true">{{ metric.icon }}</span>
-                  <span class="metric-label">{{ metric.label }}</span>
-                  <strong>{{ metric.value }}</strong>
-                  <small>
-                    <span *ngIf="metric.trend" class="metric-trend" [class.down]="metric.trendDirection === 'down'">
-                      {{ metric.trend }}
-                    </span>
-                    {{ metric.subtext }}
-                  </small>
-                </article>
-              </div>
-
-              <section class="todays-chart-card">
-                <div class="todays-card-heading">
-                  <h2>SN Count By Day</h2>
-                  <div class="chart-legend" aria-label="Chart legend">
-                    <span><i class="legend-pass"></i>Pass</span>
-                    <span><i class="legend-fail"></i>Fail</span>
-                    <span><i class="legend-rework"></i>Rework</span>
-                    <span><i class="legend-nff"></i>NFF</span>
-                    <span><i class="legend-pending"></i>Pending</span>
-                  </div>
-                </div>
-
-                <div class="todays-chart-wrap">
-                  <div class="todays-bar-chart day-bar-chart">
-                    <button
-                      type="button"
-                      class="hour-bar day-bar"
-                      *ngFor="let bucket of todaysDailyBuckets; let i = index; trackBy: trackByTodaysBucket"
-                      [class.active]="selectedTodaysDailyBucketIndex === i"
-                      (click)="selectTodaysDailyBucket(i)"
-                      [attr.aria-label]="'Show ' + bucket.label + ' SN details'"
-                    >
-                      <strong>{{ formatTodaysNumber(getTodaysBucketTotal(bucket)) }}</strong>
-                      <span class="simple-bar-track">
-                        <span class="simple-hour-bar" [style.height.%]="getTodaysBarHeight(bucket)">
-                          <span class="bar-segment pass" [style.height.%]="getStatusShareHeight(bucket, 'pass')"></span>
-                          <span class="bar-segment fail" [style.height.%]="getStatusShareHeight(bucket, 'fail')"></span>
-                          <span class="bar-segment rework" [style.height.%]="getStatusShareHeight(bucket, 'rework')"></span>
-                          <span class="bar-segment nff" [style.height.%]="getStatusShareHeight(bucket, 'nff')"></span>
-                          <span class="bar-segment pending" [style.height.%]="getStatusShareHeight(bucket, 'pending')"></span>
-                        </span>
-                      </span>
-                      <span class="bar-label">{{ bucket.label }}</span>
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              <section class="todays-sn-card per-day-sn-card">
-                <div class="todays-card-heading per-day-table-heading">
-                  <span class="per-day-list-icon material-symbols-outlined" aria-hidden="true">format_list_bulleted</span>
-                  <h2>Recent SN Details</h2>
-                  <span class="selected-hour-pill">{{ selectedTodaysBucket?.label }}</span>
-                  <span class="per-day-heading-spacer"></span>
-                  <button type="button" class="per-day-outline-action" (click)="goToTodaysFilters()">
-                    <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
-                    Filters
-                  </button>
-                  <button type="button" class="per-day-outline-action" (click)="downloadTodaysCsv()">
-                    <span class="material-symbols-outlined" aria-hidden="true">download</span>
-                    Download
-                  </button>
-                </div>
-
-                <div class="todays-sn-table-wrap">
-                  <table class="todays-sn-table per-day-sn-table">
-                    <thead>
-                      <tr>
-                        <th>SN</th>
-                        <th>PN</th>
-                        <th>WO</th>
-                        <th>Station</th>
-                        <th>Operator</th>
-                        <th>Status</th>
-                        <th>Start Time</th>
-                        <th>End Time</th>
-                        <th>Result</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr *ngFor="let serial of pagedTodaysRows; trackBy: trackByTodaysSn">
-                        <td>{{ serial.sn }}</td>
-                        <td>{{ serial.pn }}</td>
-                        <td>{{ serial.wo }}</td>
-                        <td>{{ serial.station }}</td>
-                        <td>{{ serial.operator }}</td>
-                        <td>
-                          <span class="status-pill" [ngClass]="getTodaysStatusClass(serial.status)">
-                            {{ serial.status }}
-                          </span>
-                        </td>
-                        <td>{{ serial.startTime }}</td>
-                        <td>{{ serial.endTime }}</td>
-                        <td>
-                          <span class="result-text" [ngClass]="getTodaysStatusClass(serial.status)">
-                            {{ serial.result }}
-                          </span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <div class="todays-table-footer">
-                  <span>
-                    Showing {{ todaysShowingStart }} to {{ todaysShowingEnd }} of
-                    {{ formatTodaysNumber(selectedTodaysRows.length) }}
-                    entries
-                  </span>
-                  <div class="todays-pagination" aria-label="SN table pagination">
-                    <button type="button" (click)="setTodaysPage(todaysCurrentPage - 1)" [disabled]="todaysCurrentPage === 1">chevron_left</button>
-                    <button
-                      type="button"
-                      *ngFor="let page of todaysPageNumbers"
-                      [class.active]="page === todaysCurrentPage"
-                      [disabled]="page === '...'"
-                      (click)="setTodaysPage(page)"
-                    >
-                      {{ page }}
-                    </button>
-                    <button type="button" (click)="setTodaysPage(todaysCurrentPage + 1)" [disabled]="todaysCurrentPage === todaysTotalPages">chevron_right</button>
-                  </div>
-                </div>
-              </section>
-            </section>
-          </ng-template>
+          </div>
         </section>
 
-        <footer class="todays-footer" *ngIf="todaysActiveTab === 'filters'">
-          <button type="button" class="secondary-action reset-action" (click)="resetTodaysFilters()">
-            <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
-            Reset Filters
-          </button>
+        <ng-template #todaysEmptyState>
+          <section class="todays-empty-panel">
+            <span class="material-symbols-outlined" aria-hidden="true">monitoring</span>
+            <strong>Select filters and click Go to load the dashboard.</strong>
+          </section>
+        </ng-template>
 
-          <span class="footer-spacer"></span>
-
-          <button type="button" class="secondary-action" (click)="backToMenu()">Cancel</button>
-          <button type="button" class="primary-action" (click)="runTodaysDashboard()" [disabled]="!isTodaysDashboardReady">
-            <span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>
-            Go
-          </button>
-        </footer>
+        <section class="todays-detail-modal" *ngIf="todaysDetailsModalOpen" role="dialog" aria-modal="true" aria-label="SN details">
+          <div class="todays-detail-backdrop" (click)="closeTodaysDetails()"></div>
+          <article class="todays-detail-dialog">
+            <div class="todays-card-heading todays-modal-heading">
+              <h2>{{ todaysDetailsTitle }}</h2>
+              <span class="selected-hour-pill">{{ formatTodaysNumber(selectedTodaysRows.length) }} SN</span>
+              <button type="button" class="per-day-outline-action" (click)="downloadTodaysCsv()">
+                <span class="material-symbols-outlined" aria-hidden="true">download</span>
+                Download
+              </button>
+              <button type="button" class="todays-modal-close" title="Close" (click)="closeTodaysDetails()">
+                <span class="material-symbols-outlined" aria-hidden="true">close</span>
+              </button>
+            </div>
+            <div class="todays-sn-table-wrap">
+              <table class="todays-sn-table">
+                <thead>
+                  <tr>
+                    <th>SN</th>
+                    <th>PN</th>
+                    <th>WO</th>
+                    <th>Station</th>
+                    <th>Operator</th>
+                    <th>Status</th>
+                    <th>Start Time</th>
+                    <th>End Time</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let serial of pagedTodaysRows; trackBy: trackByTodaysSn">
+                    <td>{{ serial.sn }}</td>
+                    <td>{{ serial.pn }}</td>
+                    <td>{{ serial.wo }}</td>
+                    <td>{{ serial.station }}</td>
+                    <td>{{ serial.operator }}</td>
+                    <td><span class="status-pill" [ngClass]="getTodaysStatusClass(serial.status)">{{ serial.status }}</span></td>
+                    <td>{{ serial.startTime }}</td>
+                    <td>{{ serial.endTime }}</td>
+                    <td><span class="result-text" [ngClass]="getTodaysStatusClass(serial.status)">{{ serial.result }}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="todays-table-footer">
+              <span>
+                Showing {{ todaysShowingStart }} to {{ todaysShowingEnd }} of
+                {{ formatTodaysNumber(selectedTodaysRows.length) }} entries
+              </span>
+              <div class="todays-pagination" aria-label="SN table pagination">
+                <button type="button" (click)="setTodaysPage(todaysCurrentPage - 1)" [disabled]="todaysCurrentPage === 1">chevron_left</button>
+                <button type="button" *ngFor="let page of todaysPageNumbers" [class.active]="page === todaysCurrentPage" [disabled]="page === '...'" (click)="setTodaysPage(page)">{{ page }}</button>
+                <button type="button" (click)="setTodaysPage(todaysCurrentPage + 1)" [disabled]="todaysCurrentPage === todaysTotalPages">chevron_right</button>
+              </div>
+            </div>
+          </article>
+        </section>
       </section>
     </ng-container>
   </ng-template>

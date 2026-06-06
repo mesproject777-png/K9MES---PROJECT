@@ -237,6 +237,16 @@ interface TodaysHourBucket {
   sns: TodaysSnDetail[];
 }
 
+interface TodaysFpyPoint {
+  label: string;
+  fpy: number;
+}
+
+interface TodaysStationFailure {
+  station: string;
+  count: number;
+}
+
 interface TodaysMetricCard {
   label: string;
   value: string;
@@ -258,6 +268,8 @@ interface TodaysDashboardData {
   hourlyBuckets: TodaysHourBucket[];
   dailyBuckets: TodaysHourBucket[];
   dailyBucket: TodaysHourBucket;
+  fpyTrend: TodaysFpyPoint[];
+  failureByStation: TodaysStationFailure[];
 }
 
 @Component({
@@ -381,9 +393,16 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   todaysHourlyBuckets: TodaysHourBucket[] = [];
   todaysDailyBuckets: TodaysHourBucket[] = [];
   todaysDailyBucket: TodaysHourBucket | null = null;
+  todaysFpyTrend: TodaysFpyPoint[] = [];
+  todaysFailureByStation: TodaysStationFailure[] = [];
   todaysSummary: TodaysDashboardSummary | null = null;
   selectedTodaysBucketIndex = 0;
   selectedTodaysDailyBucketIndex = 0;
+  todaysDetailsModalOpen = false;
+  todaysDetailsTitle = '';
+  todaysDetailsRows: TodaysSnDetail[] = [];
+  todaysMetricRows: TodaysSnDetail[] | null = null;
+  todaysMetricLabel = '';
   openTodaysDropdown: TodaysDropdownKey | null = null;
   todaysCurrentPage = 1;
   readonly todaysPageSize = 10;
@@ -831,6 +850,10 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.todaysHourlyBuckets = [];
     this.todaysDailyBuckets = [];
     this.todaysDailyBucket = null;
+    this.todaysFpyTrend = [];
+    this.todaysFailureByStation = [];
+    this.todaysMetricRows = null;
+    this.todaysMetricLabel = '';
     this.selectedTodaysDailyBucketIndex = 0;
     this.todaysCurrentPage = 1;
     this.todaysActiveTab = 'filters';
@@ -915,6 +938,10 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
         this.todaysHourlyBuckets = response.hourlyBuckets || [];
         this.todaysDailyBuckets = response.dailyBuckets || [];
         this.todaysDailyBucket = response.dailyBucket || null;
+        this.todaysFpyTrend = response.fpyTrend || [];
+        this.todaysFailureByStation = response.failureByStation || [];
+        this.todaysMetricRows = null;
+        this.todaysMetricLabel = '';
         this.todaysLastUpdatedAt = response.lastUpdated ? new Date(response.lastUpdated) : new Date();
         this.selectedTodaysBucketIndex = preserveSelection
           ? Math.min(previousBucketIndex, Math.max(0, this.todaysHourlyBuckets.length - 1))
@@ -932,6 +959,10 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
         this.todaysHourlyBuckets = [];
         this.todaysDailyBuckets = [];
         this.todaysDailyBucket = null;
+        this.todaysFpyTrend = [];
+        this.todaysFailureByStation = [];
+        this.todaysMetricRows = null;
+        this.todaysMetricLabel = '';
         this.todaysCurrentPage = 1;
         this.loading = false;
         this.errorMessage = error?.error?.message || 'Unable to load Today dashboard data.';
@@ -1424,6 +1455,68 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.todaysCurrentPage = 1;
   }
 
+  selectTodaysGraphBucket(index: number): void {
+    if (this.todaysFilters.xAxis === 'day') {
+      this.selectTodaysDailyBucket(index);
+    } else {
+      this.selectTodaysBucket(index);
+    }
+
+    const bucket = this.todaysGraphBuckets[index];
+    this.openTodaysDetails(bucket?.sns || [], `${bucket?.label || 'Selected'} SN Details`);
+  }
+
+  openTodaysFpyPoint(index: number): void {
+    if (this.todaysFilters.xAxis === 'day') {
+      this.selectTodaysDailyBucket(index);
+    } else {
+      this.selectTodaysBucket(index);
+    }
+
+    const bucket = this.todaysGraphBuckets[index];
+    this.openTodaysDetails(bucket?.sns || [], `${bucket?.label || 'Selected'} FPY Details`);
+  }
+
+  openTodaysStationFailure(row: TodaysStationFailure): void {
+    const station = String(row.station || '').trim();
+    const rows = this.todaysAllRows.filter((item) =>
+      item.status === 'Fail' && String(item.station || '').trim() === station
+    );
+    this.openTodaysDetails(rows, `${station || 'Station'} Failure Details`);
+  }
+
+  openTodaysDetails(rows: TodaysSnDetail[], title: string): void {
+    this.todaysDetailsRows = rows || [];
+    this.todaysDetailsTitle = title;
+    this.todaysMetricRows = rows || [];
+    this.todaysMetricLabel = title.replace(/\s+Details$/i, '');
+    this.todaysCurrentPage = 1;
+    this.todaysDetailsModalOpen = true;
+  }
+
+  closeTodaysDetails(): void {
+    this.todaysDetailsModalOpen = false;
+    this.todaysDetailsRows = [];
+    this.todaysDetailsTitle = '';
+    this.todaysCurrentPage = 1;
+  }
+
+  setTodaysAllFilter(field: Exclude<TodaysDropdownKey, 'dateSelection'>, checked: boolean): void {
+    this.todaysFilters[field] = checked ? TODAYS_ALL_VALUE : '';
+
+    if (field === 'site') {
+      this.onTodaysSiteChange();
+    } else if (field === 'station') {
+      this.onTodaysStationChange();
+    } else if (field === 'partNumber') {
+      this.onTodaysPartNumberChange();
+    } else if (field === 'workOrder') {
+      this.onTodaysWorkOrderChange();
+    } else if (field === 'pc') {
+      this.todaysFilters.user = '';
+    }
+  }
+
   getDefaultTodaysDailyBucketIndex(): number {
     for (let index = this.todaysDailyBuckets.length - 1; index >= 0; index--) {
       if (this.getTodaysBucketTotal(this.todaysDailyBuckets[index]) > 0) {
@@ -1447,7 +1540,22 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   }
 
   get selectedTodaysRows(): TodaysSnDetail[] {
-    return this.selectedTodaysBucket?.sns || [];
+    return this.todaysDetailsModalOpen ? this.todaysDetailsRows : (this.selectedTodaysBucket?.sns || []);
+  }
+
+  get todaysAllRows(): TodaysSnDetail[] {
+    const seen = new Set<string>();
+    const rows: TodaysSnDetail[] = [];
+    this.todaysGraphBuckets.forEach((bucket) => {
+      (bucket.sns || []).forEach((row) => {
+        const key = `${row.sn}-${row.station}-${row.startTime}-${row.endTime}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          rows.push(row);
+        }
+      });
+    });
+    return rows;
   }
 
   get pagedTodaysRows(): TodaysSnDetail[] {
@@ -1505,6 +1613,16 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   toggleTodaysAutoRefresh(): void {
     this.todaysAutoRefreshEnabled = !this.todaysAutoRefreshEnabled;
     if (this.todaysAutoRefreshEnabled) {
+      this.refreshTodaysDashboard();
+      this.startTodaysAutoRefresh();
+    } else {
+      this.stopTodaysAutoRefresh();
+    }
+  }
+
+  setTodaysAutoRefresh(enabled: boolean): void {
+    this.todaysAutoRefreshEnabled = enabled;
+    if (enabled) {
       this.refreshTodaysDashboard();
       this.startTodaysAutoRefresh();
     } else {
@@ -1597,18 +1715,25 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     if (!bucket) {
       return [];
     }
-    const total = this.getTodaysBucketTotal(bucket);
-    const fpy = total > 0 ? (bucket.pass * 100 / total) : 0;
-    const wip = bucket.pending + bucket.rework + bucket.nff;
-    const avgCycle = this.getAverageCycleSeconds(bucket.sns);
-    const topFailing = this.getTopStationFromRows(bucket.sns.filter((row) => row.status === 'Fail'));
-    const highestLoad = this.getTopStationFromRows(bucket.sns);
+    const rows = this.todaysMetricRows || bucket.sns;
+    const total = rows.length;
+    const pass = rows.filter((row) => row.status === 'Pass').length;
+    const fail = rows.filter((row) => row.status === 'Fail').length;
+    const rework = rows.filter((row) => row.status === 'Rework').length;
+    const nff = rows.filter((row) => row.status === 'NFF').length;
+    const pending = rows.filter((row) => row.status === 'Pending').length;
+    const fpy = total > 0 ? (pass * 100 / total) : 0;
+    const wip = pending + rework + nff;
+    const avgCycle = this.getAverageCycleSeconds(rows);
+    const topFailing = this.getTopStationFromRows(rows.filter((row) => row.status === 'Fail'));
+    const highestLoad = this.getTopStationFromRows(rows);
+    const metricLabel = this.todaysMetricLabel || `${bucket.label} selected`;
 
     return [
       {
         label: 'Total SN',
         value: this.formatTodaysNumber(total),
-        subtext: `${bucket.label} selected`,
+        subtext: metricLabel,
         trend: '+ 12.5%',
         trendDirection: 'up',
         icon: 'dashboard',
@@ -1616,7 +1741,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       },
       {
         label: 'Pass Count',
-        value: this.formatTodaysNumber(bucket.pass),
+        value: this.formatTodaysNumber(pass),
         subtext: 'vs Yesterday',
         trend: '+ 11.8%',
         trendDirection: 'up',
@@ -1625,7 +1750,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       },
       {
         label: 'Fail Count',
-        value: this.formatTodaysNumber(bucket.fail),
+        value: this.formatTodaysNumber(fail),
         subtext: 'vs Yesterday',
         trend: '+ 8.3%',
         trendDirection: 'up',
@@ -1682,6 +1807,82 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
   get todaysMaxBucketTotal(): number {
     return Math.max(1, ...this.todaysGraphBuckets.map((bucket) => this.getTodaysBucketTotal(bucket)));
+  }
+
+  get todaysSnChartTitle(): string {
+    return this.todaysFilters.xAxis === 'day' ? 'SN Count By Day' : 'SN Count By Hour';
+  }
+
+  get todaysFpyChartTitle(): string {
+    return this.todaysFilters.xAxis === 'day' ? 'FPY (%) By Day' : 'FPY (%) By Hour';
+  }
+
+  get todaysFpyLinePoints(): string {
+    if (this.todaysFpyTrend.length === 0) {
+      return '';
+    }
+
+    return this.todaysFpyTrend
+      .map((point, index) => `${this.getTodaysFpySvgX(index)},${this.getTodaysFpySvgY(point)}`)
+      .join(' ');
+  }
+
+  get todaysFpyAreaPoints(): string {
+    if (this.todaysFpyTrend.length === 0) {
+      return '';
+    }
+
+    return `0,230 ${this.todaysFpyLinePoints} 640,230`;
+  }
+
+  get todaysMaxFailureStationCount(): number {
+    return Math.max(1, ...this.todaysFailureByStation.map((row) => Number(row.count) || 0));
+  }
+
+  getTodaysFpyLeft(index: number): number {
+    if (this.todaysFpyTrend.length <= 1) {
+      return 50;
+    }
+
+    return 7 + ((index / (this.todaysFpyTrend.length - 1)) * 88);
+  }
+
+  getTodaysFpyBottom(point: TodaysFpyPoint): number {
+    const value = Math.max(70, Math.min(100, Number(point.fpy) || 0));
+    return 13 + (((value - 70) / 30) * 81);
+  }
+
+  getTodaysFpyLabelVisible(index: number): boolean {
+    if (this.todaysFpyTrend.length <= 12) {
+      return true;
+    }
+
+    return index % 2 === 0;
+  }
+
+  getTodaysFpyZoneWidth(): number {
+    return this.todaysFpyTrend.length <= 1 ? 88 : Math.min(12, 88 / Math.max(1, this.todaysFpyTrend.length - 1));
+  }
+
+  getTodaysStationFailureWidth(row: TodaysStationFailure): number {
+    return Math.max(4, ((Number(row.count) || 0) / this.todaysMaxFailureStationCount) * 100);
+  }
+
+  trackByTodaysFailureStation(index: number, row: TodaysStationFailure): string {
+    return `${index}-${row.station}`;
+  }
+
+  private getTodaysFpySvgX(index: number): number {
+    if (this.todaysFpyTrend.length <= 1) {
+      return 320;
+    }
+
+    return Math.round((index / (this.todaysFpyTrend.length - 1)) * 640);
+  }
+
+  private getTodaysFpySvgY(point: TodaysFpyPoint): number {
+    const value = Math.max(70, Math.min(100, Number(point.fpy) || 0));
+    return Math.round(230 - ((value - 70) / 30) * 200);
   }
 
   getSegmentHeight(bucket: TodaysHourBucket, key: 'pass' | 'fail' | 'rework' | 'nff' | 'pending'): number {
@@ -1837,7 +2038,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  private isTodaysAllValue(value: string): boolean {
+  isTodaysAllValue(value: string): boolean {
     return value === TODAYS_ALL_VALUE;
   }
 
@@ -1985,9 +2186,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   }
 
   private getTodaysExportHeaders(): string[] {
-    return this.todaysFilters.xAxis === 'day'
-      ? ['SN', 'PN', 'WO', 'Station', 'Operator', 'Status', 'Start Time', 'End Time', 'Result']
-      : ['SN', 'PN', 'WO', 'Status', 'Result'];
+    return ['SN', 'PN', 'WO', 'Station', 'Operator', 'Status', 'Start Time', 'End Time', 'Result'];
   }
 
   private getTodaysExportRows(): Array<Record<string, string>> {
@@ -2000,12 +2199,10 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
         Result: serial.result,
       };
 
-      if (this.todaysFilters.xAxis === 'day') {
-        base['Station'] = serial.station;
-        base['Operator'] = serial.operator;
-        base['Start Time'] = serial.startTime;
-        base['End Time'] = serial.endTime;
-      }
+      base['Station'] = serial.station;
+      base['Operator'] = serial.operator;
+      base['Start Time'] = serial.startTime;
+      base['End Time'] = serial.endTime;
 
       return base;
     });
