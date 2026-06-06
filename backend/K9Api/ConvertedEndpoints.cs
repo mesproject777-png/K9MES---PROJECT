@@ -4940,6 +4940,36 @@ public static class ConvertedEndpoints
                 }
             }
 
+            if (payload["stationSampling"] is JsonObject stationSampling)
+            {
+                await ExecuteAsync(connection, "DELETE FROM workflow_station_sampling WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
+                foreach (var configGroup in stationSampling)
+                {
+                    var stationCode = configGroup.Key.Trim();
+                    if (string.IsNullOrWhiteSpace(stationCode) || configGroup.Value is null) continue;
+
+                    await ExecuteAsync(
+                        connection,
+                        """
+                        INSERT INTO workflow_station_sampling
+                          (workflow_part_id, station_code, station_id, station_name, sampling_type,
+                           interval_qty, sample_qty, lot_size, is_sampling_enabled)
+                        VALUES
+                          (@workflowPartId, @stationCode, @stationId, @stationName, @samplingType,
+                           @intervalQty, @sampleQty, @lotSize, @isSamplingEnabled)
+                        """,
+                        ("workflowPartId", workflowPartId),
+                        ("stationCode", stationCode),
+                        ("stationId", ReadInt(configGroup.Value, "stationId")),
+                        ("stationName", ToDbNullable(ReadString(configGroup.Value, "stationName")?.Trim())),
+                        ("samplingType", ReadString(configGroup.Value, "samplingType")?.Trim() ?? "PERIODIC"),
+                        ("intervalQty", ReadInt(configGroup.Value, "intervalQty") ?? 10),
+                        ("sampleQty", ReadInt(configGroup.Value, "sampleQty") ?? 1),
+                        ("lotSize", ReadInt(configGroup.Value, "lotSize") ?? 1000),
+                        ("isSamplingEnabled", ReadBool(configGroup.Value, "isSamplingEnabled") ?? false));
+                }
+            }
+
             if (payload["previewStatuses"] is JsonObject previewStatuses)
             {
                 await ExecuteAsync(connection, "DELETE FROM workflow_preview_station_statuses WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
@@ -5564,6 +5594,17 @@ public static class ConvertedEndpoints
                 """,
                 ("workflowPartId", workflowPartId));
 
+            var samplingRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT station_code, station_id, station_name, sampling_type,
+                       interval_qty, sample_qty, lot_size, is_sampling_enabled
+                FROM workflow_station_sampling
+                WHERE workflow_part_id = @workflowPartId
+                ORDER BY station_code ASC
+                """,
+                ("workflowPartId", workflowPartId));
+
             var statusRows = await QueryRowsAsync(
                 connection,
                 """
@@ -5613,6 +5654,18 @@ public static class ConvertedEndpoints
                         maximumWeight = Convert.ToString(row["maximum_weight"]) ?? string.Empty,
                         tolerance = Convert.ToString(row["tolerance"]) ?? string.Empty,
                         isWeighingEnabled = row["is_weighing_enabled"] is bool enabled && enabled
+                    }),
+                stationSampling = samplingRows.ToDictionary(
+                    row => Convert.ToString(row["station_code"]) ?? string.Empty,
+                    row => new
+                    {
+                        stationId = row["station_id"] is DBNull ? (int?)null : Convert.ToInt32(row["station_id"]),
+                        stationName = Convert.ToString(row["station_name"]) ?? string.Empty,
+                        samplingType = Convert.ToString(row["sampling_type"]) ?? "PERIODIC",
+                        intervalQty = Convert.ToString(row["interval_qty"]) ?? "10",
+                        sampleQty = Convert.ToString(row["sample_qty"]) ?? "1",
+                        lotSize = Convert.ToString(row["lot_size"]) ?? "1000",
+                        isSamplingEnabled = row["is_sampling_enabled"] is bool enabled && enabled
                     }),
                 previewStatuses = statusRows.ToDictionary(
                     row => Convert.ToString(row["station_code"]) ?? string.Empty,
@@ -5722,6 +5775,7 @@ public static class ConvertedEndpoints
             stationRules = new Dictionary<string, List<string>>(),
             stationLabelPrinting = new Dictionary<string, object>(),
             stationWeighing = new Dictionary<string, object>(),
+            stationSampling = new Dictionary<string, object>(),
             previewStatuses = new Dictionary<string, string>()
         };
     }
@@ -7911,6 +7965,29 @@ public static class ConvertedEndpoints
             """);
 
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_weighing ADD COLUMN IF NOT EXISTS is_weighing_enabled BOOLEAN NOT NULL DEFAULT FALSE");
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_station_sampling (
+              id SERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              station_id INTEGER,
+              station_name VARCHAR(220),
+              sampling_type VARCHAR(30) NOT NULL DEFAULT 'PERIODIC',
+              interval_qty INTEGER NOT NULL DEFAULT 10,
+              sample_qty INTEGER NOT NULL DEFAULT 1,
+              lot_size INTEGER NOT NULL DEFAULT 1000,
+              is_sampling_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_station_sampling UNIQUE (workflow_part_id, station_code)
+            )
+            """);
+
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS station_id INTEGER");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS is_sampling_enabled BOOLEAN NOT NULL DEFAULT FALSE");
 
         await ExecuteAsync(connection, "CREATE SEQUENCE IF NOT EXISTS public.workflow_rsn_seq START WITH 1");
         await ExecuteAsync(

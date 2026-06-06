@@ -111,6 +111,20 @@ type StationWeighingConfig = {
   tolerance: string;
 };
 
+type SamplingType = 'PERIODIC' | 'RANDOM' | 'LOT' | 'FIRST_PIECE';
+
+type StationSamplingConfig = {
+  stationId: number | null;
+  stationName: string;
+  isSamplingEnabled: boolean;
+  samplingType: SamplingType;
+  intervalQty: string;
+  sampleQty: string;
+  lotSize: string;
+};
+
+type StationRulesTabId = 'weighing' | 'label-printing' | 'sampling';
+
 type RoutingHistoryRow = {
   id: number;
   description: string;
@@ -194,6 +208,7 @@ type WorkflowSnapshot = {
   stationRules?: Record<string, string[]>;
   stationLabelPrinting?: Record<string, StationLabelPrintingConfig>;
   stationWeighing?: Record<string, StationWeighingConfig>;
+  stationSampling?: Record<string, StationSamplingConfig>;
   previewStatuses?: Record<string, PreviewStatus>;
 };
 
@@ -230,9 +245,16 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   readonly workOrderStatusOptions = ['Allocated', 'Planned', 'Released', 'Cancelled', 'Closed'];
   readonly sampleModeOptions: Array<'Full' | 'Sample'> = ['Full', 'Sample'];
   readonly reportModeOptions: Array<'Regular' | 'Auto Only'> = ['Regular', 'Auto Only'];
-  readonly stationRuleTabs: Array<{ id: 'weighing' | 'label-printing'; label: string; icon: string }> = [
+  readonly stationRuleTabs: Array<{ id: StationRulesTabId; label: string; icon: string }> = [
     { id: 'weighing', label: 'Weighing', icon: 'scale' },
     { id: 'label-printing', label: 'Label Printing', icon: 'print' },
+    { id: 'sampling', label: 'Sampling', icon: 'fact_check' },
+  ];
+  readonly samplingTypeOptions: Array<{ value: SamplingType; label: string }> = [
+    { value: 'PERIODIC', label: 'Periodic' },
+    { value: 'RANDOM', label: 'Random' },
+    { value: 'LOT', label: 'Lot / Batch' },
+    { value: 'FIRST_PIECE', label: 'First Piece' },
   ];
   readonly bomItemTypeOptions: Array<'Manufactured' | 'Purchased'> = ['Manufactured', 'Purchased'];
   readonly minDueDate = this.getDateInputValue(1);
@@ -288,10 +310,16 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   weighingMinimum = '';
   weighingMaximum = '';
   weighingTolerance = '';
+  isSamplingEnabled = false;
+  samplingType: SamplingType = 'PERIODIC';
+  samplingIntervalQty = '10';
+  samplingSampleQty = '1';
+  samplingLotSize = '1000';
   stationRulesByStation: Record<string, string[]> = {};
   stationLabelPrintingByStation: Record<string, StationLabelPrintingConfig> = {};
   stationWeighingByStation: Record<string, StationWeighingConfig> = {};
-  activeStationRulesTab: 'weighing' | 'label-printing' = 'weighing';
+  stationSamplingByStation: Record<string, StationSamplingConfig> = {};
+  activeStationRulesTab: StationRulesTabId = 'weighing';
   isLabelPrintingEnabled = false;
   labelPrintCode = '';
   selectedLabelDescription = '';
@@ -866,6 +894,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationName = step.station_name;
     this.stationRulesDraft = (this.stationRulesByStation[step.station_code] || []).join('\n');
     this.loadWeighingDraft(step.station_code);
+    this.loadSamplingDraft(step.station_code);
     this.isEditingStationRules = false;
     this.activeStationRulesTab = 'weighing';
     this.loadLabelPrintingDraft(step.station_code);
@@ -1552,16 +1581,27 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.saveWeighingConfig();
   }
 
+  onSamplingEnabledChange(enabled: boolean): void {
+    this.isSamplingEnabled = Boolean(enabled);
+    this.labelPrintStatusMessage = '';
+    this.saveSamplingConfig();
+  }
+
   saveActiveStationRulesTab(): void {
     if (this.activeStationRulesTab === 'weighing') {
       this.saveWeighingConfig();
       return;
     }
 
+    if (this.activeStationRulesTab === 'sampling') {
+      this.saveSamplingConfig();
+      return;
+    }
+
     this.saveLabelPrintingConfig();
   }
 
-  setActiveStationRulesTab(tabId: 'weighing' | 'label-printing'): void {
+  setActiveStationRulesTab(tabId: StationRulesTabId): void {
     if (this.activeStationRulesTab !== tabId) {
       this.labelPrintStatusMessage = '';
       this.labelPrintStatusType = 'info';
@@ -1592,6 +1632,40 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.saveWorkflowSnapshot(
       () => {
         this.setLabelPrintMessage('Station weighing configuration saved.', 'success');
+      },
+      (message) => {
+        this.setLabelPrintMessage(message, 'error');
+      }
+    );
+  }
+
+  saveSamplingConfig(): void {
+    const step = this.activeRulesStationStep;
+    const stationCode = step?.station_code || this.activeRulesStationCode;
+    if (!stationCode) {
+      return;
+    }
+
+    if (this.isSamplingEnabled && !this.validateSamplingConfig()) {
+      return;
+    }
+
+    this.stationSamplingByStation = {
+      ...this.stationSamplingByStation,
+      [stationCode]: {
+        stationId: step?.id ?? null,
+        stationName: step?.station_name || this.activeRulesStationName,
+        isSamplingEnabled: this.isSamplingEnabled,
+        samplingType: this.samplingType,
+        intervalQty: String(this.samplingIntervalQty || '').trim(),
+        sampleQty: String(this.samplingSampleQty || '').trim(),
+        lotSize: String(this.samplingLotSize || '').trim(),
+      },
+    };
+
+    this.saveWorkflowSnapshot(
+      () => {
+        this.setLabelPrintMessage('Station sampling configuration saved.', 'success');
       },
       (message) => {
         this.setLabelPrintMessage(message, 'error');
@@ -1729,6 +1803,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.testPrintPreviewText = '';
     this.revokeTestPrintPreviewUrl();
     this.resetWeighingFields();
+    this.resetSamplingFields();
   }
 
   private loadPnTypes(): void {
@@ -2259,6 +2334,15 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.weighingTolerance = config?.tolerance || '';
   }
 
+  private loadSamplingDraft(stationCode: string): void {
+    const config = this.stationSamplingByStation[stationCode];
+    this.isSamplingEnabled = Boolean(config?.isSamplingEnabled);
+    this.samplingType = config?.samplingType || 'PERIODIC';
+    this.samplingIntervalQty = config?.intervalQty || '10';
+    this.samplingSampleQty = config?.sampleQty || '1';
+    this.samplingLotSize = config?.lotSize || '1000';
+  }
+
   private saveLabelPrintingEnabledState(enabled: boolean): void {
     const step = this.activeRulesStationStep;
     if (!step) {
@@ -2323,6 +2407,52 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     }
 
     this.labelPrintValidationMessage = '';
+    return true;
+  }
+
+  private validateSamplingConfig(): boolean {
+    const intervalQty = Number(this.samplingIntervalQty);
+    const sampleQty = Number(this.samplingSampleQty);
+    const lotSize = Number(this.samplingLotSize);
+
+    if (!this.activeRulesStationStep) {
+      this.setLabelPrintMessage('Select a routing station before saving sampling.', 'error');
+      return false;
+    }
+
+    if (this.samplingType === 'FIRST_PIECE') {
+      return true;
+    }
+
+    if (!Number.isFinite(sampleQty) || sampleQty <= 0) {
+      this.setLabelPrintMessage('Sample Qty must be greater than zero.', 'error');
+      return false;
+    }
+
+    if (this.samplingType === 'PERIODIC' || this.samplingType === 'RANDOM') {
+      if (!Number.isFinite(intervalQty) || intervalQty <= 0) {
+        this.setLabelPrintMessage('Interval Qty must be greater than zero.', 'error');
+        return false;
+      }
+
+      if (sampleQty > intervalQty) {
+        this.setLabelPrintMessage('Sample Qty cannot be greater than Interval Qty.', 'error');
+        return false;
+      }
+    }
+
+    if (this.samplingType === 'LOT') {
+      if (!Number.isFinite(lotSize) || lotSize <= 0) {
+        this.setLabelPrintMessage('Lot Size must be greater than zero.', 'error');
+        return false;
+      }
+
+      if (sampleQty > lotSize) {
+        this.setLabelPrintMessage('Sample Qty cannot be greater than Lot Size.', 'error');
+        return false;
+      }
+    }
+
     return true;
   }
 
@@ -2568,7 +2698,10 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationName = station.station_desc;
     this.stationRulesDraft = this.activeStationRules.join('\n');
     this.loadWeighingDraft(station.station_code);
+    this.loadSamplingDraft(station.station_code);
+    this.loadLabelPrintingDraft(station.station_code);
     this.isEditingStationRules = false;
+    this.activeStationRulesTab = 'weighing';
     this.isStationRulesModalOpen = true;
   }
 
@@ -2577,6 +2710,14 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.weighingMinimum = '';
     this.weighingMaximum = '';
     this.weighingTolerance = '';
+  }
+
+  private resetSamplingFields(): void {
+    this.isSamplingEnabled = false;
+    this.samplingType = 'PERIODIC';
+    this.samplingIntervalQty = '10';
+    this.samplingSampleQty = '1';
+    this.samplingLotSize = '1000';
   }
 
   private restoreSavedPreviewForPartNumber(partNumber: string): void {
@@ -2665,6 +2806,8 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.activeRulesStationName = '';
     this.stationRulesDraft = '';
     this.stationLabelPrintingByStation = {};
+    this.stationWeighingByStation = {};
+    this.stationSamplingByStation = {};
     this.isLabelPrintingEnabled = false;
     this.labelPrintCode = '';
     this.selectedLabelDescription = '';
@@ -2739,6 +2882,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       stationRules: this.stationRulesByStation,
       stationLabelPrinting: this.stationLabelPrintingByStation,
       stationWeighing: this.stationWeighingByStation,
+      stationSampling: this.stationSamplingByStation,
       previewStatuses: this.buildPreviewStatusesByStationCode(),
     };
   }
@@ -2811,6 +2955,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.stationRulesByStation = snapshot.stationRules || {};
     this.stationLabelPrintingByStation = snapshot.stationLabelPrinting || {};
     this.stationWeighingByStation = snapshot.stationWeighing || {};
+    this.stationSamplingByStation = snapshot.stationSampling || {};
     this.linkedRoutingPartNumber = partNumber.pn || '';
     this.linkedRoutingDescription = partNumber.description || '';
     this.linkedBomPartNumber = partNumber.pn || '';

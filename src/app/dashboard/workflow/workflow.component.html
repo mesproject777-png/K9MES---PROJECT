@@ -1111,6 +1111,79 @@
       </p>
     </div>
 
+    <div class="sampling-tab" *ngIf="activeStationRulesTab === 'sampling'" role="tabpanel">
+      <section class="rules-section label-print-enable-section">
+        <div class="label-print-toggle-row">
+          <span class="label-print-toggle-title">Sampling Enabled</span>
+          <label class="label-print-switch">
+            <input
+              type="checkbox"
+              [ngModel]="isSamplingEnabled"
+              (ngModelChange)="onSamplingEnabledChange($event)"
+              role="switch"
+              [attr.aria-checked]="isSamplingEnabled"
+            />
+            <span class="label-print-switch-track" aria-hidden="true">
+              <span class="label-print-switch-thumb"></span>
+            </span>
+            <span class="label-print-switch-state">{{ isSamplingEnabled ? 'ON' : 'OFF' }}</span>
+          </label>
+        </div>
+        <p class="template-detail" *ngIf="!isSamplingEnabled">
+          Sampling is disabled for this station.
+        </p>
+      </section>
+
+      <ng-container *ngIf="isSamplingEnabled">
+        <section class="rules-section">
+          <label class="rules-field" for="samplingType">
+            <span>Sampling Type</span>
+            <select id="samplingType" [(ngModel)]="samplingType">
+              <option *ngFor="let option of samplingTypeOptions" [ngValue]="option.value">{{ option.label }}</option>
+            </select>
+          </label>
+          <p class="template-detail" *ngIf="samplingType === 'PERIODIC'">
+            Select the first Sample Qty SNs in every Interval Qty cycle.
+          </p>
+          <p class="template-detail" *ngIf="samplingType === 'RANDOM'">
+            Randomly select Sample Qty SNs in every Interval Qty cycle.
+          </p>
+          <p class="template-detail" *ngIf="samplingType === 'LOT'">
+            Select the first Sample Qty SNs from each lot window.
+          </p>
+          <p class="template-detail" *ngIf="samplingType === 'FIRST_PIECE'">
+            Only the first generated SN requires inspection at this station.
+          </p>
+        </section>
+
+        <div class="weighing-fields sampling-fields" aria-label="Sampling rule values">
+          <div class="weighing-field" *ngIf="samplingType === 'PERIODIC' || samplingType === 'RANDOM'">
+            <label for="samplingIntervalQty">Interval Qty</label>
+            <input id="samplingIntervalQty" type="number" min="1" [(ngModel)]="samplingIntervalQty" />
+          </div>
+
+          <div class="weighing-field" *ngIf="samplingType === 'LOT'">
+            <label for="samplingLotSize">Lot Size</label>
+            <input id="samplingLotSize" type="number" min="1" [(ngModel)]="samplingLotSize" />
+          </div>
+
+          <div class="weighing-field" *ngIf="samplingType !== 'FIRST_PIECE'">
+            <label for="samplingSampleQty">Sample Qty</label>
+            <input id="samplingSampleQty" type="number" min="1" [(ngModel)]="samplingSampleQty" />
+          </div>
+        </div>
+      </ng-container>
+
+      <p
+        class="label-print-message"
+        *ngIf="labelPrintStatusMessage"
+        [class.success]="labelPrintStatusType === 'success'"
+        [class.error]="labelPrintStatusType === 'error'"
+      >
+        {{ labelPrintStatusMessage }}
+      </p>
+    </div>
+
     <div class="rules-actions label-print-actions" *ngIf="activeStationRulesTab !== 'label-printing' || isLabelPrintingEnabled">
       <div *ngIf="activeStationRulesTab === 'label-printing' && isLabelPrintingEnabled">
         <button type="button" class="secondary-button outline-button" (click)="testPrinterConnection()">
