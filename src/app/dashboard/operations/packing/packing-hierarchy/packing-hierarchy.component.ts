@@ -12,16 +12,26 @@ export class PackingHierarchyComponent {
   errorMessage = '';
   query = '';
   rows: PackingHierarchyRow[] = [];
+  hasSearched = false;
 
-  constructor(private packingService: PackingService) {
-    this.load();
-  }
+  constructor(private packingService: PackingService) {}
 
   load(): void {
+    const searchQuery = this.query.trim();
+
+    if (!searchQuery) {
+      this.rows = [];
+      this.hasSearched = false;
+      this.errorMessage = '';
+      return;
+    }
+
+    this.query = searchQuery;
+    this.hasSearched = true;
     this.isLoading = true;
     this.errorMessage = '';
 
-    this.packingService.listHierarchy(this.query).subscribe({
+    this.packingService.listHierarchy(searchQuery).subscribe({
       next: (response) => {
         this.rows = response.data || [];
         this.isLoading = false;
@@ -36,7 +46,9 @@ export class PackingHierarchyComponent {
 
   clear(): void {
     this.query = '';
-    this.load();
+    this.rows = [];
+    this.hasSearched = false;
+    this.errorMessage = '';
   }
 
   statusClass(status?: string | null): string {

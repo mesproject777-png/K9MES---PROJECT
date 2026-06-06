@@ -3931,6 +3931,11 @@ public static class ConvertedEndpoints
 
         var currentCode = serial["current_station_code"]?.ToString();
         var matched = routeRows.FirstOrDefault(row => string.Equals(row["station_code"]?.ToString(), currentCode, StringComparison.Ordinal));
+        if (matched is null && string.Equals(serial["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase))
+        {
+            return Convert.ToInt32(routeRows[^1]["station_order"]);
+        }
+
         return matched is not null ? Convert.ToInt32(matched["station_order"]) : Convert.ToInt32(routeRows[0]["station_order"]);
     }
 
@@ -3962,7 +3967,12 @@ public static class ConvertedEndpoints
         var routing = routeRows.Select(step =>
         {
             var order = Convert.ToInt32(step["station_order"]);
-            var state = currentOrder == 0 ? "pending" : order < currentOrder ? "completed" : order == currentOrder ? "current" : "pending";
+            var isSerialCompleted = string.Equals(serial["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase);
+            var state = currentOrder == 0
+                ? "pending"
+                : isSerialCompleted && order <= currentOrder
+                    ? "completed"
+                    : order < currentOrder ? "completed" : order == currentOrder ? "current" : "pending";
             return new Dictionary<string, object?>
             {
                 ["station_order"] = order,
@@ -4303,6 +4313,22 @@ public static class ConvertedEndpoints
                 FROM workflow_multiboxes b
                 WHERE b.status = @status
                   AND @status <> 'SHIPPED'
+                UNION ALL
+                SELECT p.id, p.pallet_no AS package_no, 'PALLET' AS package_type, p.status,
+                       p.created_by, p.created_at, NULL AS closed_by, p.closed_at,
+                       NULL AS shipped_by, NULL AS shipped_at,
+                       (SELECT COUNT(*) FROM workflow_pallet_items i WHERE i.pallet_id = p.id)::int AS item_count,
+                       'PALLET' AS source
+                FROM workflow_pallets p
+                WHERE p.status = @status
+                UNION ALL
+                SELECT s.id, s.shipment_no AS package_no, 'SHIPMENT' AS package_type, s.status,
+                       s.created_by, s.created_at, NULL AS closed_by, NULL AS closed_at,
+                       NULL AS shipped_by, s.shipped_at,
+                       (SELECT COUNT(*) FROM workflow_shipment_items i WHERE i.shipment_id = s.id)::int AS item_count,
+                       'SHIPMENT' AS source
+                FROM workflow_shipments s
+                WHERE s.status = @status
             ) packages
             ORDER BY created_at DESC, id DESC
             LIMIT 200

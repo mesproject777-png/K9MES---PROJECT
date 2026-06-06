@@ -50,6 +50,7 @@ import { OpenPackagesComponent } from './dashboard/operations/packing/open-packa
 import { ClosedPackagesComponent } from './dashboard/operations/packing/closed-packages/closed-packages.component';
 import { ShippedPackagesComponent } from './dashboard/operations/packing/shipped-packages/shipped-packages.component';
 import { PackingHierarchyComponent } from './dashboard/operations/packing/packing-hierarchy/packing-hierarchy.component';
+import { PackagingHistoryComponent } from './dashboard/operations/packing/packaging-history/packaging-history.component';
 
 @NgModule({
   declarations: [
@@ -98,6 +99,7 @@ import { PackingHierarchyComponent } from './dashboard/operations/packing/packin
     ClosedPackagesComponent,
     ShippedPackagesComponent,
     PackingHierarchyComponent,
+    PackagingHistoryComponent,
     SortPipe
   ],
   imports: [

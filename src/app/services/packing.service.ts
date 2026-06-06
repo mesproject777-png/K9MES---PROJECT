@@ -4,8 +4,8 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 export type PackageStatus = 'OPEN' | 'CLOSED' | 'SHIPPED';
-export type PackageType = 'BOX' | 'SHIPMENT' | 'MULTIBOX';
-export type PackageSource = 'PACKAGE' | 'MULTIBOX';
+export type PackageType = 'BOX' | 'SHIPMENT' | 'MULTIBOX' | 'PALLET';
+export type PackageSource = 'PACKAGE' | 'MULTIBOX' | 'PALLET' | 'SHIPMENT';
 
 export interface PackingPackageSummary {
   id: number;

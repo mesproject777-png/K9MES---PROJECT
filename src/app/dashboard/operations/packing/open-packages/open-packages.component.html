@@ -7,6 +7,7 @@
 
     <div class="page__actions">
       <button class="btn" (click)="refresh()" [disabled]="isLoading">Refresh</button>
+      <button class="btn" routerLink="/dashboard/operations/packing/history">History</button>
       <button class="btn btn--primary" (click)="create('BOX')" [disabled]="isLoading">New Box</button>
       <button class="btn btn--primary" (click)="create('SHIPMENT')" [disabled]="isLoading">New Shipment</button>
     </div>
@@ -70,8 +71,8 @@
           <button class="btn btn--danger" type="button" (click)="closeSelected()" [disabled]="isLoading">Close Package</button>
         </form>
 
-        <div class="muted" *ngIf="selectedSource === 'MULTIBOX'">
-          MultiBox records are scanned from the operator Pack station. Partial quantity remains open.
+        <div class="muted" *ngIf="selectedSource !== 'PACKAGE'">
+          {{ selectedPackageDetails.package.package_type }} records are scanned from the operator PackStation. Open containers remain available for additional packing.
         </div>
 
         <div class="table-wrap">

@@ -10,9 +10,9 @@
         type="search"
         name="packingHierarchySearch"
         [(ngModel)]="query"
-        placeholder="Search SN, RSN, WO, PN, multibox, pallet, shipment"
+        placeholder="Search SN, Part Number, or Work Order"
       />
-      <button type="submit" class="primary-button" [disabled]="isLoading">Search</button>
+      <button type="submit" class="primary-button" [disabled]="isLoading || !query.trim()">Search</button>
       <button type="button" class="secondary-button" (click)="clear()" [disabled]="isLoading || !query">Clear</button>
     </form>
   </div>
@@ -27,13 +27,14 @@
     <span>Shipment is final</span>
   </div>
 
-  <div class="table-card">
+  <p *ngIf="!hasSearched && !isLoading" class="message">Search by SN, Part Number, or Work Order to view packing history records.</p>
+
+  <div class="table-card" *ngIf="hasSearched">
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>SN</th>
-            <th>RSN</th>
             <th>PN</th>
             <th>WO</th>
             <th>SN Status</th>
@@ -46,7 +47,6 @@
         <tbody>
           <tr *ngFor="let row of rows">
             <td>{{ row.sn }}</td>
-            <td>{{ row.rsn || '-' }}</td>
             <td>{{ row.pn || '-' }}</td>
             <td>{{ row.wo || '-' }}</td>
             <td><span class="status" [class]="statusClass(row.serial_status)">{{ row.serial_status || '-' }}</span></td>
@@ -65,7 +65,7 @@
             <td>{{ row.last_packed_at | date:'yyyy-MM-dd HH:mm' }}</td>
           </tr>
           <tr *ngIf="!isLoading && rows.length === 0">
-            <td colspan="9" class="empty">No packing hierarchy records found.</td>
+            <td colspan="8" class="empty">No matching packing history records found.</td>
           </tr>
         </tbody>
       </table>

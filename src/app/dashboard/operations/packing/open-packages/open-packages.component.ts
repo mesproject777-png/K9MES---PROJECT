@@ -80,6 +80,27 @@ export class OpenPackagesComponent {
       return;
     }
 
+    if (this.selectedSource !== 'PACKAGE') {
+      this.selectedPackageDetails = {
+        package: {
+          id: pack.id,
+          package_no: pack.package_no,
+          package_type: pack.package_type,
+          status: pack.status,
+          source: pack.source,
+          created_by: pack.created_by,
+          created_at: pack.created_at,
+          updated_at: pack.created_at,
+          closed_by: pack.closed_by,
+          closed_at: pack.closed_at,
+          shipped_by: pack.shipped_by,
+          shipped_at: pack.shipped_at,
+        },
+        items: [],
+      };
+      return;
+    }
+
     this.loadSelectedDetails();
   }
 

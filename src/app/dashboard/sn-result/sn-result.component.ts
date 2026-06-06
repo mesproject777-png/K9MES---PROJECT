@@ -21,6 +21,7 @@ import {
   TraceHistoryRow,
   TraceSearchResponse,
 } from '../../services/traceability.service';
+import { PackingHierarchyRow, PackingService } from '../../services/packing.service';
 
 type SnResultTab = 'preview' | 'history';
 type PreviewStatus = 'Completed' | 'In Progress' | 'Pending' | 'Paused';
@@ -106,6 +107,22 @@ type SnHistoryDisplayRow = {
   isBinding?: boolean;
 };
 
+type LogisticsMultiboxGroup = {
+  multiboxNo: string;
+  multiboxStatus: string;
+  palletNo: string;
+  shipmentNo: string;
+  rows: PackingHierarchyRow[];
+};
+
+type LogisticsPalletGroup = {
+  palletNo: string;
+  palletStatus: string;
+  shipmentNo: string;
+  multiboxes: LogisticsMultiboxGroup[];
+  rows: PackingHierarchyRow[];
+};
+
 @Component({
   selector: 'app-sn-result',
   standalone: false,
@@ -135,6 +152,11 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   isAssembledPartsOpen = false;
   activePreviewStation: PreviewStationNode | null = null;
   activePreviewLogistics: PreviewFlowNode | null = null;
+  logisticsLoading = false;
+  logisticsMessage = '';
+  logisticsRows: PackingHierarchyRow[] = [];
+  selectedShipmentPalletNo = '';
+  activeSnListMultibox: LogisticsMultiboxGroup | null = null;
   previewStationStatusById: Record<number, PreviewStatus> = {};
 
   private readonly workflowApiUrl = `${environment.apiUrl}/api/workflow`;
@@ -147,6 +169,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   constructor(
     private http: HttpClient,
     private traceabilityService: TraceabilityService,
+    private packingService: PackingService,
     private route: ActivatedRoute,
     private router: Router,
     private location: Location,
@@ -400,6 +423,48 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return this.getLogisticsStatus(this.activePreviewLogistics?.variant);
   }
 
+  get activeLogisticsReference(): string {
+    switch (this.activePreviewLogistics?.variant) {
+      case 'cart':
+        return this.traceMultiboxNo;
+      case 'pallet':
+        return this.tracePalletNo;
+      case 'truck':
+        return this.traceShipmentNo;
+      default:
+        return '';
+    }
+  }
+
+  get activeLogisticsKindLabel(): string {
+    switch (this.activePreviewLogistics?.variant) {
+      case 'cart':
+        return 'MultiBox';
+      case 'pallet':
+        return 'Pallet';
+      case 'truck':
+        return 'Shipment';
+      default:
+        return 'Packing';
+    }
+  }
+
+  get logisticsMultiboxes(): LogisticsMultiboxGroup[] {
+    return this.groupRowsByMultibox(this.logisticsRows);
+  }
+
+  get logisticsPallets(): LogisticsPalletGroup[] {
+    return this.groupRowsByPallet(this.logisticsRows);
+  }
+
+  get selectedShipmentPallet(): LogisticsPalletGroup | null {
+    return this.logisticsPallets.find((pallet) => pallet.palletNo === this.selectedShipmentPalletNo) || null;
+  }
+
+  get activeSnListRows(): PackingHierarchyRow[] {
+    return this.activeSnListMultibox?.rows || [];
+  }
+
   get traceMultiboxNo(): string {
     return String(this.traceResult?.serial?.multibox_no || '').trim();
   }
@@ -525,7 +590,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
   }
 
-  private isPackStation(station: PreviewStationNode): boolean {
+  isPackStation(station: PreviewStationNode): boolean {
     return `${station.station_code || ''} ${station.station_name || ''}`.toLowerCase().includes('pack');
   }
 
@@ -701,11 +766,60 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   openPreviewLogisticsDetails(event: Event, node: PreviewFlowNode): void {
     event.preventDefault();
     event.stopPropagation();
+
     this.activePreviewLogistics = node;
+    this.logisticsRows = [];
+    this.logisticsMessage = '';
+    this.selectedShipmentPalletNo = '';
+    this.activeSnListMultibox = null;
+
+    const reference = this.getLogisticsReferenceForNode(node);
+    if (!reference) {
+      this.logisticsLoading = false;
+      this.logisticsMessage = `${node.title || 'Packing'} is not completed for this SN.`;
+      return;
+    }
+
+    this.logisticsLoading = true;
+    this.packingService.listHierarchy(reference).subscribe({
+      next: (response) => {
+        this.logisticsRows = response.data || [];
+        this.logisticsLoading = false;
+        this.logisticsMessage = this.logisticsRows.length ? '' : `No records found for ${reference}.`;
+      },
+      error: (error) => {
+        this.logisticsRows = [];
+        this.logisticsLoading = false;
+        this.logisticsMessage = error?.error?.message || `No records found for ${reference}.`;
+      },
+    });
   }
 
   closePreviewLogisticsDetails(): void {
     this.activePreviewLogistics = null;
+    this.logisticsLoading = false;
+    this.logisticsMessage = '';
+    this.logisticsRows = [];
+    this.selectedShipmentPalletNo = '';
+    this.activeSnListMultibox = null;
+    this.queuePreviewConnectorRefresh();
+  }
+
+  selectShipmentPallet(pallet: LogisticsPalletGroup): void {
+    this.selectedShipmentPalletNo = pallet.palletNo;
+    this.activeSnListMultibox = null;
+  }
+
+  openMultiboxSerials(multibox: LogisticsMultiboxGroup): void {
+    this.activeSnListMultibox = multibox;
+  }
+
+  closeMultiboxSerials(): void {
+    this.activeSnListMultibox = null;
+  }
+
+  openPackagingHistory(): void {
+    this.router.navigate(['/dashboard/operations/packing/history']);
   }
 
   getLogisticsStatus(variant?: LogisticsVariant): PreviewStatus {
@@ -742,6 +856,11 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.isAssembledPartsOpen = false;
     this.activePreviewStation = null;
     this.activePreviewLogistics = null;
+    this.logisticsLoading = false;
+    this.logisticsMessage = '';
+    this.logisticsRows = [];
+    this.selectedShipmentPalletNo = '';
+    this.activeSnListMultibox = null;
 
     this.traceabilityService.search(serial).subscribe({
       next: (result) => {
@@ -786,6 +905,53 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
         this.previewMessage = 'No preview data found for this serial number.';
       },
     });
+  }
+
+  private getLogisticsReferenceForNode(node: PreviewFlowNode): string {
+    switch (node.variant) {
+      case 'cart':
+        return this.traceMultiboxNo;
+      case 'pallet':
+        return this.tracePalletNo;
+      case 'truck':
+        return this.traceShipmentNo;
+      default:
+        return '';
+    }
+  }
+
+  private groupRowsByMultibox(rows: PackingHierarchyRow[]): LogisticsMultiboxGroup[] {
+    const groups = new Map<string, PackingHierarchyRow[]>();
+
+    rows.forEach((row) => {
+      const multiboxNo = String(row.multibox_no || 'Unassigned MultiBox').trim() || 'Unassigned MultiBox';
+      groups.set(multiboxNo, [...(groups.get(multiboxNo) || []), row]);
+    });
+
+    return Array.from(groups.entries()).map(([multiboxNo, groupRows]) => ({
+      multiboxNo,
+      multiboxStatus: String(groupRows[0]?.multibox_status || '-'),
+      palletNo: String(groupRows[0]?.pallet_no || '-'),
+      shipmentNo: String(groupRows[0]?.shipment_no || '-'),
+      rows: groupRows,
+    }));
+  }
+
+  private groupRowsByPallet(rows: PackingHierarchyRow[]): LogisticsPalletGroup[] {
+    const groups = new Map<string, PackingHierarchyRow[]>();
+
+    rows.forEach((row) => {
+      const palletNo = String(row.pallet_no || 'Unassigned Pallet').trim() || 'Unassigned Pallet';
+      groups.set(palletNo, [...(groups.get(palletNo) || []), row]);
+    });
+
+    return Array.from(groups.entries()).map(([palletNo, groupRows]) => ({
+      palletNo,
+      palletStatus: String(groupRows[0]?.pallet_status || '-'),
+      shipmentNo: String(groupRows[0]?.shipment_no || '-'),
+      multiboxes: this.groupRowsByMultibox(groupRows),
+      rows: groupRows,
+    }));
   }
 
   private getStationIcon(index: number, name: string, code: string, sampleMode: string): string {

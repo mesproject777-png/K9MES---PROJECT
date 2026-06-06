@@ -48,6 +48,7 @@ import { OpenPackagesComponent } from './dashboard/operations/packing/open-packa
 import { ClosedPackagesComponent } from './dashboard/operations/packing/closed-packages/closed-packages.component';
 import { ShippedPackagesComponent } from './dashboard/operations/packing/shipped-packages/shipped-packages.component';
 import { PackingHierarchyComponent } from './dashboard/operations/packing/packing-hierarchy/packing-hierarchy.component';
+import { PackagingHistoryComponent } from './dashboard/operations/packing/packaging-history/packaging-history.component';
 import { authGuard } from './guards/auth.guard';
 import { permissionGuard } from './guards/permission.guard';
 
@@ -84,6 +85,7 @@ const routes: Routes = [
       { path: 'operations/packing/closed', component: ClosedPackagesComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/packaging' } },
       { path: 'operations/packing/shipped', component: ShippedPackagesComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/packaging' } },
       { path: 'operations/packing/hierarchy', component: PackingHierarchyComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/packaging' } },
+      { path: 'operations/packing/history', component: PackagingHistoryComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/packaging' } },
       {
         path: 'master', 
         component: MasterComponent,

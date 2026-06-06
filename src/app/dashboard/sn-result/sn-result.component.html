@@ -30,7 +30,121 @@
         <p *ngIf="previewLoading" class="message">Loading preview data...</p>
         <p *ngIf="!previewLoading && previewMessage" class="message">{{ previewMessage }}</p>
 
-        <div class="preview-canvas" *ngIf="!previewLoading && workflowSnapshot?.routing?.length">
+        <div class="logistics-detail-page" *ngIf="!previewLoading && activePreviewLogistics as logistics">
+          <div class="logistics-detail-header">
+            <button type="button" class="secondary-button" (click)="closePreviewLogisticsDetails()">
+              <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+              Back to SN Chart
+            </button>
+            <div>
+              <span>{{ activeLogisticsKindLabel }}</span>
+              <h3>{{ activeLogisticsTitle }} - {{ activeLogisticsReference || '-' }}</h3>
+              <p>{{ partNumber }} / {{ workOrderNumber }} / {{ serialNumber }}</p>
+            </div>
+            <strong [class.completed]="activeLogisticsStatus === 'Completed'">
+              {{ activeLogisticsStatus === 'Completed' ? 'Passed' : activeLogisticsStatus }}
+            </strong>
+          </div>
+
+          <p *ngIf="logisticsLoading" class="message">Loading packing hierarchy...</p>
+          <p *ngIf="!logisticsLoading && logisticsMessage" class="message">{{ logisticsMessage }}</p>
+
+          <section *ngIf="!logisticsLoading && logistics.variant === 'cart' && logisticsRows.length" class="logistics-section">
+            <div class="logistics-section-title">
+              <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+              <h4>SNs In MultiBox {{ traceMultiboxNo }}</h4>
+            </div>
+
+            <div class="history-scroll">
+              <table class="history-table logistics-table">
+                <thead>
+                  <tr>
+                    <th>SN</th>
+                    <th>RSN</th>
+                    <th>PN</th>
+                    <th>WO</th>
+                    <th>Status</th>
+                    <th>Condition</th>
+                    <th>Pallet</th>
+                    <th>Shipment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let serial of logisticsRows">
+                    <td>
+                      <button type="button" class="history-sn-link" (click)="openLinkedSerial(serial.sn)">
+                        {{ serial.sn }}
+                      </button>
+                    </td>
+                    <td>{{ serial.rsn || '-' }}</td>
+                    <td>{{ serial.pn || '-' }}</td>
+                    <td>{{ serial.wo || '-' }}</td>
+                    <td>{{ serial.serial_status || '-' }}</td>
+                    <td>{{ serial.condition || '-' }}</td>
+                    <td>{{ serial.pallet_no || '-' }}</td>
+                    <td>{{ serial.shipment_no || '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section *ngIf="!logisticsLoading && logistics.variant === 'pallet' && logisticsMultiboxes.length" class="logistics-section">
+            <div class="logistics-section-title">
+              <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+              <h4>MultiBoxes In Pallet {{ tracePalletNo }}</h4>
+            </div>
+
+            <div class="logistics-card-grid">
+              <button type="button" class="logistics-drill-card" *ngFor="let multibox of logisticsMultiboxes" (click)="openMultiboxSerials(multibox)">
+                <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+                <strong>{{ multibox.multiboxNo }}</strong>
+                <small>{{ multibox.rows.length }} SN</small>
+                <em>{{ multibox.multiboxStatus }}</em>
+              </button>
+            </div>
+          </section>
+
+          <section *ngIf="!logisticsLoading && logistics.variant === 'truck' && logisticsPallets.length" class="logistics-section">
+            <div class="logistics-section-title">
+              <span class="material-symbols-outlined" aria-hidden="true">local_shipping</span>
+              <h4>Pallets In Shipment {{ traceShipmentNo }}</h4>
+            </div>
+
+            <div class="logistics-card-grid pallet-grid">
+              <button
+                type="button"
+                class="logistics-drill-card"
+                *ngFor="let pallet of logisticsPallets"
+                [class.selected]="selectedShipmentPalletNo === pallet.palletNo"
+                (click)="selectShipmentPallet(pallet)"
+              >
+                <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+                <strong>{{ pallet.palletNo }}</strong>
+                <small>{{ pallet.multiboxes.length }} MultiBox / {{ pallet.rows.length }} SN</small>
+                <em>{{ pallet.palletStatus }}</em>
+              </button>
+            </div>
+
+            <div class="logistics-subsection" *ngIf="selectedShipmentPallet as pallet">
+              <div class="logistics-section-title compact">
+                <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+                <h4>MultiBoxes In {{ pallet.palletNo }}</h4>
+              </div>
+
+              <div class="logistics-card-grid">
+                <button type="button" class="logistics-drill-card" *ngFor="let multibox of pallet.multiboxes" (click)="openMultiboxSerials(multibox)">
+                  <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+                  <strong>{{ multibox.multiboxNo }}</strong>
+                  <small>{{ multibox.rows.length }} SN</small>
+                  <em>{{ multibox.multiboxStatus }}</em>
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="preview-canvas" *ngIf="!previewLoading && !activePreviewLogistics && workflowSnapshot?.routing?.length">
           <div class="preview-hierarchy">
             <div class="preview-node hierarchy-node plant-node">
               <span class="preview-node-icon plant-icon material-symbols-outlined" aria-hidden="true">factory</span>
@@ -210,7 +324,6 @@
                         [class.completed]="getLogisticsStatus(node.variant) === 'Completed'"
                         [class.pending]="getLogisticsStatus(node.variant) === 'Pending'"
                         [class.shipped-node]="node.variant === 'truck' && isSerialShipped"
-                        [class.selected]="activePreviewLogistics?.id === node.id"
                         (pointerdown)="openPreviewLogisticsDetails($event, node)"
                         (click)="openPreviewLogisticsDetails($event, node)"
                       >
@@ -351,58 +464,6 @@
   </div>
 </div>
 
-<div *ngIf="activePreviewLogistics as logistics" class="preview-popup-backdrop station-popup-backdrop">
-  <div class="preview-station-modal" role="dialog" aria-modal="true" aria-labelledby="previewLogisticsTitle">
-    <div class="station-modal-top">
-      <span class="station-modal-icon-wrap" aria-hidden="true">
-        <span class="station-modal-icon material-symbols-outlined">{{ activeLogisticsIcon }}</span>
-        <span class="station-modal-gear material-symbols-outlined">inventory_management</span>
-      </span>
-      <div>
-        <h3 id="previewLogisticsTitle">{{ activeLogisticsTitle }}</h3>
-      </div>
-      <button type="button" class="icon-close-button" aria-label="Close packing details" (click)="closePreviewLogisticsDetails()">
-        <span class="material-symbols-outlined" aria-hidden="true">close</span>
-      </button>
-    </div>
-
-    <dl class="station-detail-list">
-      <div>
-        <dt>Part Number</dt>
-        <dd>{{ partNumber }}</dd>
-      </div>
-      <div>
-        <dt>Work Order</dt>
-        <dd>{{ workOrderNumber }}</dd>
-      </div>
-      <div>
-        <dt>Status</dt>
-        <dd>{{ activeLogisticsStatus === 'Completed' ? 'Passed' : activeLogisticsStatus }}</dd>
-      </div>
-      <div *ngIf="logistics.variant === 'cart'">
-        <dt>MultiBox</dt>
-        <dd>{{ traceMultiboxNo || '-' }}</dd>
-      </div>
-      <div *ngIf="logistics.variant === 'cart'">
-        <dt>Pallet</dt>
-        <dd>{{ tracePalletNo || '-' }}</dd>
-      </div>
-      <div *ngIf="logistics.variant === 'pallet'">
-        <dt>Pallet</dt>
-        <dd>{{ tracePalletNo || '-' }}</dd>
-      </div>
-      <div *ngIf="logistics.variant === 'pallet'">
-        <dt>Shipment</dt>
-        <dd>{{ traceShipmentNo || '-' }}</dd>
-      </div>
-      <div *ngIf="logistics.variant === 'truck'">
-        <dt>Shipment</dt>
-        <dd>{{ traceShipmentNo || '-' }}</dd>
-      </div>
-    </dl>
-  </div>
-</div>
-
 <div *ngIf="isAssembledPartsOpen" class="preview-popup-backdrop">
   <div class="preview-child-modal" role="dialog" aria-modal="true" aria-labelledby="assembledPartsTitle">
     <div class="preview-popup-header">
@@ -522,5 +583,61 @@
       </ng-template>
     </div>
 
+    <div class="station-modal-actions single-action" *ngIf="isPackStation(station)">
+      <button type="button" class="secondary-button" (click)="openPackagingHistory()">
+        <span class="material-symbols-outlined" aria-hidden="true">history</span>
+        Open Packaging History
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<div *ngIf="activeSnListMultibox as multibox" class="preview-popup-backdrop">
+  <div class="preview-child-modal logistics-sn-modal" role="dialog" aria-modal="true" aria-labelledby="multiboxSnTitle">
+    <div class="preview-popup-header">
+      <div>
+        <h3 id="multiboxSnTitle">SNs In {{ multibox.multiboxNo }}</h3>
+        <p>{{ multibox.palletNo }} / {{ multibox.shipmentNo }}</p>
+      </div>
+      <button type="button" class="icon-close-button" aria-label="Close multibox SNs" (click)="closeMultiboxSerials()">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+
+    <div class="preview-child-summary">
+      <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+      <strong>{{ activeSnListRows.length }} SN</strong>
+      <small>{{ multibox.multiboxStatus }}</small>
+    </div>
+
+    <div class="history-scroll logistics-sn-table" *ngIf="activeSnListRows.length > 0">
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>SN</th>
+            <th>RSN</th>
+            <th>PN</th>
+            <th>WO</th>
+            <th>Status</th>
+            <th>Condition</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let serial of activeSnListRows">
+            <td>
+              <button type="button" class="history-sn-link" (click)="openLinkedSerial(serial.sn)">
+                {{ serial.sn }}
+              </button>
+            </td>
+            <td>{{ serial.rsn || '-' }}</td>
+            <td>{{ serial.pn || '-' }}</td>
+            <td>{{ serial.wo || '-' }}</td>
+            <td>{{ serial.serial_status || '-' }}</td>
+            <td>{{ serial.condition || '-' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>

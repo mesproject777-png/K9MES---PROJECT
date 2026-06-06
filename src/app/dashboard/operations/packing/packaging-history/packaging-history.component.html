@@ -1,0 +1,93 @@
+<div class="history-page">
+  <div class="history-header">
+    <div>
+      <p class="eyebrow">Packaging History</p>
+      <h2>Open Multibox, Pallet, and Shipment Containers</h2>
+      <p>Use this page to find containers that are still open before adding more items.</p>
+    </div>
+
+    <button type="button" class="refresh-button" (click)="refresh()" [disabled]="isLoading">
+      <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+      Refresh
+    </button>
+  </div>
+
+  <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
+  <p *ngIf="isLoading" class="message">Loading packaging history...</p>
+
+  <section class="history-section open-section">
+    <div class="section-title">
+      <div>
+        <h3>Still Open</h3>
+        <p>These containers can still receive additional packing activity.</p>
+      </div>
+      <span class="count-pill">{{ openContainers.length }}</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Unique ID</th>
+            <th>Type</th>
+            <th>Qty</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Closed/Shipped</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let pack of openContainers; trackBy: trackByPackage">
+            <td><strong>{{ pack.package_no }}</strong></td>
+            <td>{{ pack.package_type }}</td>
+            <td>{{ pack.item_count || 0 }}</td>
+            <td><span class="status-chip" [class]="getStatusClass(pack.status)">{{ pack.status }}</span></td>
+            <td>{{ pack.created_at | date:'yyyy-MM-dd HH:mm' }}</td>
+            <td>-</td>
+          </tr>
+          <tr *ngIf="!isLoading && openContainers.length === 0">
+            <td colspan="6" class="empty">No open multibox, pallet, or shipment containers found.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="history-section">
+    <div class="section-title">
+      <div>
+        <h3>Previous History</h3>
+        <p>Closed and shipped containers are listed here for reference.</p>
+      </div>
+      <span class="count-pill neutral">{{ previousContainers.length }}</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Unique ID</th>
+            <th>Type</th>
+            <th>Qty</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Closed/Shipped</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let pack of previousContainers; trackBy: trackByPackage">
+            <td><strong>{{ pack.package_no }}</strong></td>
+            <td>{{ pack.package_type }}</td>
+            <td>{{ pack.item_count || 0 }}</td>
+            <td><span class="status-chip" [class]="getStatusClass(pack.status)">{{ pack.status }}</span></td>
+            <td>{{ pack.created_at | date:'yyyy-MM-dd HH:mm' }}</td>
+            <td>{{ getClosedDate(pack) ? (getClosedDate(pack) | date:'yyyy-MM-dd HH:mm') : '-' }}</td>
+          </tr>
+          <tr *ngIf="!isLoading && previousContainers.length === 0">
+            <td colspan="6" class="empty">No previous packaging history found.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
