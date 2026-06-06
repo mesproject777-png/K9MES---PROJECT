@@ -296,6 +296,8 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   showPassSeries = true;
   showFailSeries = true;
   selectedChartPoint: ActivityQualityChartPoint | null = null;
+  activityDetailsCurrentPage = 1;
+  readonly activityDetailsPageSize = 10;
   rerunEnabled = false;
   fullScreenEnabled = false;
   rerunTimer: number | null = null;
@@ -542,6 +544,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.activityLoading = true;
     this.activityErrorMessage = '';
     this.selectedChartPoint = null;
+    this.activityDetailsCurrentPage = 1;
 
     this.http.get<ActivityQualityResponse>(this.activityQualityApi, { params: this.buildActivityQualityParams() }).subscribe({
       next: (response) => {
@@ -633,6 +636,12 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
   selectChartPoint(point: ActivityQualityChartPoint): void {
     this.selectedChartPoint = point;
+    this.activityDetailsCurrentPage = 1;
+  }
+
+  closeActivityDetailsPopup(): void {
+    this.selectedChartPoint = null;
+    this.activityDetailsCurrentPage = 1;
   }
 
   exportActivityData(): void {
@@ -652,6 +661,26 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     ]);
     this.downloadText('activity-quality-dashboard.csv', [headers, ...rows].map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n'));
     this.showExportMenu = false;
+  }
+
+  exportChartPointData(point: ActivityQualityChartPoint): void {
+    const headers = ['Date/Time', 'Site', 'Station', 'Product Line', 'Part Number', 'Work Order', 'PC', 'User', 'Serial Number', 'Result', 'Failure Reason'];
+    const rows = this.activityRowsForPoint(point).map((row) => [
+      row.date_time,
+      row.site,
+      row.station,
+      row.product_line,
+      row.part_number,
+      row.work_order,
+      row.pc,
+      row.user_name,
+      row.serial_number,
+      row.result,
+      row.failure_reason,
+    ]);
+    const safeLabel = point.label.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'bar';
+    const csv = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    this.downloadText(`activity-quality-${safeLabel}.csv`, csv);
   }
 
   exportChartImage(): void {
@@ -680,6 +709,15 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     return Math.max(value > 0 ? 8 : 0, Math.round((value / this.maxChartCount) * 170));
   }
 
+  chartSnCount(point: ActivityQualityChartPoint): number {
+    return point.passCount + point.failCount;
+  }
+
+  chartFailRate(point: ActivityQualityChartPoint): number {
+    const total = this.chartSnCount(point);
+    return total === 0 ? 0 : Math.round((point.failCount / total) * 100);
+  }
+
   get yieldPolyline(): string {
     const points = this.activityData.chartData;
     if (points.length === 0) {
@@ -704,6 +742,54 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     }
 
     return this.activityData.detailedRows.filter((row) => this.rowMatchesSelectedPoint(row));
+  }
+
+  get pagedActivityDetailRows(): ActivityQualityDetailRow[] {
+    const start = (this.activityDetailsCurrentPage - 1) * this.activityDetailsPageSize;
+    return this.filteredDetailRows.slice(start, start + this.activityDetailsPageSize);
+  }
+
+  get activityDetailsTotalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredDetailRows.length / this.activityDetailsPageSize));
+  }
+
+  get activityDetailsShowingStart(): number {
+    return this.filteredDetailRows.length === 0 ? 0 : ((this.activityDetailsCurrentPage - 1) * this.activityDetailsPageSize) + 1;
+  }
+
+  get activityDetailsShowingEnd(): number {
+    return Math.min(this.filteredDetailRows.length, this.activityDetailsCurrentPage * this.activityDetailsPageSize);
+  }
+
+  get activityDetailsPageNumbers(): Array<number | string> {
+    const total = this.activityDetailsTotalPages;
+    if (total <= 6) {
+      return Array.from({ length: total }, (_, index) => index + 1);
+    }
+
+    const pages = new Set<number>([1, total, this.activityDetailsCurrentPage]);
+    if (this.activityDetailsCurrentPage > 1) pages.add(this.activityDetailsCurrentPage - 1);
+    if (this.activityDetailsCurrentPage < total) pages.add(this.activityDetailsCurrentPage + 1);
+
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const result: Array<number | string> = [];
+    sorted.forEach((page, index) => {
+      const previous = sorted[index - 1];
+      if (previous && page - previous > 1) {
+        result.push('...');
+      }
+      result.push(page);
+    });
+
+    return result;
+  }
+
+  setActivityDetailsPage(page: number | string): void {
+    if (typeof page !== 'number') {
+      return;
+    }
+
+    this.activityDetailsCurrentPage = Math.max(1, Math.min(this.activityDetailsTotalPages, page));
   }
 
   optionValues(field: keyof ActivityQualityDetailRow): string[] {
@@ -2156,6 +2242,14 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       return true;
     }
 
+    return this.rowMatchesActivityPointLabel(row, label);
+  }
+
+  private activityRowsForPoint(point: ActivityQualityChartPoint): ActivityQualityDetailRow[] {
+    return this.activityData.detailedRows.filter((row) => this.rowMatchesActivityPointLabel(row, point.label));
+  }
+
+  private rowMatchesActivityPointLabel(row: ActivityQualityDetailRow, label: string): boolean {
     const date = row.date_time ? new Date(row.date_time) : null;
     switch (this.activityFilters.pivotBy) {
       case 'perSite':

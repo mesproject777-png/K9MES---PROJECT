@@ -106,6 +106,7 @@ public static class ConvertedEndpoints
                 "/api/stations",
                 "/api/work-orders",
                 "/api/sites",
+                "/api/station/check-sn",
                 "/api/traceability",
                 "/api/labels",
                 "/api/sgd-pos"
@@ -115,6 +116,7 @@ public static class ConvertedEndpoints
         MapSites(app);
         MapUserLogin(app);
         MapStations(app);
+        MapStationValidation(app);
         MapItems(app);
         MapItemRevisions(app);
         MapEpvTypes(app);
@@ -488,6 +490,236 @@ public static class ConvertedEndpoints
                 throw;
             }
         });
+    }
+
+    private static void MapStationValidation(WebApplication app)
+    {
+        app.MapGet("/api/station/check-sn", async (HttpRequest request) =>
+        {
+            static IResult Pass() => Results.Json(new { success = true, result = "PASS" });
+            static IResult Fail(string reason) => Results.Json(new { success = false, result = "FAIL", reason });
+
+            var rsn = request.Query["rsn"].ToString().Trim();
+            var userCode = request.Query["userCode"].ToString().Trim();
+            var password = request.Query["password"].ToString();
+            var workOrder = request.Query["workOrder"].ToString().Trim();
+
+            if (string.IsNullOrWhiteSpace(userCode) || string.IsNullOrWhiteSpace(password))
+            {
+                return Fail("User authentication failed");
+            }
+
+            if (string.IsNullOrWhiteSpace(rsn))
+            {
+                return Fail("Serial Number not found");
+            }
+
+            if (string.IsNullOrWhiteSpace(workOrder))
+            {
+                return Fail("Invalid Work Order");
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+
+            var userRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT login_id, password, is_active
+                FROM users
+                WHERE UPPER(login_id) = UPPER(@userCode)
+                LIMIT 1
+                """,
+                ("userCode", userCode));
+            var userAuthenticated = userRows.Count > 0 &&
+                userRows[0]["password"] is string storedPassword &&
+                string.Equals(storedPassword, password, StringComparison.Ordinal) &&
+                !(userRows[0]["is_active"] is bool active && !active);
+
+            var workOrderRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT id, wo, workflow_part_id, status
+                FROM workflow_work_orders
+                WHERE UPPER(wo) = UPPER(@workOrder)
+                LIMIT 1
+                """,
+                ("workOrder", workOrder));
+            if (workOrderRows.Count == 0)
+            {
+                return Fail("Invalid Work Order");
+            }
+
+            if (!userAuthenticated)
+            {
+                var stationLoginRows = await QueryRowsAsync(
+                    connection,
+                    """
+                    SELECT l.station_login_id
+                    FROM workflow_station_logins l
+                    JOIN workflow_routing_steps r ON r.id = l.workflow_routing_step_id
+                    WHERE UPPER(l.station_login_id) = UPPER(@userCode)
+                      AND l.station_login_password = @password
+                      AND r.workflow_part_id = @workflowPartId
+                      AND (l.workflow_work_order_id = @workflowWorkOrderId OR l.workflow_work_order_id IS NULL)
+                    LIMIT 1
+                    """,
+                    ("userCode", userCode),
+                    ("password", password),
+                    ("workflowPartId", workOrderRows[0]["workflow_part_id"]),
+                    ("workflowWorkOrderId", workOrderRows[0]["id"]));
+                userAuthenticated = stationLoginRows.Count > 0;
+            }
+
+            if (!userAuthenticated)
+            {
+                return Fail("User authentication failed");
+            }
+
+            var serialRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT sn.id, sn.sn, sn.rsn, sn.workflow_work_order_id, sn.workflow_part_id,
+                       sn.status AS serial_status, sn.condition, sn.current_station_code,
+                       sn.current_station_order, w.wo
+                FROM workflow_serial_numbers sn
+                JOIN workflow_work_orders w ON w.id = sn.workflow_work_order_id
+                WHERE UPPER(sn.rsn) = UPPER(@rsn)
+                   OR UPPER(sn.sn) = UPPER(@rsn)
+                LIMIT 1
+                """,
+                ("rsn", rsn));
+            if (serialRows.Count == 0)
+            {
+                return Fail("Serial Number not found");
+            }
+
+            var serial = serialRows[0];
+            if (Convert.ToInt32(serial["workflow_work_order_id"]) != Convert.ToInt32(workOrderRows[0]["id"]))
+            {
+                return Fail("Invalid Work Order");
+            }
+
+            if (string.Equals(serial["serial_status"]?.ToString(), "Completed", StringComparison.OrdinalIgnoreCase))
+            {
+                return Fail("Serial Number already completed");
+            }
+
+            if (string.Equals(serial["serial_status"]?.ToString(), "Failed", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(serial["serial_status"]?.ToString(), "SCRAP", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(serial["condition"]?.ToString(), "NG", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(serial["condition"]?.ToString(), "FAIL", StringComparison.OrdinalIgnoreCase))
+            {
+                return Fail("Route back required");
+            }
+
+            var routeRows = await GetWorkflowRouteRowsForPartAsync(connection, Convert.ToInt32(serial["workflow_part_id"]));
+            if (routeRows.Count == 0)
+            {
+                return Fail("Previous station not passed");
+            }
+
+            var currentOrder = ResolveCurrentOrder(serial, routeRows);
+            var currentStation = routeRows.FirstOrDefault(row => Convert.ToInt32(row["station_order"]) == currentOrder) ?? routeRows[0];
+            var currentStationCode = currentStation["station_code"]?.ToString() ?? string.Empty;
+            var previousStations = routeRows
+                .Where(row => Convert.ToInt32(row["station_order"]) < Convert.ToInt32(currentStation["station_order"]))
+                .ToList();
+
+            if (previousStations.Count > 0)
+            {
+                var previousCodes = previousStations
+                    .Select(row => row["station_code"]?.ToString())
+                    .Where(code => !string.IsNullOrWhiteSpace(code))
+                    .Cast<string>()
+                    .ToArray();
+                var passedRows = await QueryRowsAsync(
+                    connection,
+                    """
+                    SELECT DISTINCT station_code
+                    FROM workflow_serial_station_logs
+                    WHERE workflow_serial_id = @serialId
+                      AND UPPER(action_result) = 'PASS'
+                      AND station_code = ANY(@stationCodes)
+                    """,
+                    ("serialId", serial["id"]),
+                    ("stationCodes", previousCodes));
+                if (passedRows.Count < previousCodes.Length)
+                {
+                    return Fail("Previous station not passed");
+                }
+            }
+
+            var ruleRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT rule_text
+                FROM workflow_station_rules
+                WHERE workflow_part_id = @workflowPartId
+                  AND UPPER(station_code) = UPPER(@stationCode)
+                ORDER BY rule_order ASC
+                """,
+                ("workflowPartId", serial["workflow_part_id"]),
+                ("stationCode", currentStationCode));
+            if (ruleRows.Any(row => string.IsNullOrWhiteSpace(row["rule_text"]?.ToString())))
+            {
+                return Fail("Station validation failed");
+            }
+
+            var labelRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT label_code, printer_id, ip_address, port, status, is_label_printing_enabled
+                FROM workflow_station_label_printing
+                WHERE workflow_part_id = @workflowPartId
+                  AND UPPER(station_code) = UPPER(@stationCode)
+                LIMIT 1
+                """,
+                ("workflowPartId", serial["workflow_part_id"]),
+                ("stationCode", currentStationCode));
+            if (labelRows.Count > 0 && labelRows[0]["is_label_printing_enabled"] is bool labelEnabled && labelEnabled)
+            {
+                var label = labelRows[0];
+                var labelConfigOk =
+                    !string.IsNullOrWhiteSpace(label["label_code"]?.ToString()) &&
+                    !string.IsNullOrWhiteSpace(label["printer_id"]?.ToString()) &&
+                    !string.IsNullOrWhiteSpace(label["ip_address"]?.ToString()) &&
+                    !string.IsNullOrWhiteSpace(label["port"]?.ToString()) &&
+                    !string.Equals(label["status"]?.ToString(), "Inactive", StringComparison.OrdinalIgnoreCase);
+                if (!labelConfigOk)
+                {
+                    return Fail("Label printing validation failed");
+                }
+            }
+
+            var weighingRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT minimum_weight, maximum_weight, is_weighing_enabled
+                FROM workflow_station_weighing
+                WHERE workflow_part_id = @workflowPartId
+                  AND UPPER(station_code) = UPPER(@stationCode)
+                LIMIT 1
+                """,
+                ("workflowPartId", serial["workflow_part_id"]),
+                ("stationCode", currentStationCode));
+            if (weighingRows.Count > 0 && weighingRows[0]["is_weighing_enabled"] is bool weighingEnabled && weighingEnabled)
+            {
+                var weighing = weighingRows[0];
+                if (string.IsNullOrWhiteSpace(weighing["minimum_weight"]?.ToString()) ||
+                    string.IsNullOrWhiteSpace(weighing["maximum_weight"]?.ToString()))
+                {
+                    return Fail("Weighing validation failed");
+                }
+            }
+
+            return Pass();
+        })
+        .WithTags("Station")
+        .WithName("CheckSerialNumberForStation")
+        .WithSummary("Validate whether a serial number can continue at its current MES station.")
+        .WithDescription("Returns only PASS or FAIL. On FAIL, reason explains the first validation failure. Does not return SN history or route history.")
+        .Produces(StatusCodes.Status200OK);
     }
 
     private static void MapItems(WebApplication app)
