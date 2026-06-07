@@ -810,6 +810,11 @@ button.preview-node:focus-visible {
   color: #b42318;
 }
 
+.station-node small.failed {
+  background: #fee2e2;
+  color: #b42318;
+}
+
 .station-node.completed {
   border-color: #86efac;
   background: #f0fdf4;
@@ -826,6 +831,16 @@ button.preview-node:focus-visible {
 }
 
 .station-node.paused .station-icon {
+  background: #fee2e2;
+  color: #b42318;
+}
+
+.station-node.failed {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.station-node.failed .station-icon {
   background: #fee2e2;
   color: #b42318;
 }

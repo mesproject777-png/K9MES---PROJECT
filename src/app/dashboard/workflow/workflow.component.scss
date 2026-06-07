@@ -1918,8 +1918,8 @@ button.preview-node:focus-visible {
 
 .rules-tabs {
   display: flex;
-  gap: 18px;
-  padding: 0 18px 0 16px;
+  gap: 14px;
+  padding: 0 20px;
   border-bottom: 1px solid #dde5f0;
   background: #ffffff;
   overflow-x: auto;
@@ -1928,6 +1928,7 @@ button.preview-node:focus-visible {
 .rules-tab {
   min-height: 44px;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 7px;
   padding: 0 2px;
@@ -1951,7 +1952,8 @@ button.preview-node:focus-visible {
   font-size: 19px;
 }
 
-.label-printing-tab {
+.label-printing-tab,
+.repair-station-tab {
   display: grid;
   gap: 10px;
   padding: 12px 16px;
@@ -1972,7 +1974,9 @@ button.preview-node:focus-visible {
 .label-print-toggle-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
+  max-width: 520px;
 }
 
 .label-print-switch {
@@ -2061,6 +2065,10 @@ button.preview-node:focus-visible {
   font: inherit;
   font-weight: 650;
   outline: none;
+}
+
+.repair-station-tab .rules-field {
+  max-width: 360px;
 }
 
 .rules-field input:focus,

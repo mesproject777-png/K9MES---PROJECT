@@ -25,7 +25,7 @@ import {
 import { PackingHierarchyRow, PackingService } from '../../services/packing.service';
 
 type SnResultTab = 'preview' | 'history';
-type PreviewStatus = 'Completed' | 'In Progress' | 'Pending' | 'Paused';
+type PreviewStatus = 'Completed' | 'In Progress' | 'Pending' | 'Paused' | 'Failed';
 
 type WorkflowSnapshot = {
   partNumber?: {
@@ -604,6 +604,10 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       return null;
     }
 
+    if (this.isStationFailed(stationCode)) {
+      return 'Failed';
+    }
+
     switch (routeStep.state) {
       case 'completed':
         return 'Completed';
@@ -737,11 +741,11 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       return true;
     }
 
-    if (eventType && eventType !== 'PASS') {
+    if (eventType && eventType !== 'PASS' && eventType !== 'FAIL') {
       return false;
     }
 
-    return result === 'PASS';
+    return result === 'PASS' || result === 'FAIL';
   }
 
   private shouldShowSnHistoryDisplayRow(row: SnHistoryDisplayRow): boolean {
@@ -752,6 +756,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
 
     return action.startsWith('PASS')
+      || action.startsWith('FAIL')
       || action.startsWith('SCRAP')
       || action.startsWith('UNDO SCRAP')
       || action.startsWith('SN_GENERATED')
@@ -770,6 +775,29 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
 
   getStatusClass(status: PreviewStatus): string {
     return status.toLowerCase().replace(/\s+/g, '-');
+  }
+
+  private isStationFailed(stationCode: string): boolean {
+    const normalizedStation = String(stationCode || '').trim().toUpperCase();
+    if (!normalizedStation) {
+      return false;
+    }
+
+    const stationRows = (this.traceResult?.history || [])
+      .filter((history) => String(history.station || '').trim().toUpperCase() === normalizedStation)
+      .map((history) => ({
+        result: String(history.result || '').trim().toUpperCase(),
+        date: this.parseHistoryTimestamp(history.date_time),
+      }))
+      .filter((history) => history.result === 'PASS' || history.result === 'FAIL')
+      .sort((a, b) => b.date - a.date);
+
+    return stationRows[0]?.result === 'FAIL';
+  }
+
+  private parseHistoryTimestamp(value: string | null | undefined): number {
+    const timestamp = value ? new Date(value).getTime() : 0;
+    return Number.isFinite(timestamp) ? timestamp : 0;
   }
 
   openChildDetails(): void {

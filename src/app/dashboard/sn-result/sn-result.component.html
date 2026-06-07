@@ -302,6 +302,7 @@
                         [class.station-square]="node.station?.sample_mode !== 'Sample'"
                         [class.selected]="activePreviewStation?.id === node.station?.id"
                         [class.completed]="node.station?.status === 'Completed'"
+                        [class.failed]="node.station?.status === 'Failed'"
                         [class.paused]="node.station?.status === 'Paused'"
                         [class.pending]="node.station?.status === 'Pending'"
                         (pointerdown)="openPreviewStationDetails($event, node.station)"
