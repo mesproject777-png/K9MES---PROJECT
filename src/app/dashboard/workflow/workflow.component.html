@@ -75,50 +75,61 @@
                 </small>
               </div>
 
-              <div class="form-field">
-                <label for="workflowBoxQty">Box Qty</label>
-                <input
-                  id="workflowBoxQty"
-                  type="text"
-                  inputmode="numeric"
-                  pattern="[0-9]*"
-                  formControlName="box_qty"
-                  (keydown)="allowNumberOnly($event)"
-                  (input)="sanitizeNumberControl(partNumberForm, 'box_qty')"
-                />
-                <small
-                  class="field-error"
-                  *ngIf="partNumberForm.get('box_qty')?.touched && partNumberForm.get('box_qty')?.invalid"
+              <div class="form-field part-attribute-field">
+                <label for="workflowPartAttribute">Part Attribute</label>
+                <select
+                  id="workflowPartAttribute"
+                  formControlName="part_attribute_key"
+                  (change)="onPartAttributeChange()"
                 >
-                  Enter a positive number
-                </small>
+                  <option value="">Select attribute to define</option>
+                  <option *ngFor="let option of partAttributeOptions" [value]="option.key">
+                    {{ option.label }}
+                  </option>
+                </select>
               </div>
 
-              <fieldset class="choice-field">
-                <legend>SGD Control</legend>
-                <div class="choice-options">
-                  <label class="radio-option">
-                    <input
-                      type="radio"
-                      name="workflow_sgd_control"
-                      [disabled]="arePartNumberDetailsReadonly"
-                      [checked]="partNumberForm.get('sgd_control')?.value === false"
-                      (change)="partNumberForm.get('sgd_control')?.setValue(false)"
-                    />
-                    <span>No</span>
-                  </label>
-                  <label class="radio-option">
-                    <input
-                      type="radio"
-                      name="workflow_sgd_control"
-                      [disabled]="arePartNumberDetailsReadonly"
-                      [checked]="partNumberForm.get('sgd_control')?.value === true"
-                      (change)="partNumberForm.get('sgd_control')?.setValue(true)"
-                    />
-                    <span>Yes</span>
-                  </label>
-                </div>
-              </fieldset>
+              <div class="form-field part-attribute-value-field" [class.is-disabled]="!selectedPartAttributeOption">
+                <label for="workflowPartAttributeValue">Attribute Value</label>
+
+                <select
+                  *ngIf="selectedPartAttributeOption?.valueKind === 'boolean'"
+                  id="workflowPartAttributeValue"
+                  formControlName="part_attribute_value"
+                  (change)="onPartAttributeValueChange()"
+                >
+                  <option value="">Select value</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+
+                <input
+                  *ngIf="selectedPartAttributeOption?.valueKind === 'date'"
+                  id="workflowPartAttributeValue"
+                  type="date"
+                  formControlName="part_attribute_value"
+                  (input)="onPartAttributeValueChange()"
+                />
+
+                <input
+                  *ngIf="selectedPartAttributeOption?.valueKind !== 'boolean' && selectedPartAttributeOption?.valueKind !== 'date'"
+                  id="workflowPartAttributeValue"
+                  [type]="selectedPartAttributeOption?.valueKind === 'number' ? 'number' : 'text'"
+                  [attr.inputmode]="selectedPartAttributeOption?.valueKind === 'number' ? 'decimal' : null"
+                  [attr.step]="selectedPartAttributeOption?.valueKind === 'number' ? 'any' : null"
+                  [placeholder]="selectedPartAttributePlaceholder"
+                  [disabled]="!selectedPartAttributeOption"
+                  formControlName="part_attribute_value"
+                  (input)="onPartAttributeValueChange()"
+                />
+
+                <small
+                  class="field-error"
+                  *ngIf="partNumberForm.get('part_attribute_value')?.touched && partNumberForm.get('part_attribute_value')?.invalid"
+                >
+                  Enter a valid value
+                </small>
+              </div>
 
               <fieldset class="choice-field">
                 <legend>Item Type</legend>

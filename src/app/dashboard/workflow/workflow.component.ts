@@ -43,6 +43,16 @@ type FatherSnType = {
   sn_type_name: string;
 };
 
+type PartAttributeValueKind = 'text' | 'number' | 'date' | 'boolean';
+
+type PartAttributeOption = {
+  key: string;
+  label: string;
+  valueKind: PartAttributeValueKind;
+  placeholder: string;
+  hint: string;
+};
+
 type Site = {
   id: number;
   name: string;
@@ -190,6 +200,8 @@ type WorkflowSnapshot = {
     sn_type_name?: string;
     pn_type_id?: number | null;
     box_qty?: number | null;
+    part_attribute_key?: string | null;
+    part_attribute_value?: string | null;
   };
   workOrder?: {
     wo?: string;
@@ -257,6 +269,24 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     { value: 'FIRST_PIECE', label: 'First Piece' },
   ];
   readonly bomItemTypeOptions: Array<'Manufactured' | 'Purchased'> = ['Manufactured', 'Purchased'];
+  readonly partAttributeOptions: PartAttributeOption[] = [
+    { key: 'sgd_control', label: 'SGD Control', valueKind: 'boolean', placeholder: 'Select Yes or No', hint: 'Choose whether SGD control applies to this part.' },
+    { key: 'box_qty_limit', label: 'Box QTY Limit', valueKind: 'number', placeholder: 'Enter box quantity limit', hint: 'Enter the allowed box quantity limit.' },
+    { key: 'ean', label: 'EAN', valueKind: 'text', placeholder: 'Enter EAN', hint: 'Enter the EAN value for this part.' },
+    { key: 'mrp', label: 'MRP', valueKind: 'number', placeholder: 'Enter MRP', hint: 'Enter the MRP value.' },
+    { key: 'modelno', label: 'Model No', valueKind: 'text', placeholder: 'Enter model number', hint: 'Enter the model number.' },
+    { key: 'po', label: 'PO Number', valueKind: 'text', placeholder: 'Enter PO number', hint: 'Enter the purchase order number.' },
+    { key: 'po_date', label: 'PO Date', valueKind: 'date', placeholder: 'Select PO date', hint: 'Select the purchase order date.' },
+    { key: 'color', label: 'Color', valueKind: 'text', placeholder: 'Enter color', hint: 'Enter the part color.' },
+    { key: 'field6', label: 'field6', valueKind: 'text', placeholder: 'Enter field6 value', hint: 'Enter the value for field6.' },
+    { key: 'field7', label: 'field7', valueKind: 'text', placeholder: 'Enter field7 value', hint: 'Enter the value for field7.' },
+    { key: 'field8', label: 'field8', valueKind: 'text', placeholder: 'Enter field8 value', hint: 'Enter the value for field8.' },
+    { key: 'field9', label: 'field9', valueKind: 'text', placeholder: 'Enter field9 value', hint: 'Enter the value for field9.' },
+    { key: 'field10', label: 'field10', valueKind: 'text', placeholder: 'Enter field10 value', hint: 'Enter the value for field10.' },
+    { key: 'po_qty', label: 'PO Qty', valueKind: 'number', placeholder: 'Enter PO quantity', hint: 'Enter the purchase order quantity.' },
+    { key: 'sw_ver', label: 'Software Version', valueKind: 'text', placeholder: 'Enter software version', hint: 'Enter the software version.' },
+    { key: 'hw_ver', label: 'Hardware Version', valueKind: 'text', placeholder: 'Enter hardware version', hint: 'Enter the hardware version.' },
+  ];
   readonly minDueDate = this.getDateInputValue(1);
 
   activeTabIndex = 0;
@@ -352,7 +382,14 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   private isRestoringSavedPreview = false;
   private lockedEditPartNumber = '';
   private lockedEditWorkOrder = '';
-  private readonly partNumberDetailControls = ['description', 'sgd_control', 'item_type', 'sn_type_name', 'pn_type_id', 'box_qty'];
+  private readonly partNumberDetailControls = [
+    'description',
+    'part_attribute_key',
+    'part_attribute_value',
+    'item_type',
+    'sn_type_name',
+    'pn_type_id',
+  ];
   private nextRoutingStepId = 1;
   private nextRoutingHistoryId = 1;
   private nextBomChildId = 1;
@@ -374,6 +411,8 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.partNumberForm = this.fb.group({
       pn: ['', Validators.required],
       description: ['', Validators.required],
+      part_attribute_key: [''],
+      part_attribute_value: [''],
       sgd_control: [false],
       item_type: [null, Validators.required],
       sn_type_name: [''],
@@ -654,8 +693,44 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     }, 1800);
   }
 
+  get selectedPartAttributeOption(): PartAttributeOption | null {
+    const key = String(this.partNumberForm.get('part_attribute_key')?.value ?? '').trim();
+    return this.partAttributeOptions.find((option) => option.key === key) || null;
+  }
+
+  get selectedPartAttributePlaceholder(): string {
+    return this.selectedPartAttributeOption?.placeholder || 'Select an attribute first';
+  }
+
+  get selectedPartAttributeHint(): string {
+    return this.selectedPartAttributeOption?.hint || 'Choose one extra part attribute to define for this part number.';
+  }
+
+  get selectedPartAttributeValueHint(): string {
+    return this.selectedPartAttributeOption
+      ? `Value for ${this.selectedPartAttributeOption.label}`
+      : 'Select an attribute first, then enter its value here.';
+  }
+
+  onPartAttributeChange(): void {
+    this.partNumberForm.get('part_attribute_value')?.setValue('', { emitEvent: false });
+    this.partNumberForm.get('part_attribute_value')?.setErrors(null);
+    this.syncPartAttributeSelection();
+  }
+
+  onPartAttributeValueChange(): void {
+    this.partNumberForm.get('part_attribute_value')?.setErrors(null);
+    this.syncPartAttributeSelection();
+  }
+
   savePartNumber(): void {
     this.partNumberErrorMessage = '';
+
+    if (!this.validatePartAttributeValue()) {
+      this.partNumberForm.markAllAsTouched();
+      this.scheduleClearMessages();
+      return;
+    }
 
     if (this.isExistingPartNumberReadonly) {
       this.isPartNumberSaved = true;
@@ -1943,6 +2018,69 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     });
   }
 
+  private validatePartAttributeValue(): boolean {
+    const option = this.selectedPartAttributeOption;
+    const key = String(this.partNumberForm.get('part_attribute_key')?.value ?? '').trim();
+    const valueControl = this.partNumberForm.get('part_attribute_value');
+    const value = String(valueControl?.value ?? '').trim();
+
+    valueControl?.setErrors(null);
+
+    if (!key) {
+      this.syncPartAttributeSelection();
+      return true;
+    }
+
+    if (!option) {
+      this.partNumberErrorMessage = 'Select a valid Part Attribute.';
+      valueControl?.setErrors({ invalidAttribute: true });
+      return false;
+    }
+
+    if (!value) {
+      this.partNumberErrorMessage = `Enter a value for ${option.label}.`;
+      valueControl?.setErrors({ required: true });
+      return false;
+    }
+
+    if (option.valueKind === 'number') {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue) || numericValue < 0 || (option.key !== 'mrp' && numericValue === 0)) {
+        this.partNumberErrorMessage = `${option.label} must be a positive number.`;
+        valueControl?.setErrors({ number: true });
+        return false;
+      }
+    }
+
+    if (option.valueKind === 'boolean' && value !== 'yes' && value !== 'no') {
+      this.partNumberErrorMessage = `${option.label} must be Yes or No.`;
+      valueControl?.setErrors({ boolean: true });
+      return false;
+    }
+
+    this.syncPartAttributeSelection();
+    return true;
+  }
+
+  private syncPartAttributeSelection(): void {
+    const key = String(this.partNumberForm.get('part_attribute_key')?.value ?? '').trim();
+    const value = String(this.partNumberForm.get('part_attribute_value')?.value ?? '').trim();
+    const mappedValues: { sgd_control: boolean; box_qty: number | null } = {
+      sgd_control: false,
+      box_qty: null,
+    };
+
+    if (key === 'sgd_control') {
+      mappedValues.sgd_control = value === 'yes';
+    }
+
+    if (key === 'box_qty_limit') {
+      mappedValues.box_qty = this.toNullableNumber(value);
+    }
+
+    this.partNumberForm.patchValue(mappedValues, { emitEvent: false });
+  }
+
   private buildPartNumberMissingFieldsMessage(): string {
     const missing: string[] = [];
 
@@ -1950,7 +2088,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     if (this.partNumberForm.get('description')?.invalid) missing.push('Description');
     if (this.partNumberForm.get('item_type')?.invalid) missing.push('Item Type');
     if (this.partNumberForm.get('pn_type_id')?.invalid) missing.push('PN Type');
-    if (this.partNumberForm.get('box_qty')?.invalid) missing.push('Box Qty');
+    if (this.partNumberForm.get('part_attribute_value')?.invalid) missing.push('Attribute Value');
 
     return `Please fill required fields: ${missing.join(', ')}`;
   }
@@ -2750,6 +2888,8 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.partNumberForm.reset({
       pn: '',
       description: '',
+      part_attribute_key: '',
+      part_attribute_value: '',
       sgd_control: false,
       item_type: null,
       sn_type_name: '',
@@ -2893,17 +3033,22 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     }
 
     const partNumber = snapshot.partNumber;
+    const partAttributeKey = partNumber.part_attribute_key || this.inferPartAttributeKey(partNumber);
+    const partAttributeValue = partNumber.part_attribute_value || this.inferPartAttributeValue(partNumber, partAttributeKey);
     this.isRestoringSavedPreview = true;
 
     this.partNumberForm.patchValue({
       pn: partNumber.pn || '',
       description: partNumber.description || '',
+      part_attribute_key: partAttributeKey,
+      part_attribute_value: partAttributeValue,
       sgd_control: Boolean(partNumber.sgd_control),
       item_type: partNumber.item_type || null,
       sn_type_name: partNumber.sn_type_name || '',
       pn_type_id: partNumber.pn_type_id ?? null,
       box_qty: partNumber.box_qty ?? null,
     }, { emitEvent: false });
+    this.syncPartAttributeSelection();
 
     this.workOrderForm.patchValue({
       wo: snapshot.workOrder?.wo || '',
@@ -3047,6 +3192,46 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
       return statuses;
     }, {});
+  }
+
+  private inferPartAttributeKey(partNumber: WorkflowSnapshot['partNumber']): string {
+    if (!partNumber) {
+      return '';
+    }
+
+    if (partNumber.part_attribute_key) {
+      return partNumber.part_attribute_key;
+    }
+
+    if (partNumber.box_qty) {
+      return 'box_qty_limit';
+    }
+
+    if (partNumber.sgd_control) {
+      return 'sgd_control';
+    }
+
+    return '';
+  }
+
+  private inferPartAttributeValue(partNumber: WorkflowSnapshot['partNumber'], key: string): string {
+    if (!partNumber) {
+      return '';
+    }
+
+    if (partNumber.part_attribute_value) {
+      return partNumber.part_attribute_value;
+    }
+
+    if (key === 'box_qty_limit' && partNumber.box_qty) {
+      return String(partNumber.box_qty);
+    }
+
+    if (key === 'sgd_control') {
+      return partNumber.sgd_control ? 'yes' : 'no';
+    }
+
+    return '';
   }
 
   private toNullableNumber(value: unknown): number | null {

@@ -4676,6 +4676,10 @@ public static class ConvertedEndpoints
         var snTypeName = ReadString(partNode, "sn_type_name")?.Trim();
         var pnTypeId = ReadInt(partNode, "pn_type_id");
         var boxQty = ReadInt(partNode, "box_qty");
+        var partAttributeKey = ReadString(partNode, "part_attribute_key")?.Trim();
+        var partAttributeValue = ReadString(partNode, "part_attribute_value")?.Trim();
+        partAttributeKey = string.IsNullOrWhiteSpace(partAttributeKey) ? null : partAttributeKey;
+        partAttributeValue = string.IsNullOrWhiteSpace(partAttributeValue) ? null : partAttributeValue;
 
         if (boxQty is not null and <= 0)
         {
@@ -4769,9 +4773,9 @@ public static class ConvertedEndpoints
                 connection,
                 """
                 INSERT INTO workflow_part_numbers
-                  (pn, description, sgd_control, item_type, sn_type_id, sn_type_name, pn_type_id, box_qty)
+                  (pn, description, sgd_control, item_type, sn_type_id, sn_type_name, pn_type_id, box_qty, part_attribute_key, part_attribute_value)
                 VALUES
-                  (@pn, @description, @sgdControl, @itemType, @snTypeId, @snTypeName, @pnTypeId, @boxQty)
+                  (@pn, @description, @sgdControl, @itemType, @snTypeId, @snTypeName, @pnTypeId, @boxQty, @partAttributeKey, @partAttributeValue)
                 ON CONFLICT (pn) DO UPDATE
                 SET description = EXCLUDED.description,
                     sgd_control = EXCLUDED.sgd_control,
@@ -4780,6 +4784,8 @@ public static class ConvertedEndpoints
                     sn_type_name = EXCLUDED.sn_type_name,
                     pn_type_id = EXCLUDED.pn_type_id,
                     box_qty = EXCLUDED.box_qty,
+                    part_attribute_key = EXCLUDED.part_attribute_key,
+                    part_attribute_value = EXCLUDED.part_attribute_value,
                     updated_at = NOW()
                 RETURNING *
                 """,
@@ -4790,7 +4796,9 @@ public static class ConvertedEndpoints
                 ("snTypeId", ToDbNullable(snTypeId)),
                 ("snTypeName", ToDbNullable(snTypeName)),
                 ("pnTypeId", ToDbNullable(pnTypeId)),
-                ("boxQty", ToDbNullable(boxQty)));
+                ("boxQty", ToDbNullable(boxQty)),
+                ("partAttributeKey", ToDbNullable(partAttributeKey)),
+                ("partAttributeValue", ToDbNullable(partAttributeValue)));
 
             var workflowPartId = Convert.ToInt32(partRows[0]["id"]);
 
@@ -5719,6 +5727,8 @@ public static class ConvertedEndpoints
               p.sgd_control,
               p.item_type,
               p.box_qty,
+              p.part_attribute_key,
+              p.part_attribute_value,
               COALESCE(st.sn_type_name, p.sn_type_name, '') AS sn_type_name,
               p.pn_type_id,
               p.created_at,
@@ -5855,7 +5865,10 @@ public static class ConvertedEndpoints
                     sgd_control = part["sgd_control"],
                     item_type = part["item_type"],
                     sn_type_name = part["sn_type_name"],
-                    pn_type_id = part["pn_type_id"]
+                    pn_type_id = part["pn_type_id"],
+                    box_qty = part["box_qty"],
+                    part_attribute_key = part["part_attribute_key"],
+                    part_attribute_value = part["part_attribute_value"]
                 },
                 workOrder = workOrderRows.Count > 0 ? workOrderRows[0] : null,
                 routing = routingRows,
@@ -8073,12 +8086,16 @@ public static class ConvertedEndpoints
               sn_type_name VARCHAR(160),
               pn_type_id INTEGER REFERENCES pn_types(id) ON DELETE SET NULL,
               box_qty INTEGER CHECK (box_qty IS NULL OR box_qty > 0),
+              part_attribute_key VARCHAR(80),
+              part_attribute_value TEXT,
               created_at TIMESTAMP NOT NULL DEFAULT NOW(),
               updated_at TIMESTAMP NOT NULL DEFAULT NOW()
             )
             """);
 
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_part_numbers ADD COLUMN IF NOT EXISTS box_qty INTEGER CHECK (box_qty IS NULL OR box_qty > 0)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_part_numbers ADD COLUMN IF NOT EXISTS part_attribute_key VARCHAR(80)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_part_numbers ADD COLUMN IF NOT EXISTS part_attribute_value TEXT");
 
         await ExecuteAsync(
             connection,

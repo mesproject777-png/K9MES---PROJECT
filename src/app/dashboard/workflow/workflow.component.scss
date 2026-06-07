@@ -293,7 +293,8 @@
   cursor: not-allowed;
 }
 
-.form-field input:disabled {
+.form-field input:disabled,
+.form-field select:disabled {
   background: #eef3f8;
   color: #50647c;
   cursor: not-allowed;
@@ -623,6 +624,10 @@
   color: #5d7086;
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.part-attribute-value-field.is-disabled {
+  opacity: 0.82;
 }
 
 .routing-footer-actions,
