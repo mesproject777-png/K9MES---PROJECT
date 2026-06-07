@@ -215,21 +215,6 @@
                 <span class="preview-node-icon box-icon material-symbols-outlined" aria-hidden="true">inventory_2</span>
                 <span class="preview-node-copy">
                   <strong>SN Values</strong>
-                  <ng-container *ngIf="snValueRows.length > 0; else snHistoryPreview">
-                    <small class="sn-value-line" *ngFor="let value of snValueRows | slice:0:2">
-                      {{ value.station_code }} - {{ formatSnValueRow(value) }}
-                    </small>
-                  </ng-container>
-                  <ng-template #snHistoryPreview>
-                    <ng-container *ngIf="snPreviewHistoryRows.length > 0; else noSnValues">
-                      <small class="sn-value-line" *ngFor="let history of snPreviewHistoryRows">
-                        {{ history.stationCode }} - {{ history.actionDescription }}
-                      </small>
-                    </ng-container>
-                  </ng-template>
-                  <ng-template #noSnValues>
-                    <small>{{ boxLeftLabel }}</small>
-                  </ng-template>
                 </span>
               </button>
 
@@ -495,25 +480,6 @@
       <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
       <strong>{{ snValuesSummary }}</strong>
       <small>{{ traceResult?.serial?.rsn || '-' }}</small>
-    </div>
-
-    <div class="sn-values-meta">
-      <div>
-        <span>SN Number</span>
-        <strong>{{ serialNumber }}</strong>
-      </div>
-      <div>
-        <span>RSN</span>
-        <strong>{{ traceResult?.serial?.rsn || '-' }}</strong>
-      </div>
-      <div>
-        <span>Work Order</span>
-        <strong>{{ workOrderNumber }}</strong>
-      </div>
-      <div>
-        <span>Part Number</span>
-        <strong>{{ partNumber }}</strong>
-      </div>
     </div>
 
     <div class="preview-child-table sn-values-table" *ngIf="snValueRows.length > 0; else noSnValuesPushed">

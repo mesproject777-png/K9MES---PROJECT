@@ -1517,45 +1517,7 @@ button.preview-node:focus-visible {
   font-size: 44px;
 }
 
-.sn-values-modal {
-  width: min(1040px, 94vw);
-}
-
 .sn-values-summary strong {
-  overflow-wrap: anywhere;
-}
-
-.sn-values-meta {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin: 18px 22px 0;
-}
-
-.sn-values-meta > div {
-  min-width: 0;
-  padding: 12px 14px;
-  border: 1px solid #deebfb;
-  border-radius: 8px;
-  background: #f8fbff;
-}
-
-.sn-values-meta span {
-  display: block;
-  color: #5f738b;
-  font-size: 0.72rem;
-  font-weight: 900;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.sn-values-meta strong {
-  display: block;
-  margin-top: 4px;
-  color: #06155a;
-  font-size: 0.9rem;
-  font-weight: 900;
-  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
