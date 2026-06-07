@@ -79,6 +79,16 @@ export interface TraceAssembledPart {
   station_name?: string | null;
 }
 
+export interface TraceSnValue {
+  station_code: string;
+  station_name?: string | null;
+  chip_id?: string | null;
+  imes?: string | null;
+  pushed_by?: string | null;
+  pushed_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface TraceSearchResponse {
   query: string;
   matched_by: 'SN' | 'RSN';
@@ -87,6 +97,7 @@ export interface TraceSearchResponse {
   progress: TraceProgress;
   routing: TraceRouteStep[];
   history: TraceHistoryRow[];
+  sn_values?: TraceSnValue[];
   assembled_parts?: TraceAssembledPart[];
   generated_at: string;
 }

@@ -2424,6 +2424,7 @@ public static class ConvertedEndpoints
             await using var connection = await OpenConnectionAsync();
             await EnsureSerialTrackingSchemaAsync(connection);
             await EnsureWorkflowSchemaAsync(connection);
+            await EnsureSerialExternalValuesTableAsync(connection);
             var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
             if (workflowSerial is not null)
             {
@@ -4176,6 +4177,7 @@ public static class ConvertedEndpoints
         var routeRows = await GetRouteRowsForItemAsync(connection, Convert.ToInt32(serial["item_id"]));
         var currentOrder = routeRows.Count == 0 ? 0 : ResolveCurrentOrder(serial, routeRows);
         var assembledParts = await GetSerialAssembledPartsAsync(connection, serial["id"]!);
+        var snValues = new List<Dictionary<string, object?>>();
         var history = await QueryRowsAsync(
             connection,
             """
@@ -4256,6 +4258,7 @@ public static class ConvertedEndpoints
             progress = new { total = routing.Count, completed, current = current is null ? 0 : 1, pending, percent },
             routing,
             history,
+            sn_values = snValues,
             assembled_parts = assembledParts,
             generated_at = DateTime.UtcNow
         };
@@ -4284,6 +4287,7 @@ public static class ConvertedEndpoints
         var palletNo = multiboxRows.Count > 0 ? multiboxRows[0]["pallet_no"] : null;
         var shipmentNo = multiboxRows.Count > 0 ? multiboxRows[0]["shipment_no"] : null;
         var assembledParts = await GetWorkflowSerialAssembledPartsAsync(connection, serial["id"]!);
+        var snValues = await GetSerialExternalValuesAsync(connection, serial["id"]!);
         var history = await QueryRowsAsync(
             connection,
             """
@@ -4368,6 +4372,7 @@ public static class ConvertedEndpoints
             progress = new { total = routing.Count, completed, current = current is null ? 0 : 1, pending, percent },
             routing,
             history,
+            sn_values = snValues,
             assembled_parts = assembledParts,
             generated_at = DateTime.UtcNow
         };
@@ -6941,6 +6946,43 @@ public static class ConvertedEndpoints
               created_at TIMESTAMP NOT NULL DEFAULT NOW()
             )
             """);
+    }
+
+    private static async Task EnsureSerialExternalValuesTableAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.serial_external_values (
+              id BIGSERIAL PRIMARY KEY,
+              workflow_serial_id BIGINT NOT NULL REFERENCES workflow_serial_numbers(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              station_name VARCHAR(220),
+              chip_id VARCHAR(220),
+              imes VARCHAR(220),
+              pushed_by VARCHAR(160) NOT NULL,
+              pushed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_serial_external_values_station UNIQUE (workflow_serial_id, station_code)
+            )
+            """);
+
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_external_values_serial ON public.serial_external_values (workflow_serial_id)");
+    }
+
+    private static async Task<List<Dictionary<string, object?>>> GetSerialExternalValuesAsync(
+        NpgsqlConnection connection,
+        object workflowSerialId)
+    {
+        return await QueryRowsAsync(
+            connection,
+            """
+            SELECT station_code, station_name, chip_id, imes, pushed_by, pushed_at, updated_at
+            FROM public.serial_external_values
+            WHERE workflow_serial_id = @serialId
+            ORDER BY updated_at DESC, id DESC
+            """,
+            ("serialId", workflowSerialId));
     }
 
     private static void MapLabels(WebApplication app)

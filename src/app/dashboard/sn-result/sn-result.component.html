@@ -211,13 +211,27 @@
             <span class="tree-link vertical product-drop" aria-hidden="true"></span>
 
             <div class="tree-row product-row">
-              <div class="preview-node hierarchy-node box-node">
+              <button type="button" class="preview-node hierarchy-node box-node sn-values-node" (click)="openSnValuesDetails()">
                 <span class="preview-node-icon box-icon material-symbols-outlined" aria-hidden="true">inventory_2</span>
                 <span class="preview-node-copy">
                   <strong>SN Values</strong>
-                  <small>{{ boxLeftLabel }}</small>
+                  <ng-container *ngIf="snValueRows.length > 0; else snHistoryPreview">
+                    <small class="sn-value-line" *ngFor="let value of snValueRows | slice:0:2">
+                      {{ value.station_code }} - {{ formatSnValueRow(value) }}
+                    </small>
+                  </ng-container>
+                  <ng-template #snHistoryPreview>
+                    <ng-container *ngIf="snPreviewHistoryRows.length > 0; else noSnValues">
+                      <small class="sn-value-line" *ngFor="let history of snPreviewHistoryRows">
+                        {{ history.stationCode }} - {{ history.actionDescription }}
+                      </small>
+                    </ng-container>
+                  </ng-template>
+                  <ng-template #noSnValues>
+                    <small>{{ boxLeftLabel }}</small>
+                  </ng-template>
                 </span>
-              </div>
+              </button>
 
               <div class="preview-node hierarchy-node product-node">
                 <span class="product-title">Product - {{ serialNumber }}</span>
@@ -459,6 +473,78 @@
       <div class="preview-empty-popup">
         <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
         <strong>No BOM childs found.</strong>
+      </div>
+    </ng-template>
+  </div>
+</div>
+
+<div *ngIf="isSnValuesOpen" class="preview-popup-backdrop">
+  <div class="preview-child-modal sn-values-modal" role="dialog" aria-modal="true" aria-labelledby="snValuesTitle">
+    <div class="preview-popup-header">
+      <div>
+        <h3 id="snValuesTitle">SN Values</h3>
+        <p>{{ serialNumber }}</p>
+      </div>
+      <button type="button" class="icon-close-button" aria-label="Close SN values" (click)="closeSnValuesDetails()">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+
+    <div class="preview-child-summary sn-values-summary">
+      <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+      <strong>{{ snValuesSummary }}</strong>
+      <small>{{ traceResult?.serial?.rsn || '-' }}</small>
+    </div>
+
+    <div class="sn-values-meta">
+      <div>
+        <span>SN Number</span>
+        <strong>{{ serialNumber }}</strong>
+      </div>
+      <div>
+        <span>RSN</span>
+        <strong>{{ traceResult?.serial?.rsn || '-' }}</strong>
+      </div>
+      <div>
+        <span>Work Order</span>
+        <strong>{{ workOrderNumber }}</strong>
+      </div>
+      <div>
+        <span>Part Number</span>
+        <strong>{{ partNumber }}</strong>
+      </div>
+    </div>
+
+    <div class="preview-child-table sn-values-table" *ngIf="snValueRows.length > 0; else noSnValuesPushed">
+      <table>
+        <thead>
+          <tr>
+            <th>Station</th>
+            <th>Chip ID</th>
+            <th>IMES</th>
+            <th>Pushed By</th>
+            <th>Pushed Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let value of snValueRows">
+            <td>
+              {{ value.station_code || '-' }}
+              <span *ngIf="value.station_name"> - {{ value.station_name }}</span>
+            </td>
+            <td>{{ value.chip_id || '-' }}</td>
+            <td>{{ value.imes || '-' }}</td>
+            <td>{{ value.pushed_by || '-' }}</td>
+            <td>{{ formatSnValueDate(value.updated_at || value.pushed_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ng-template #noSnValuesPushed>
+      <div class="preview-empty-popup">
+        <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+        <strong>No Chip ID / IMES values pushed for this SN.</strong>
       </div>
     </ng-template>
   </div>

@@ -20,6 +20,7 @@ import {
   TraceAssembledPart,
   TraceHistoryRow,
   TraceSearchResponse,
+  TraceSnValue,
 } from '../../services/traceability.service';
 import { PackingHierarchyRow, PackingService } from '../../services/packing.service';
 
@@ -150,6 +151,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   previewFlowCardsPerRow = this.getPreviewFlowCardsPerRow();
   isChildDetailsOpen = false;
   isAssembledPartsOpen = false;
+  isSnValuesOpen = false;
   activePreviewStation: PreviewStationNode | null = null;
   activePreviewLogistics: PreviewFlowNode | null = null;
   logisticsLoading = false;
@@ -294,7 +296,18 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   get boxLeftLabel(): string {
-    return this.workflowSnapshot?.workOrder?.lot || this.serialNumber;
+    const valueCount = this.snValueRows.length;
+    const historyCount = this.snPreviewHistoryRows.length;
+
+    if (valueCount > 0) {
+      return `${valueCount} value${valueCount === 1 ? '' : 's'}`;
+    }
+
+    if (historyCount > 0) {
+      return `${historyCount} history`;
+    }
+
+    return this.workflowSnapshot?.workOrder?.lot || 'NA';
   }
 
   get boxRightLabel(): string {
@@ -303,6 +316,19 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
 
   get assembledParts(): TraceAssembledPart[] {
     return this.traceResult?.assembled_parts || [];
+  }
+
+  get snValueRows(): TraceSnValue[] {
+    return this.traceResult?.sn_values || [];
+  }
+
+  get snPreviewHistoryRows(): SnHistoryDisplayRow[] {
+    return this.snHistoryDisplayRows.slice(0, 3);
+  }
+
+  get snValuesSummary(): string {
+    const count = this.snValueRows.length;
+    return count === 1 ? '1 Connected Value' : `${count} Connected Values`;
   }
 
   get assembledPartsSummary(): string {
@@ -676,6 +702,20 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return values.map((value) => String(value || '').trim()).find((value) => !!value) || '-';
   }
 
+  formatSnValueRow(row: TraceSnValue): string {
+    const parts = [
+      row.chip_id ? `Chip ID: ${row.chip_id}` : '',
+      row.imes ? `IMES: ${row.imes}` : '',
+    ].filter((part) => !!part);
+
+    return parts.length ? parts.join(' | ') : '-';
+  }
+
+  formatSnValueDate(value: string | null | undefined): string {
+    const parsed = this.parseHistoryDate(value || '');
+    return parsed.date === '-' ? '-' : `${parsed.date} ${parsed.time}`;
+  }
+
   private normalizeSerialValue(value: string | null | undefined): string {
     return String(value || '').trim().toUpperCase();
   }
@@ -738,6 +778,14 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
 
   closeChildDetails(): void {
     this.isChildDetailsOpen = false;
+  }
+
+  openSnValuesDetails(): void {
+    this.isSnValuesOpen = true;
+  }
+
+  closeSnValuesDetails(): void {
+    this.isSnValuesOpen = false;
   }
 
   openAssembledParts(): void {
@@ -854,6 +902,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.previewStationStatusById = {};
     this.isChildDetailsOpen = false;
     this.isAssembledPartsOpen = false;
+    this.isSnValuesOpen = false;
     this.activePreviewStation = null;
     this.activePreviewLogistics = null;
     this.logisticsLoading = false;
