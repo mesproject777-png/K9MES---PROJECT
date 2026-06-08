@@ -55,11 +55,22 @@
           <div class="action-card__desc">Work order tree and station serial counts.</div>
         </div>
       </button>
+
+      <button type="button" class="action-card action-card--debug" role="listitem" (click)="openDebugDashboard()">
+        <div class="action-card__icon" aria-hidden="true">
+          <span class="material-symbols-outlined">build_circle</span>
+        </div>
+
+        <div class="action-card__content">
+          <div class="action-card__title">Debug Dashboard</div>
+          <div class="action-card__desc">Repair station pending, passed, and SN repair details.</div>
+        </div>
+      </button>
     </div>
   </ng-container>
 
   <ng-template #reportContent>
-    <ng-container *ngIf="activeView === 'activityQuality'; else todaysReportsView">
+    <ng-container *ngIf="activeView === 'activityQuality'; else debugReportsView">
       <section class="aq-page" [class.fullscreen]="fullScreenEnabled">
         <div class="aq-header">
           <button type="button" class="icon-button" title="Back to reports" (click)="backToMenu()">
@@ -372,6 +383,288 @@
           </article>
         </section>
 
+      </section>
+    </ng-container>
+  </ng-template>
+
+  <ng-template #debugReportsView>
+    <ng-container *ngIf="activeView === 'debug'; else todaysReportsView">
+      <section class="debug-dashboard-window">
+        <header class="debug-header">
+          <button type="button" class="icon-button debug-back" title="Back to reports" (click)="backToMenu()">
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+          </button>
+          <div>
+            <h1>Debug Dashboard</h1>
+            <p>Repair station recovery, pending SNs, and completed debug actions</p>
+          </div>
+          <span class="header-spacer"></span>
+        </header>
+
+        <div class="debug-layout">
+          <aside class="debug-filter-panel">
+            <div class="debug-filter-title">
+              <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+              <strong>Filters</strong>
+            </div>
+
+            <label>
+              <span>Site</span>
+              <select [(ngModel)]="debugFilters.site">
+                <option value="">All Sites</option>
+                <option *ngFor="let site of debugOptions.sites" [value]="site.name">{{ site.name }}</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Date Range</span>
+              <select [(ngModel)]="debugFilters.dateRange" (change)="onDebugDateRangeChange()">
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="thisWeek">This Week</option>
+                <option value="thisMonth">This Month</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </label>
+
+            <label *ngIf="isDebugCustomRange">
+              <span>From Date</span>
+              <input type="date" [(ngModel)]="debugFilters.fromDate">
+            </label>
+
+            <label *ngIf="isDebugCustomRange">
+              <span>To Date</span>
+              <input type="date" [(ngModel)]="debugFilters.toDate">
+            </label>
+
+            <label>
+              <span>Repair Station</span>
+              <select [(ngModel)]="debugFilters.repairStation">
+                <option value="">All Stations</option>
+                <option *ngFor="let station of debugOptions.repairStations" [value]="station.station_code">
+                  {{ station.station_name || station.station_code }}
+                </option>
+              </select>
+            </label>
+
+            <label>
+              <span>Status</span>
+              <select [(ngModel)]="debugFilters.status">
+                <option value="">All</option>
+                <option value="Pending">Pending</option>
+                <option value="Passed">Passed</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Failure Remark</span>
+              <select [(ngModel)]="debugFilters.failureRemark">
+                <option value="">All Failure Remarks</option>
+                <option *ngFor="let row of debugOptions.remarks" [value]="row.remark">{{ row.remark }}</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Part Number (PN)</span>
+              <select [(ngModel)]="debugFilters.partNumber">
+                <option value="">All Part Numbers</option>
+                <option *ngFor="let part of debugOptions.partNumbers" [value]="part.pn">{{ part.pn }}</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Work Order</span>
+              <select [(ngModel)]="debugFilters.workOrder">
+                <option value="">All Work Orders</option>
+                <option *ngFor="let work of debugOptions.workOrders" [value]="work.wo">{{ work.wo }}</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Search SN</span>
+              <span class="debug-search">
+                <input type="search" placeholder="Enter SN Number" [(ngModel)]="debugFilters.searchSn" (keydown.enter)="loadDebugDashboard()">
+                <span class="material-symbols-outlined" aria-hidden="true">search</span>
+              </span>
+            </label>
+
+            <div class="debug-all-row">
+              <label><input type="checkbox" [checked]="!debugFilters.site" (change)="setDebugAllFilter('site', $any($event.target).checked)">All Sites</label>
+              <label><input type="checkbox" [checked]="!debugFilters.repairStation" (change)="setDebugAllFilter('repairStation', $any($event.target).checked)">All Stations</label>
+              <label><input type="checkbox" [checked]="!debugFilters.status" (change)="setDebugAllFilter('status', $any($event.target).checked)">All Status</label>
+              <label><input type="checkbox" [checked]="!debugFilters.failureRemark" (change)="setDebugAllFilter('failureRemark', $any($event.target).checked)">All Remarks</label>
+              <label><input type="checkbox" [checked]="!debugFilters.partNumber" (change)="setDebugAllFilter('partNumber', $any($event.target).checked)">All PN</label>
+              <label><input type="checkbox" [checked]="!debugFilters.workOrder" (change)="setDebugAllFilter('workOrder', $any($event.target).checked)">All WO</label>
+            </div>
+
+            <button type="button" class="debug-apply" (click)="loadDebugDashboard()" [disabled]="debugLoading">
+              <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+              Go
+            </button>
+            <button type="button" class="debug-reset" (click)="resetDebugFilters()">Reset</button>
+          </aside>
+
+          <main class="debug-content" *ngIf="debugHasRun; else debugStartState">
+            <div class="debug-kpi-grid">
+              <article class="debug-kpi debug-kpi--blue">
+                <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+                <small>Total SNs in Repair</small>
+                <strong>{{ formatTodaysNumber(debugSummarySource.total) }}</strong>
+                <em>{{ debugActiveBucket?.label || 'Current filters' }}</em>
+              </article>
+              <article class="debug-kpi debug-kpi--amber">
+                <span class="material-symbols-outlined" aria-hidden="true">hourglass_top</span>
+                <small>Pending</small>
+                <strong>{{ formatTodaysNumber(debugSummarySource.pending) }}</strong>
+                <em>{{ debugSummarySource.pendingPercent | number:'1.1-1' }}% of Total</em>
+              </article>
+              <article class="debug-kpi debug-kpi--green">
+                <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+                <small>Passed</small>
+                <strong>{{ formatTodaysNumber(debugSummarySource.passed) }}</strong>
+                <em>{{ debugSummarySource.passedPercent | number:'1.1-1' }}% of Total</em>
+              </article>
+              <article class="debug-kpi debug-kpi--purple">
+                <span class="material-symbols-outlined" aria-hidden="true">schedule</span>
+                <small>Average Repair Time</small>
+                <strong>{{ debugSummarySource.avgRepairMinutes | number:'1.1-1' }} <span>mins</span></strong>
+                <em>Failed to repair pass time</em>
+              </article>
+            </div>
+
+            <section class="debug-card debug-main-chart">
+              <div class="debug-card-heading">
+                <h2>{{ debugChartTitle }}</h2>
+                <div class="debug-view-toggle">
+                  <span>View By :</span>
+                  <button type="button" [class.active]="debugFilters.viewBy === 'station'" (click)="setDebugViewBy('station')">
+                    <span class="material-symbols-outlined" aria-hidden="true">bar_chart</span>
+                    Station
+                  </button>
+                  <button type="button" [class.active]="debugFilters.viewBy === 'day'" [disabled]="!canDebugViewByDay" (click)="setDebugViewBy('day')">
+                    <span class="material-symbols-outlined" aria-hidden="true">calendar_today</span>
+                    Day
+                  </button>
+                </div>
+                <div class="debug-legend">
+                  <span><i class="pending"></i>Pending</span>
+                  <span><i class="passed"></i>Passed</span>
+                </div>
+              </div>
+
+              <div class="debug-empty" *ngIf="!debugLoading && debugData.chart.length === 0">No repair SN data for this selection.</div>
+              <div class="debug-loading" *ngIf="debugLoading">Loading Debug Dashboard...</div>
+
+              <div class="debug-bar-chart" *ngIf="!debugLoading && debugData.chart.length > 0">
+                <button
+                  type="button"
+                  class="debug-bar-group"
+                  *ngFor="let bucket of debugData.chart; trackBy: trackByDebugBucket"
+                  [class.selected]="debugActiveBucket?.label === bucket.label"
+                  (mouseenter)="hoverDebugBucket(bucket)"
+                  (mouseleave)="hoverDebugBucket(null)"
+                  (click)="selectDebugBucket(bucket)"
+                >
+                  <strong>{{ formatTodaysNumber(bucket.total) }}</strong>
+                  <span class="debug-bar-stack" [style.height.%]="getDebugBarHeight(bucket)">
+                    <i class="debug-segment pending" [style.height.%]="getDebugSegmentHeight(bucket, 'pending')">{{ bucket.pending }}</i>
+                    <i class="debug-segment passed" [style.height.%]="getDebugSegmentHeight(bucket, 'passed')">{{ bucket.passed }}</i>
+                  </span>
+                  <em>{{ bucket.label }}</em>
+                </button>
+              </div>
+            </section>
+
+            <div class="debug-lower-grid">
+              <section class="debug-card">
+                <div class="debug-card-heading"><h2>Repair Status Overview</h2></div>
+                <div class="debug-donut-wrap">
+                  <div class="debug-donut" [style.--passed]="(debugData.summary.total ? (debugData.summary.passed * 100 / debugData.summary.total) : 0) + '%'">
+                    <strong>{{ formatTodaysNumber(debugData.summary.total) }}</strong>
+                    <span>Total</span>
+                  </div>
+                  <div class="debug-donut-legend">
+                    <span><i class="pending"></i>Pending <strong>{{ formatTodaysNumber(debugData.summary.pending) }}</strong></span>
+                    <span><i class="passed"></i>Passed <strong>{{ formatTodaysNumber(debugData.summary.passed) }}</strong></span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="debug-card">
+                <div class="debug-card-heading">
+                  <h2>Top Failure Remarks</h2>
+                  <button type="button" title="Download SN list" (click)="downloadDebugCsv()">
+                    <span class="material-symbols-outlined" aria-hidden="true">download</span>
+                  </button>
+                </div>
+                <div class="debug-remark-bars">
+                  <button type="button" *ngFor="let row of debugData.failureRemarks; trackBy: trackByDebugRemark" (click)="debugFilters.failureRemark = row.remark; loadDebugDashboard()">
+                    <span>{{ row.remark }}</span>
+                    <i><b [style.width.%]="getDebugRemarkWidth(row)"></b></i>
+                    <strong>{{ row.count }} <small>({{ row.percentage | number:'1.1-1' }}%)</small></strong>
+                  </button>
+                  <div class="debug-empty-mini" *ngIf="debugData.failureRemarks.length === 0">No failure remarks for this selection.</div>
+                </div>
+              </section>
+            </div>
+          </main>
+
+          <ng-template #debugStartState>
+            <main class="debug-content">
+              <section class="debug-card debug-start-panel">
+                <span class="material-symbols-outlined" aria-hidden="true">build_circle</span>
+                <strong>Select filters and click Go to load the Debug Dashboard.</strong>
+              </section>
+            </main>
+          </ng-template>
+
+          <aside class="debug-detail-panel" *ngIf="debugDetailsOpen">
+            <div class="debug-detail-heading">
+              <div>
+                <h2>{{ debugDetailsTitle }}</h2>
+                <span>{{ formatTodaysNumber(debugDetailsRows.length) }} SN</span>
+              </div>
+              <button type="button" title="Download" (click)="downloadDebugCsv()">
+                <span class="material-symbols-outlined" aria-hidden="true">download</span>
+              </button>
+              <button type="button" title="Close" (click)="closeDebugDetails()">
+                <span class="material-symbols-outlined" aria-hidden="true">close</span>
+              </button>
+            </div>
+            <div class="debug-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>SN Number</th>
+                    <th>Status</th>
+                    <th>Part Number</th>
+                    <th>Work Order</th>
+                    <th>Failed Time</th>
+                    <th>Repaired Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let row of pagedDebugRows; trackBy: trackByDebugSn">
+                    <td>{{ row.snNumber }}</td>
+                    <td><span class="debug-status" [class.passed]="row.status === 'Passed'">{{ row.status }}</span></td>
+                    <td>{{ row.partNumber }}</td>
+                    <td>{{ row.workOrder }}</td>
+                    <td>{{ row.failedTime }}</td>
+                    <td>{{ row.repairedTime || '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="debug-table-footer">
+              <span>Showing {{ debugShowingStart }} to {{ debugShowingEnd }} of {{ formatTodaysNumber(debugDetailsRows.length) }}</span>
+              <div>
+                <button type="button" (click)="setDebugPage(debugCurrentPage - 1)" [disabled]="debugCurrentPage === 1">chevron_left</button>
+                <button type="button" *ngFor="let page of debugPageNumbers" [class.active]="page === debugCurrentPage" [disabled]="page === '...'" (click)="setDebugPage(page)">{{ page }}</button>
+                <button type="button" (click)="setDebugPage(debugCurrentPage + 1)" [disabled]="debugCurrentPage === debugTotalPages">chevron_right</button>
+              </div>
+            </div>
+          </aside>
+        </div>
       </section>
     </ng-container>
   </ng-template>

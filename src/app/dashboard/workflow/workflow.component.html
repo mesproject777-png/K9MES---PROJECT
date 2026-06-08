@@ -1199,6 +1199,54 @@
       </p>
     </div>
 
+    <div class="repair-station-tab" *ngIf="activeStationRulesTab === 'repair-station'" role="tabpanel">
+      <section class="rules-section label-print-enable-section">
+        <div class="label-print-toggle-row">
+          <span class="label-print-toggle-title">Repair Station Enabled</span>
+          <label class="label-print-switch">
+            <input
+              type="checkbox"
+              [ngModel]="isRepairStationEnabled"
+              (ngModelChange)="onRepairStationEnabledChange($event)"
+              role="switch"
+              [attr.aria-checked]="isRepairStationEnabled"
+            />
+            <span class="label-print-switch-track" aria-hidden="true">
+              <span class="label-print-switch-thumb"></span>
+            </span>
+            <span class="label-print-switch-state">{{ isRepairStationEnabled ? 'ON' : 'OFF' }}</span>
+          </label>
+        </div>
+        <p class="template-detail" *ngIf="!isRepairStationEnabled">
+          Repair station is disabled for this station.
+        </p>
+      </section>
+
+      <ng-container *ngIf="isRepairStationEnabled">
+        <section class="rules-section">
+          <label class="rules-field" for="repairStationName">
+            <span>Station Name</span>
+            <input
+              id="repairStationName"
+              type="text"
+              [(ngModel)]="repairStationName"
+              placeholder="Enter repair station name"
+              autocomplete="off"
+            />
+          </label>
+        </section>
+      </ng-container>
+
+      <p
+        class="label-print-message"
+        *ngIf="labelPrintStatusMessage"
+        [class.success]="labelPrintStatusType === 'success'"
+        [class.error]="labelPrintStatusType === 'error'"
+      >
+        {{ labelPrintStatusMessage }}
+      </p>
+    </div>
+
     <div class="rules-actions label-print-actions" *ngIf="activeStationRulesTab !== 'label-printing' || isLabelPrintingEnabled">
       <div *ngIf="activeStationRulesTab === 'label-printing' && isLabelPrintingEnabled">
         <button type="button" class="secondary-button outline-button" (click)="testPrinterConnection()">

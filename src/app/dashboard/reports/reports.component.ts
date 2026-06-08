@@ -17,12 +17,14 @@ import { Subscription } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { AuthService } from '../../services/auth.service';
 
-type ReportsView = 'menu' | 'standard' | 'scrapSn' | 'undoScrap' | 'activityQuality' | 'todays';
+type ReportsView = 'menu' | 'standard' | 'scrapSn' | 'undoScrap' | 'activityQuality' | 'todays' | 'debug';
 type ReportsTab = 'tree' | 'station';
 type DateSelection = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
 type TodaysDashboardTab = 'filters' | 'overview';
 type TodaysDropdownKey = 'dateSelection' | 'site' | 'station' | 'partNumber' | 'workOrder' | 'pc' | 'user';
 const TODAYS_ALL_VALUE = '__all__';
+type DebugDateRange = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
+type DebugViewBy = 'station' | 'day';
 
 interface ActivityQualityKpiSummary {
   totalPass: number;
@@ -272,6 +274,56 @@ interface TodaysDashboardData {
   failureByStation: TodaysStationFailure[];
 }
 
+interface DebugDashboardOptions {
+  sites: ReportSiteOption[];
+  repairStations: ReportStationOption[];
+  partNumbers: ReportPartNumberOption[];
+  workOrders: ReportWorkOrderOption[];
+  remarks: { remark: string }[];
+}
+
+interface DebugSnRow {
+  snNumber: string;
+  status: 'Pending' | 'Passed';
+  partNumber: string;
+  workOrder: string;
+  repairStation: string;
+  failureRemark: string;
+  failedTime: string;
+  repairedTime: string;
+}
+
+interface DebugChartBucket {
+  label: string;
+  pending: number;
+  passed: number;
+  total: number;
+  sns: DebugSnRow[];
+}
+
+interface DebugRemarkPoint {
+  remark: string;
+  count: number;
+  percentage: number;
+}
+
+interface DebugDashboardData {
+  lastUpdated: string;
+  summary: {
+    total: number;
+    pending: number;
+    passed: number;
+    avgRepairMinutes: number;
+    pendingPercent: number;
+    passedPercent: number;
+  };
+  chart: DebugChartBucket[];
+  stationBuckets: DebugChartBucket[];
+  dayBuckets: DebugChartBucket[];
+  failureRemarks: DebugRemarkPoint[];
+  sns: DebugSnRow[];
+}
+
 @Component({
   selector: 'app-reports',
   standalone: false,
@@ -289,6 +341,8 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   readonly workOrdersApi = `${environment.apiUrl}/api/workflow/work-orders`;
   readonly todaysOptionsApi = `${environment.apiUrl}/api/reports/todays-dashboard/options`;
   readonly todaysDataApi = `${environment.apiUrl}/api/reports/todays-dashboard/data`;
+  readonly debugOptionsApi = `${environment.apiUrl}/api/reports/debug-dashboard/options`;
+  readonly debugDataApi = `${environment.apiUrl}/api/reports/debug-dashboard/data`;
 
   activeView: ReportsView = 'menu';
   activeTab: ReportsTab = 'tree';
@@ -408,6 +462,32 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   readonly todaysPageSize = 10;
   todaysAutoRefreshEnabled = true;
   todaysLastUpdatedAt = new Date();
+  debugLoading = false;
+  debugOptionsLoaded = false;
+  debugHasRun = false;
+  debugOptions: DebugDashboardOptions = this.emptyDebugOptions();
+  debugData: DebugDashboardData = this.emptyDebugData();
+  debugFilters = {
+    site: '',
+    dateRange: 'today' as DebugDateRange,
+    fromDate: '',
+    toDate: '',
+    repairStation: '',
+    status: '',
+    failureRemark: '',
+    partNumber: '',
+    workOrder: '',
+    searchSn: '',
+    viewBy: 'station' as DebugViewBy,
+  };
+  debugSelectedBucket: DebugChartBucket | null = null;
+  debugHoveredBucket: DebugChartBucket | null = null;
+  debugDetailsOpen = false;
+  debugDetailsTitle = '';
+  debugDetailsRows: DebugSnRow[] = [];
+  debugCurrentPage = 1;
+  readonly debugPageSize = 10;
+  debugLastUpdatedAt = new Date();
   private connectorFrame: number | null = null;
   private lastConnectorSignature = '';
   private routeSubscription?: Subscription;
@@ -500,6 +580,18 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.loadTodaysLookups();
   }
 
+  openDebugDashboard(): void {
+    this.activeView = 'debug';
+    this.errorMessage = '';
+    this.applyDebugDateRange();
+    this.loadDebugOptions();
+    this.debugHasRun = false;
+    this.debugData = this.emptyDebugData();
+    this.debugSelectedBucket = null;
+    this.debugHoveredBucket = null;
+    this.closeDebugDetails();
+  }
+
   backToMenu(): void {
     this.activeView = 'menu';
     this.todaysActiveTab = 'filters';
@@ -511,6 +603,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.resetScrapForm();
     this.showExportMenu = false;
     this.fullScreenEnabled = false;
+    this.closeDebugDetails();
     this.router.navigate(['/dashboard/reports']);
   }
 
@@ -968,6 +1061,192 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
         this.errorMessage = error?.error?.message || 'Unable to load Today dashboard data.';
       }
     });
+  }
+
+  loadDebugOptions(): void {
+    if (this.debugOptionsLoaded) {
+      return;
+    }
+
+    this.http.get<DebugDashboardOptions>(this.debugOptionsApi).subscribe({
+      next: (response) => {
+        this.debugOptions = {
+          sites: response.sites || [],
+          repairStations: response.repairStations || [],
+          partNumbers: response.partNumbers || [],
+          workOrders: (response.workOrders || []).filter((row) => Boolean(row.wo)),
+          remarks: response.remarks || [],
+        };
+        this.debugOptionsLoaded = true;
+      },
+      error: () => {
+        this.debugOptions = this.emptyDebugOptions();
+        this.debugOptionsLoaded = true;
+      }
+    });
+  }
+
+  loadDebugDashboard(): void {
+    this.applyDebugDateRange();
+    const params = this.buildDebugParams();
+    this.debugLoading = true;
+    this.debugHasRun = true;
+    this.errorMessage = '';
+
+    this.http.get<DebugDashboardData>(this.debugDataApi, { params }).subscribe({
+      next: (response) => {
+        this.debugData = response || this.emptyDebugData();
+        this.debugLastUpdatedAt = response?.lastUpdated ? new Date(response.lastUpdated) : new Date();
+        this.debugSelectedBucket = this.debugData.chart[0] || null;
+        this.debugHoveredBucket = null;
+        this.debugDetailsOpen = false;
+        this.debugCurrentPage = 1;
+        this.debugLoading = false;
+      },
+      error: (error) => {
+        this.debugData = this.emptyDebugData();
+        this.debugSelectedBucket = null;
+        this.debugHoveredBucket = null;
+        this.debugLoading = false;
+        this.errorMessage = error?.error?.message || 'Unable to load Debug dashboard.';
+      }
+    });
+  }
+
+  onDebugDateRangeChange(): void {
+    this.applyDebugDateRange();
+    if (!this.canDebugViewByDay) {
+      this.debugFilters.viewBy = 'station';
+    }
+  }
+
+  setDebugViewBy(viewBy: DebugViewBy): void {
+    if (viewBy === 'day' && !this.canDebugViewByDay) {
+      return;
+    }
+
+    this.debugFilters.viewBy = viewBy;
+    this.loadDebugDashboard();
+  }
+
+  resetDebugFilters(): void {
+    this.debugFilters = {
+      site: '',
+      dateRange: 'today',
+      fromDate: '',
+      toDate: '',
+      repairStation: '',
+      status: '',
+      failureRemark: '',
+      partNumber: '',
+      workOrder: '',
+      searchSn: '',
+      viewBy: 'station',
+    };
+    this.applyDebugDateRange();
+    this.loadDebugDashboard();
+  }
+
+  setDebugAllFilter(
+    field: 'site' | 'repairStation' | 'status' | 'failureRemark' | 'partNumber' | 'workOrder',
+    checked: boolean
+  ): void {
+    if (checked) {
+      this.debugFilters[field] = '';
+    }
+  }
+
+  selectDebugBucket(bucket: DebugChartBucket): void {
+    this.debugSelectedBucket = bucket;
+    this.openDebugDetails(bucket.sns || [], `${bucket.label} SN Details`);
+  }
+
+  hoverDebugBucket(bucket: DebugChartBucket | null): void {
+    this.debugHoveredBucket = bucket;
+  }
+
+  openDebugDetails(rows: DebugSnRow[], title: string): void {
+    this.debugDetailsRows = rows || [];
+    this.debugDetailsTitle = title;
+    this.debugCurrentPage = 1;
+    this.debugDetailsOpen = true;
+  }
+
+  closeDebugDetails(): void {
+    this.debugDetailsOpen = false;
+    this.debugDetailsRows = [];
+    this.debugDetailsTitle = '';
+    this.debugCurrentPage = 1;
+  }
+
+  downloadDebugCsv(): void {
+    const headers = ['SN Number', 'Status', 'Part Number', 'Work Order', 'Repair Station', 'Failure Remark', 'Failed Time', 'Repaired Time'];
+    const rows: Array<Record<string, string>> = (this.debugDetailsOpen ? this.debugDetailsRows : this.debugData.sns).map((row) => ({
+      'SN Number': row.snNumber,
+      Status: row.status,
+      'Part Number': row.partNumber,
+      'Work Order': row.workOrder,
+      'Repair Station': row.repairStation,
+      'Failure Remark': row.failureRemark,
+      'Failed Time': row.failedTime,
+      'Repaired Time': row.repairedTime || '-',
+    }));
+    const csv = [
+      headers.join(','),
+      ...rows.map((row) => headers.map((header) => this.toCsvCell(row[header] || '')).join(',')),
+    ].join('\n');
+
+    this.downloadTextFile(csv, 'debug-dashboard-sn-list.csv', 'text/csv;charset=utf-8;');
+  }
+
+  private buildDebugParams(): HttpParams {
+    let params = new HttpParams()
+      .set('fromDate', this.debugFilters.fromDate)
+      .set('toDate', this.debugFilters.toDate)
+      .set('viewBy', this.debugFilters.viewBy);
+
+    if (this.debugFilters.site) params = params.set('site', this.debugFilters.site);
+    if (this.debugFilters.repairStation) params = params.set('station', this.debugFilters.repairStation);
+    if (this.debugFilters.partNumber) params = params.set('pn', this.debugFilters.partNumber);
+    if (this.debugFilters.workOrder) params = params.set('wo', this.debugFilters.workOrder);
+    if (this.debugFilters.status) params = params.set('status', this.debugFilters.status);
+    if (this.debugFilters.failureRemark) params = params.set('remark', this.debugFilters.failureRemark);
+    if (this.debugFilters.searchSn.trim()) params = params.set('sn', this.debugFilters.searchSn.trim());
+    return params;
+  }
+
+  private applyDebugDateRange(): void {
+    const today = this.startOfDay(new Date());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const start = new Date(today);
+    const end = new Date(today);
+
+    switch (this.debugFilters.dateRange) {
+      case 'yesterday':
+        this.debugFilters.fromDate = this.formatInputDate(yesterday);
+        this.debugFilters.toDate = this.formatInputDate(yesterday);
+        break;
+      case 'thisWeek':
+        start.setDate(today.getDate() - today.getDay());
+        this.debugFilters.fromDate = this.formatInputDate(start);
+        this.debugFilters.toDate = this.formatInputDate(end);
+        break;
+      case 'thisMonth':
+        start.setDate(1);
+        this.debugFilters.fromDate = this.formatInputDate(start);
+        this.debugFilters.toDate = this.formatInputDate(end);
+        break;
+      case 'custom':
+        if (!this.debugFilters.fromDate) this.debugFilters.fromDate = this.formatInputDate(today);
+        if (!this.debugFilters.toDate) this.debugFilters.toDate = this.formatInputDate(today);
+        break;
+      case 'today':
+      default:
+        this.debugFilters.fromDate = this.formatInputDate(today);
+        this.debugFilters.toDate = this.formatInputDate(today);
+        break;
+    }
   }
 
   onDateSelectionChange(): void {
@@ -1443,6 +1722,141 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
   trackByTodaysSn(index: number, sn: TodaysSnDetail): string {
     return `${index}-${sn.sn}`;
+  }
+
+  trackByDebugBucket(index: number, bucket: DebugChartBucket): string {
+    return `${index}-${bucket.label}`;
+  }
+
+  trackByDebugSn(index: number, sn: DebugSnRow): string {
+    return `${index}-${sn.snNumber}-${sn.repairStation}-${sn.failedTime}`;
+  }
+
+  trackByDebugRemark(index: number, row: DebugRemarkPoint): string {
+    return `${index}-${row.remark}`;
+  }
+
+  get debugActiveBucket(): DebugChartBucket | null {
+    return this.debugHoveredBucket || this.debugSelectedBucket;
+  }
+
+  get debugSummarySource(): { total: number; pending: number; passed: number; avgRepairMinutes: number; pendingPercent: number; passedPercent: number } {
+    const bucket = this.debugActiveBucket;
+    if (!bucket) {
+      return this.debugData.summary;
+    }
+
+    const repairedDurations = (bucket.sns || [])
+      .filter((row) => row.status === 'Passed' && row.repairedTime)
+      .map((row) => {
+        const repaired = new Date(row.repairedTime).getTime();
+        const failed = new Date(row.failedTime).getTime();
+        return Number.isFinite(repaired) && Number.isFinite(failed) ? (repaired - failed) / 60000 : 0;
+      })
+      .filter((minutes) => minutes >= 0);
+    const avgRepairMinutes = repairedDurations.length === 0
+      ? 0
+      : repairedDurations.reduce((sum, value) => sum + value, 0) / repairedDurations.length;
+
+    return {
+      total: bucket.total,
+      pending: bucket.pending,
+      passed: bucket.passed,
+      avgRepairMinutes,
+      pendingPercent: bucket.total ? (bucket.pending * 100 / bucket.total) : 0,
+      passedPercent: bucket.total ? (bucket.passed * 100 / bucket.total) : 0,
+    };
+  }
+
+  get debugChartTitle(): string {
+    return this.debugFilters.viewBy === 'day'
+      ? 'Devices by Day (Pending vs Passed)'
+      : 'Devices by Repair Station (Pending vs Passed)';
+  }
+
+  get debugMaxBucketTotal(): number {
+    return Math.max(1, ...this.debugData.chart.map((bucket) => Number(bucket.total) || 0));
+  }
+
+  get isDebugCustomRange(): boolean {
+    return this.debugFilters.dateRange === 'custom';
+  }
+
+  get isDebugSingleDayRange(): boolean {
+    if (this.debugFilters.dateRange === 'today' || this.debugFilters.dateRange === 'yesterday') {
+      return true;
+    }
+
+    if (this.debugFilters.dateRange === 'custom') {
+      return this.debugFilters.fromDate === this.debugFilters.toDate;
+    }
+
+    return false;
+  }
+
+  get canDebugViewByDay(): boolean {
+    return !this.isDebugSingleDayRange;
+  }
+
+  get pagedDebugRows(): DebugSnRow[] {
+    const start = (this.debugCurrentPage - 1) * this.debugPageSize;
+    return this.debugDetailsRows.slice(start, start + this.debugPageSize);
+  }
+
+  get debugTotalPages(): number {
+    return Math.max(1, Math.ceil(this.debugDetailsRows.length / this.debugPageSize));
+  }
+
+  get debugShowingStart(): number {
+    return this.debugDetailsRows.length === 0 ? 0 : ((this.debugCurrentPage - 1) * this.debugPageSize) + 1;
+  }
+
+  get debugShowingEnd(): number {
+    return Math.min(this.debugDetailsRows.length, this.debugCurrentPage * this.debugPageSize);
+  }
+
+  get debugPageNumbers(): Array<number | string> {
+    const total = this.debugTotalPages;
+    if (total <= 6) {
+      return Array.from({ length: total }, (_, index) => index + 1);
+    }
+
+    const pages = new Set<number>([1, total, this.debugCurrentPage]);
+    if (this.debugCurrentPage > 1) pages.add(this.debugCurrentPage - 1);
+    if (this.debugCurrentPage < total) pages.add(this.debugCurrentPage + 1);
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const result: Array<number | string> = [];
+    sorted.forEach((page, index) => {
+      const previous = sorted[index - 1];
+      if (previous && page - previous > 1) result.push('...');
+      result.push(page);
+    });
+    return result;
+  }
+
+  getDebugBarHeight(bucket: DebugChartBucket): number {
+    return Math.max(5, (bucket.total / this.debugMaxBucketTotal) * 100);
+  }
+
+  getDebugSegmentHeight(bucket: DebugChartBucket, key: 'pending' | 'passed'): number {
+    if (bucket.total <= 0) {
+      return 0;
+    }
+
+    return Math.max(2, (bucket[key] / bucket.total) * 100);
+  }
+
+  getDebugRemarkWidth(row: DebugRemarkPoint): number {
+    const max = Math.max(1, ...this.debugData.failureRemarks.map((item) => item.count));
+    return Math.max(4, (row.count / max) * 100);
+  }
+
+  setDebugPage(page: number | string): void {
+    if (typeof page !== 'number') {
+      return;
+    }
+
+    this.debugCurrentPage = Math.max(1, Math.min(this.debugTotalPages, page));
   }
 
   selectTodaysBucket(index: number): void {
@@ -2488,6 +2902,35 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       detailedRows: [],
       symptomsPareto: [],
       stationFailRates: [],
+    };
+  }
+
+  private emptyDebugOptions(): DebugDashboardOptions {
+    return {
+      sites: [],
+      repairStations: [],
+      partNumbers: [],
+      workOrders: [],
+      remarks: [],
+    };
+  }
+
+  private emptyDebugData(): DebugDashboardData {
+    return {
+      lastUpdated: new Date().toISOString(),
+      summary: {
+        total: 0,
+        pending: 0,
+        passed: 0,
+        avgRepairMinutes: 0,
+        pendingPercent: 0,
+        passedPercent: 0,
+      },
+      chart: [],
+      stationBuckets: [],
+      dayBuckets: [],
+      failureRemarks: [],
+      sns: [],
     };
   }
 

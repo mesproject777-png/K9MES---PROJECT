@@ -20,11 +20,12 @@ import {
   TraceAssembledPart,
   TraceHistoryRow,
   TraceSearchResponse,
+  TraceSnValue,
 } from '../../services/traceability.service';
 import { PackingHierarchyRow, PackingService } from '../../services/packing.service';
 
 type SnResultTab = 'preview' | 'history';
-type PreviewStatus = 'Completed' | 'In Progress' | 'Pending' | 'Paused';
+type PreviewStatus = 'Completed' | 'In Progress' | 'Pending' | 'Paused' | 'Failed';
 
 type WorkflowSnapshot = {
   partNumber?: {
@@ -150,6 +151,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   previewFlowCardsPerRow = this.getPreviewFlowCardsPerRow();
   isChildDetailsOpen = false;
   isAssembledPartsOpen = false;
+  isSnValuesOpen = false;
   activePreviewStation: PreviewStationNode | null = null;
   activePreviewLogistics: PreviewFlowNode | null = null;
   logisticsLoading = false;
@@ -294,7 +296,18 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   }
 
   get boxLeftLabel(): string {
-    return this.workflowSnapshot?.workOrder?.lot || this.serialNumber;
+    const valueCount = this.snValueRows.length;
+    const historyCount = this.snPreviewHistoryRows.length;
+
+    if (valueCount > 0) {
+      return `${valueCount} value${valueCount === 1 ? '' : 's'}`;
+    }
+
+    if (historyCount > 0) {
+      return `${historyCount} history`;
+    }
+
+    return this.workflowSnapshot?.workOrder?.lot || 'NA';
   }
 
   get boxRightLabel(): string {
@@ -303,6 +316,19 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
 
   get assembledParts(): TraceAssembledPart[] {
     return this.traceResult?.assembled_parts || [];
+  }
+
+  get snValueRows(): TraceSnValue[] {
+    return this.traceResult?.sn_values || [];
+  }
+
+  get snPreviewHistoryRows(): SnHistoryDisplayRow[] {
+    return this.snHistoryDisplayRows.slice(0, 3);
+  }
+
+  get snValuesSummary(): string {
+    const count = this.snValueRows.length;
+    return count === 1 ? '1 Connected Value' : `${count} Connected Values`;
   }
 
   get assembledPartsSummary(): string {
@@ -578,6 +604,10 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       return null;
     }
 
+    if (this.isStationFailed(stationCode)) {
+      return 'Failed';
+    }
+
     switch (routeStep.state) {
       case 'completed':
         return 'Completed';
@@ -676,6 +706,20 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return values.map((value) => String(value || '').trim()).find((value) => !!value) || '-';
   }
 
+  formatSnValueRow(row: TraceSnValue): string {
+    const parts = [
+      row.chip_id ? `Chip ID: ${row.chip_id}` : '',
+      row.imes ? `IMES: ${row.imes}` : '',
+    ].filter((part) => !!part);
+
+    return parts.length ? parts.join(' | ') : '-';
+  }
+
+  formatSnValueDate(value: string | null | undefined): string {
+    const parsed = this.parseHistoryDate(value || '');
+    return parsed.date === '-' ? '-' : `${parsed.date} ${parsed.time}`;
+  }
+
   private normalizeSerialValue(value: string | null | undefined): string {
     return String(value || '').trim().toUpperCase();
   }
@@ -697,11 +741,11 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       return true;
     }
 
-    if (eventType && eventType !== 'PASS') {
+    if (eventType && eventType !== 'PASS' && eventType !== 'FAIL') {
       return false;
     }
 
-    return result === 'PASS';
+    return result === 'PASS' || result === 'FAIL';
   }
 
   private shouldShowSnHistoryDisplayRow(row: SnHistoryDisplayRow): boolean {
@@ -712,6 +756,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
 
     return action.startsWith('PASS')
+      || action.startsWith('FAIL')
       || action.startsWith('SCRAP')
       || action.startsWith('UNDO SCRAP')
       || action.startsWith('SN_GENERATED')
@@ -732,12 +777,43 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return status.toLowerCase().replace(/\s+/g, '-');
   }
 
+  private isStationFailed(stationCode: string): boolean {
+    const normalizedStation = String(stationCode || '').trim().toUpperCase();
+    if (!normalizedStation) {
+      return false;
+    }
+
+    const stationRows = (this.traceResult?.history || [])
+      .filter((history) => String(history.station || '').trim().toUpperCase() === normalizedStation)
+      .map((history) => ({
+        result: String(history.result || '').trim().toUpperCase(),
+        date: this.parseHistoryTimestamp(history.date_time),
+      }))
+      .filter((history) => history.result === 'PASS' || history.result === 'FAIL')
+      .sort((a, b) => b.date - a.date);
+
+    return stationRows[0]?.result === 'FAIL';
+  }
+
+  private parseHistoryTimestamp(value: string | null | undefined): number {
+    const timestamp = value ? new Date(value).getTime() : 0;
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
   openChildDetails(): void {
     this.isChildDetailsOpen = true;
   }
 
   closeChildDetails(): void {
     this.isChildDetailsOpen = false;
+  }
+
+  openSnValuesDetails(): void {
+    this.isSnValuesOpen = true;
+  }
+
+  closeSnValuesDetails(): void {
+    this.isSnValuesOpen = false;
   }
 
   openAssembledParts(): void {
@@ -854,6 +930,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     this.previewStationStatusById = {};
     this.isChildDetailsOpen = false;
     this.isAssembledPartsOpen = false;
+    this.isSnValuesOpen = false;
     this.activePreviewStation = null;
     this.activePreviewLogistics = null;
     this.logisticsLoading = false;

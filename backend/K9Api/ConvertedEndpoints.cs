@@ -666,6 +666,15 @@ public static class ConvertedEndpoints
                 {
                     return Fail("Previous station not passed");
                 }
+
+                var failedPreviousStep = await FindLatestFailedPreviousStepAsync(connection, serial["id"]!, routeRows, Convert.ToInt32(currentStation["station_order"]));
+                if (failedPreviousStep is not null)
+                {
+                    var failedStationName = failedPreviousStep["station_name"]?.ToString()
+                        ?? failedPreviousStep["station_code"]?.ToString()
+                        ?? "previous station";
+                    return Fail($"Previous station \"{failedStationName}\" is failed. Please pass that station before continuing.");
+                }
             }
 
             var ruleRows = await QueryRowsAsync(
@@ -2442,6 +2451,7 @@ public static class ConvertedEndpoints
             await using var connection = await OpenConnectionAsync();
             await EnsureSerialTrackingSchemaAsync(connection);
             await EnsureWorkflowSchemaAsync(connection);
+            await EnsureSerialExternalValuesTableAsync(connection);
             var workflowSerial = await GetWorkflowSerialByQueryAsync(connection, query);
             if (workflowSerial is not null)
             {
@@ -4189,11 +4199,54 @@ public static class ConvertedEndpoints
         return matched is not null ? Convert.ToInt32(matched["station_order"]) : Convert.ToInt32(routeRows[0]["station_order"]);
     }
 
+    private static async Task<Dictionary<string, object?>?> FindLatestFailedPreviousStepAsync(
+        NpgsqlConnection connection,
+        object workflowSerialId,
+        List<Dictionary<string, object?>> routeRows,
+        int selectedOrder)
+    {
+        var previousSteps = routeRows
+            .Where(step => Convert.ToInt32(step["station_order"]) < selectedOrder)
+            .Where(step => !string.IsNullOrWhiteSpace(step["station_code"]?.ToString()))
+            .ToList();
+
+        if (previousSteps.Count == 0)
+        {
+            return null;
+        }
+
+        var previousCodes = previousSteps
+            .Select(step => step["station_code"]!.ToString()!)
+            .ToArray();
+
+        var rows = await QueryRowsAsync(
+            connection,
+            """
+            SELECT DISTINCT ON (UPPER(station_code)) station_code, action_result
+            FROM workflow_serial_station_logs
+            WHERE workflow_serial_id = @serialId
+              AND station_code = ANY(@stationCodes)
+              AND UPPER(action_result) IN ('PASS', 'FAIL')
+            ORDER BY UPPER(station_code), created_at DESC, id DESC
+            """,
+            ("serialId", workflowSerialId),
+            ("stationCodes", previousCodes));
+
+        var failedCodes = rows
+            .Where(row => string.Equals(row["action_result"]?.ToString(), "FAIL", StringComparison.OrdinalIgnoreCase))
+            .Select(row => row["station_code"]?.ToString())
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return previousSteps.FirstOrDefault(step => failedCodes.Contains(step["station_code"]?.ToString() ?? string.Empty));
+    }
+
     private static async Task<object> BuildTracePayloadAsync(NpgsqlConnection connection, string query, Dictionary<string, object?> serial)
     {
         var routeRows = await GetRouteRowsForItemAsync(connection, Convert.ToInt32(serial["item_id"]));
         var currentOrder = routeRows.Count == 0 ? 0 : ResolveCurrentOrder(serial, routeRows);
         var assembledParts = await GetSerialAssembledPartsAsync(connection, serial["id"]!);
+        var snValues = new List<Dictionary<string, object?>>();
         var history = await QueryRowsAsync(
             connection,
             """
@@ -4274,6 +4327,7 @@ public static class ConvertedEndpoints
             progress = new { total = routing.Count, completed, current = current is null ? 0 : 1, pending, percent },
             routing,
             history,
+            sn_values = snValues,
             assembled_parts = assembledParts,
             generated_at = DateTime.UtcNow
         };
@@ -4302,6 +4356,7 @@ public static class ConvertedEndpoints
         var palletNo = multiboxRows.Count > 0 ? multiboxRows[0]["pallet_no"] : null;
         var shipmentNo = multiboxRows.Count > 0 ? multiboxRows[0]["shipment_no"] : null;
         var assembledParts = await GetWorkflowSerialAssembledPartsAsync(connection, serial["id"]!);
+        var snValues = await GetSerialExternalValuesAsync(connection, serial["id"]!);
         var history = await QueryRowsAsync(
             connection,
             """
@@ -4386,6 +4441,7 @@ public static class ConvertedEndpoints
             progress = new { total = routing.Count, completed, current = current is null ? 0 : 1, pending, percent },
             routing,
             history,
+            sn_values = snValues,
             assembled_parts = assembledParts,
             generated_at = DateTime.UtcNow
         };
@@ -5228,6 +5284,31 @@ public static class ConvertedEndpoints
                 }
             }
 
+            if (payload["stationRepair"] is JsonObject stationRepair)
+            {
+                await ExecuteAsync(connection, "DELETE FROM workflow_station_repair WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
+                foreach (var configGroup in stationRepair)
+                {
+                    var stationCode = configGroup.Key.Trim();
+                    if (string.IsNullOrWhiteSpace(stationCode) || configGroup.Value is null) continue;
+
+                    await ExecuteAsync(
+                        connection,
+                        """
+                        INSERT INTO workflow_station_repair
+                          (workflow_part_id, station_code, station_id, station_name, repair_station_name, is_repair_station_enabled)
+                        VALUES
+                          (@workflowPartId, @stationCode, @stationId, @stationName, @repairStationName, @isRepairStationEnabled)
+                        """,
+                        ("workflowPartId", workflowPartId),
+                        ("stationCode", stationCode),
+                        ("stationId", ReadInt(configGroup.Value, "stationId")),
+                        ("stationName", ToDbNullable(ReadString(configGroup.Value, "stationName")?.Trim())),
+                        ("repairStationName", ToDbNullable(ReadString(configGroup.Value, "repairStationName")?.Trim())),
+                        ("isRepairStationEnabled", ReadBool(configGroup.Value, "isRepairStationEnabled") ?? false));
+                }
+            }
+
             if (payload["previewStatuses"] is JsonObject previewStatuses)
             {
                 await ExecuteAsync(connection, "DELETE FROM workflow_preview_station_statuses WHERE workflow_part_id = @workflowPartId", ("workflowPartId", workflowPartId));
@@ -5865,6 +5946,16 @@ public static class ConvertedEndpoints
                 """,
                 ("workflowPartId", workflowPartId));
 
+            var repairRows = await QueryRowsAsync(
+                connection,
+                """
+                SELECT station_code, station_id, station_name, repair_station_name, is_repair_station_enabled
+                FROM workflow_station_repair
+                WHERE workflow_part_id = @workflowPartId
+                ORDER BY station_code ASC
+                """,
+                ("workflowPartId", workflowPartId));
+
             var statusRows = await QueryRowsAsync(
                 connection,
                 """
@@ -5929,6 +6020,15 @@ public static class ConvertedEndpoints
                         sampleQty = Convert.ToString(row["sample_qty"]) ?? "1",
                         lotSize = Convert.ToString(row["lot_size"]) ?? "1000",
                         isSamplingEnabled = row["is_sampling_enabled"] is bool enabled && enabled
+                    }),
+                stationRepair = repairRows.ToDictionary(
+                    row => Convert.ToString(row["station_code"]) ?? string.Empty,
+                    row => new
+                    {
+                        stationId = row["station_id"] is DBNull ? (int?)null : Convert.ToInt32(row["station_id"]),
+                        stationName = Convert.ToString(row["station_name"]) ?? string.Empty,
+                        repairStationName = Convert.ToString(row["repair_station_name"]) ?? string.Empty,
+                        isRepairStationEnabled = row["is_repair_station_enabled"] is bool enabled && enabled
                     }),
                 previewStatuses = statusRows.ToDictionary(
                     row => Convert.ToString(row["station_code"]) ?? string.Empty,
@@ -6039,6 +6139,7 @@ public static class ConvertedEndpoints
             stationLabelPrinting = new Dictionary<string, object>(),
             stationWeighing = new Dictionary<string, object>(),
             stationSampling = new Dictionary<string, object>(),
+            stationRepair = new Dictionary<string, object>(),
             previewStatuses = new Dictionary<string, string>()
         };
     }
@@ -6961,6 +7062,43 @@ public static class ConvertedEndpoints
             """);
     }
 
+    private static async Task EnsureSerialExternalValuesTableAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.serial_external_values (
+              id BIGSERIAL PRIMARY KEY,
+              workflow_serial_id BIGINT NOT NULL REFERENCES workflow_serial_numbers(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              station_name VARCHAR(220),
+              chip_id VARCHAR(220),
+              imes VARCHAR(220),
+              pushed_by VARCHAR(160) NOT NULL,
+              pushed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_serial_external_values_station UNIQUE (workflow_serial_id, station_code)
+            )
+            """);
+
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_serial_external_values_serial ON public.serial_external_values (workflow_serial_id)");
+    }
+
+    private static async Task<List<Dictionary<string, object?>>> GetSerialExternalValuesAsync(
+        NpgsqlConnection connection,
+        object workflowSerialId)
+    {
+        return await QueryRowsAsync(
+            connection,
+            """
+            SELECT station_code, station_name, chip_id, imes, pushed_by, pushed_at, updated_at
+            FROM public.serial_external_values
+            WHERE workflow_serial_id = @serialId
+            ORDER BY updated_at DESC, id DESC
+            """,
+            ("serialId", workflowSerialId));
+    }
+
     private static void MapLabels(WebApplication app)
     {
         app.MapGet("/api/labels", async () =>
@@ -7201,6 +7339,286 @@ public static class ConvertedEndpoints
 
     private static void MapReports(WebApplication app)
     {
+        app.MapGet("/api/reports/debug-dashboard/options", async (HttpRequest request) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+
+            var sites = await QueryRowsAsync(
+                connection,
+                """
+                SELECT MIN(COALESCE(site_id, 0)) AS id, site_name AS name
+                FROM workflow_work_orders
+                WHERE BTRIM(COALESCE(site_name, '')) <> ''
+                GROUP BY site_name
+                ORDER BY name ASC
+                """);
+
+            var repairStations = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT
+                  COALESCE(repair_route.station_code, cfg.repair_station_name) AS station_code,
+                  COALESCE(repair_route.station_name, cfg.repair_station_name) AS station_name
+                FROM workflow_station_repair cfg
+                JOIN workflow_work_orders w ON w.workflow_part_id = cfg.workflow_part_id
+                LEFT JOIN workflow_routing_steps repair_route
+                  ON repair_route.workflow_part_id = cfg.workflow_part_id
+                 AND (
+                    UPPER(BTRIM(repair_route.station_code)) = UPPER(BTRIM(cfg.repair_station_name))
+                    OR UPPER(BTRIM(repair_route.station_name)) = UPPER(BTRIM(cfg.repair_station_name))
+                 )
+                WHERE cfg.is_repair_station_enabled = TRUE
+                  AND BTRIM(COALESCE(cfg.repair_station_name, '')) <> ''
+                ORDER BY station_code ASC
+                """);
+
+            var partNumbers = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT p.id, p.pn, p.description
+                FROM workflow_station_repair cfg
+                JOIN workflow_part_numbers p ON p.id = cfg.workflow_part_id
+                WHERE cfg.is_repair_station_enabled = TRUE
+                ORDER BY p.pn ASC
+                """);
+
+            var workOrders = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT w.id, w.wo, p.pn AS part_number, w.site_name AS site
+                FROM workflow_station_repair cfg
+                JOIN workflow_work_orders w ON w.workflow_part_id = cfg.workflow_part_id
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                WHERE cfg.is_repair_station_enabled = TRUE
+                ORDER BY w.wo ASC
+                """);
+
+            var remarks = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT COALESCE(NULLIF(BTRIM(l.debug_remark), ''), 'No Remark') AS remark
+                FROM workflow_serial_station_logs l
+                JOIN workflow_station_repair cfg
+                  ON cfg.workflow_part_id = l.workflow_part_id
+                 AND UPPER(BTRIM(cfg.station_code)) = UPPER(BTRIM(l.station_code))
+                WHERE cfg.is_repair_station_enabled = TRUE
+                  AND UPPER(l.action_result) = 'FAIL'
+                  AND NULLIF(BTRIM(l.debug_remark), '') IS NOT NULL
+                ORDER BY remark ASC
+                """);
+
+            return Results.Json(new { sites, repairStations, partNumbers, workOrders, remarks });
+        });
+
+        app.MapGet("/api/reports/debug-dashboard/data", async (HttpRequest request) =>
+        {
+            var site = request.Query["site"].ToString().Trim();
+            var station = request.Query["station"].ToString().Trim();
+            var pn = request.Query["pn"].ToString().Trim();
+            var wo = request.Query["wo"].ToString().Trim();
+            var status = request.Query["status"].ToString().Trim();
+            var remark = request.Query["remark"].ToString().Trim();
+            var snSearch = request.Query["sn"].ToString().Trim();
+            var fromDateRaw = request.Query["fromDate"].ToString().Trim();
+            var toDateRaw = request.Query["toDate"].ToString().Trim();
+            var viewBy = request.Query["viewBy"].ToString().Trim().ToLowerInvariant();
+
+            var fromDate = DateTime.TryParse(fromDateRaw, out var parsedFrom) ? parsedFrom.Date : DateTime.Today;
+            var toDate = DateTime.TryParse(toDateRaw, out var parsedTo) ? parsedTo.Date : DateTime.Today;
+            if (toDate < fromDate)
+            {
+                (fromDate, toDate) = (toDate, fromDate);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                WITH repair_events AS (
+                  SELECT
+                    fail_log.id AS fail_log_id,
+                    fail_log.workflow_serial_id,
+                    sn.sn,
+                    sn.status AS serial_status,
+                    p.pn,
+                    w.wo,
+                    w.site_name,
+                    fail_log.station_code AS failed_station_code,
+                    COALESCE(fail_log.station_name, fail_log.station_code) AS failed_station_name,
+                    COALESCE(repair_route.station_code, fail_log.after_station_code, cfg.repair_station_name) AS repair_station_code,
+                    COALESCE(repair_route.station_name, fail_log.after_station_code, cfg.repair_station_name) AS repair_station_name,
+                    COALESCE(all_fail_remarks.failure_remark, NULLIF(BTRIM(fail_log.debug_remark), ''), 'No Remark') AS failure_remark,
+                    fail_log.created_at AS failed_time,
+                    pass_log.created_at AS repaired_time
+                  FROM workflow_serial_station_logs fail_log
+                  JOIN workflow_serial_numbers sn ON sn.id = fail_log.workflow_serial_id
+                  JOIN workflow_work_orders w ON w.id = fail_log.workflow_work_order_id
+                  JOIN workflow_part_numbers p ON p.id = fail_log.workflow_part_id
+                  JOIN workflow_station_repair cfg
+                    ON cfg.workflow_part_id = fail_log.workflow_part_id
+                   AND UPPER(BTRIM(cfg.station_code)) = UPPER(BTRIM(fail_log.station_code))
+                   AND cfg.is_repair_station_enabled = TRUE
+                  LEFT JOIN workflow_routing_steps repair_route
+                    ON repair_route.workflow_part_id = fail_log.workflow_part_id
+                   AND (
+                      UPPER(BTRIM(repair_route.station_code)) = UPPER(BTRIM(COALESCE(fail_log.after_station_code, cfg.repair_station_name)))
+                      OR UPPER(BTRIM(repair_route.station_name)) = UPPER(BTRIM(COALESCE(fail_log.after_station_code, cfg.repair_station_name)))
+                   )
+                  LEFT JOIN LATERAL (
+                    SELECT STRING_AGG(COALESCE(NULLIF(BTRIM(seq.debug_remark), ''), 'No Remark'), ' | ' ORDER BY seq.created_at ASC, seq.id ASC) AS failure_remark
+                    FROM workflow_serial_station_logs seq
+                    WHERE seq.workflow_serial_id = fail_log.workflow_serial_id
+                      AND UPPER(seq.action_result) = 'FAIL'
+                      AND UPPER(BTRIM(seq.station_code)) = UPPER(BTRIM(fail_log.station_code))
+                      AND seq.created_at <= fail_log.created_at
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM workflow_serial_station_logs pass_before
+                        WHERE pass_before.workflow_serial_id = fail_log.workflow_serial_id
+                          AND UPPER(pass_before.action_result) = 'PASS'
+                          AND UPPER(BTRIM(pass_before.station_code)) = UPPER(BTRIM(fail_log.station_code))
+                          AND pass_before.created_at > seq.created_at
+                          AND pass_before.created_at <= fail_log.created_at
+                      )
+                  ) all_fail_remarks ON TRUE
+                  LEFT JOIN LATERAL (
+                    SELECT pass_log.created_at
+                    FROM workflow_serial_station_logs pass_log
+                    WHERE pass_log.workflow_serial_id = fail_log.workflow_serial_id
+                      AND UPPER(pass_log.action_result) = 'PASS'
+                      AND UPPER(BTRIM(pass_log.station_code)) = UPPER(BTRIM(COALESCE(repair_route.station_code, fail_log.after_station_code, cfg.repair_station_name)))
+                      AND pass_log.created_at > fail_log.created_at
+                    ORDER BY pass_log.created_at ASC, pass_log.id ASC
+                    LIMIT 1
+                  ) pass_log ON TRUE
+                  WHERE UPPER(fail_log.action_result) = 'FAIL'
+                    AND fail_log.after_station_code IS NOT NULL
+                    AND UPPER(BTRIM(fail_log.after_station_code)) <> UPPER(BTRIM(fail_log.station_code))
+                    AND fail_log.created_at::date >= @fromDate::date
+                    AND fail_log.created_at::date <= @toDate::date
+                )
+                SELECT *
+                FROM repair_events
+                WHERE (@site = '' OR UPPER(BTRIM(site_name)) = UPPER(BTRIM(@site)))
+                  AND (@station = '' OR UPPER(BTRIM(repair_station_code)) = UPPER(BTRIM(@station)) OR UPPER(BTRIM(repair_station_name)) = UPPER(BTRIM(@station)))
+                  AND (@pn = '' OR UPPER(BTRIM(pn)) = UPPER(BTRIM(@pn)))
+                  AND (@wo = '' OR UPPER(BTRIM(wo)) = UPPER(BTRIM(@wo)))
+                  AND (@remark = '' OR UPPER(failure_remark) LIKE UPPER('%' || @remark || '%'))
+                  AND (@sn = '' OR UPPER(sn) LIKE UPPER('%' || @sn || '%'))
+                  AND (
+                    @status = ''
+                    OR (@status = 'Pending' AND repaired_time IS NULL)
+                    OR (@status = 'Passed' AND repaired_time IS NOT NULL)
+                  )
+                ORDER BY failed_time DESC, fail_log_id DESC
+                """,
+                ("site", site),
+                ("station", station),
+                ("pn", pn),
+                ("wo", wo),
+                ("remark", remark),
+                ("sn", snSearch),
+                ("status", status),
+                ("fromDate", fromDate),
+                ("toDate", toDate));
+
+            static string Read(Dictionary<string, object?> row, string key) => Convert.ToString(row[key]) ?? string.Empty;
+            static DateTime ReadDate(Dictionary<string, object?> row, string key)
+            {
+                var value = row[key];
+                if (value is DateTime date) return date;
+                return DateTime.TryParse(Convert.ToString(value), out var parsed) ? parsed : DateTime.MinValue;
+            }
+
+            var total = rows.Count;
+            var passed = rows.Count(row => row["repaired_time"] is not null && row["repaired_time"] is not DBNull);
+            var pending = Math.Max(0, total - passed);
+            var repairedDurations = rows
+                .Where(row => row["repaired_time"] is not null && row["repaired_time"] is not DBNull)
+                .Select(row => (ReadDate(row, "repaired_time") - ReadDate(row, "failed_time")).TotalMinutes)
+                .Where(minutes => minutes >= 0)
+                .ToList();
+            var avgRepairMinutes = repairedDurations.Count == 0 ? 0 : Math.Round(repairedDurations.Average(), 1);
+
+            object ToSn(Dictionary<string, object?> row) => new
+            {
+                snNumber = Read(row, "sn"),
+                status = row["repaired_time"] is null || row["repaired_time"] is DBNull ? "Pending" : "Passed",
+                partNumber = Read(row, "pn"),
+                workOrder = Read(row, "wo"),
+                repairStation = Read(row, "repair_station_name"),
+                failureRemark = Read(row, "failure_remark"),
+                failedTime = ReadDate(row, "failed_time") == DateTime.MinValue ? "" : ReadDate(row, "failed_time").ToString("yyyy-MM-dd HH:mm:ss"),
+                repairedTime = ReadDate(row, "repaired_time") == DateTime.MinValue ? "" : ReadDate(row, "repaired_time").ToString("yyyy-MM-dd HH:mm:ss")
+            };
+
+            object BuildBucket(string label, IEnumerable<Dictionary<string, object?>> bucketRows)
+            {
+                var list = bucketRows.ToList();
+                var bucketPassed = list.Count(row => row["repaired_time"] is not null && row["repaired_time"] is not DBNull);
+                return new
+                {
+                    label,
+                    pending = Math.Max(0, list.Count - bucketPassed),
+                    passed = bucketPassed,
+                    total = list.Count,
+                    sns = list.Select(ToSn).ToArray()
+                };
+            }
+
+            var stationBuckets = rows
+                .GroupBy(row => string.IsNullOrWhiteSpace(Read(row, "repair_station_code")) ? Read(row, "repair_station_name") : Read(row, "repair_station_code"))
+                .OrderByDescending(group => group.Count())
+                .Select(group => BuildBucket(group.Key, group))
+                .ToArray();
+
+            var days = Enumerable.Range(0, (toDate - fromDate).Days + 1)
+                .Select(offset => fromDate.AddDays(offset))
+                .ToArray();
+            var dayBuckets = days
+                .Select(day => BuildBucket(day.ToString("dd MMM"), rows.Where(row => ReadDate(row, "failed_time").Date == day.Date)))
+                .ToArray();
+
+            var remarkValues = rows
+                .SelectMany(row => (string.IsNullOrWhiteSpace(Read(row, "failure_remark")) ? "No Remark" : Read(row, "failure_remark"))
+                    .Split(" | ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                .ToList();
+
+            var remarkRows = remarkValues
+                .GroupBy(value => string.IsNullOrWhiteSpace(value) ? "No Remark" : value)
+                .OrderByDescending(group => group.Count())
+                .Take(8)
+                .Select(group => new
+                {
+                    remark = group.Key,
+                    count = group.Count(),
+                    percentage = remarkValues.Count == 0 ? 0 : Math.Round(group.Count() * 100.0 / remarkValues.Count, 2)
+                })
+                .ToArray();
+
+            return Results.Json(new
+            {
+                lastUpdated = DateTime.Now,
+                summary = new
+                {
+                    total,
+                    pending,
+                    passed,
+                    avgRepairMinutes,
+                    pendingPercent = total == 0 ? 0 : Math.Round(pending * 100.0 / total, 2),
+                    passedPercent = total == 0 ? 0 : Math.Round(passed * 100.0 / total, 2)
+                },
+                chart = viewBy == "day" ? dayBuckets : stationBuckets,
+                stationBuckets,
+                dayBuckets,
+                failureRemarks = remarkRows,
+                sns = rows.Select(ToSn).ToArray()
+            });
+        });
+
         app.MapGet("/api/reports/todays-dashboard/options", async (HttpRequest request) =>
         {
             var site = request.Query["site"].ToString().Trim();
@@ -8293,6 +8711,27 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS station_id INTEGER");
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS is_sampling_enabled BOOLEAN NOT NULL DEFAULT FALSE");
 
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_station_repair (
+              id SERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              station_id INTEGER,
+              station_name VARCHAR(220),
+              repair_station_name VARCHAR(220),
+              is_repair_station_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_workflow_station_repair UNIQUE (workflow_part_id, station_code)
+            )
+            """);
+
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_repair ADD COLUMN IF NOT EXISTS station_id INTEGER");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_repair ADD COLUMN IF NOT EXISTS repair_station_name VARCHAR(220)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_repair ADD COLUMN IF NOT EXISTS is_repair_station_enabled BOOLEAN NOT NULL DEFAULT FALSE");
+
         await ExecuteAsync(connection, "CREATE SEQUENCE IF NOT EXISTS public.workflow_rsn_seq START WITH 1");
         await ExecuteAsync(
             connection,
@@ -8328,6 +8767,7 @@ public static class ConvertedEndpoints
               station_name VARCHAR(220),
               action_result VARCHAR(10) NOT NULL,
               remark TEXT,
+              debug_remark TEXT,
               changed_by VARCHAR(100) NOT NULL DEFAULT 'system',
               before_station_code VARCHAR(80),
               before_station_order INTEGER,
@@ -8447,6 +8887,7 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_part ON public.workflow_bom_children (workflow_part_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_rules_part ON public.workflow_station_rules (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_label_printing_part ON public.workflow_station_label_printing (workflow_part_id, station_code)");
+        await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_repair_part ON public.workflow_station_repair (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_wo ON public.workflow_serial_numbers (workflow_work_order_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_serials_part ON public.workflow_serial_numbers (workflow_part_id)");
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_numbers ADD COLUMN IF NOT EXISTS scrap_previous_status VARCHAR(30)");
@@ -8458,6 +8899,7 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_bom_bind_child ON public.workflow_serial_bom_bindings (child_workflow_serial_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_serial ON public.workflow_serial_station_logs (workflow_serial_id, created_at DESC)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_station ON public.workflow_serial_station_logs (workflow_part_id, station_code)");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_station_logs ADD COLUMN IF NOT EXISTS debug_remark TEXT");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_multiboxes_open ON public.workflow_multiboxes (workflow_part_id, workflow_work_order_id, status)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_pallet_items_pallet ON public.workflow_pallet_items (pallet_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_shipment_items_shipment ON public.workflow_shipment_items (shipment_id)");
