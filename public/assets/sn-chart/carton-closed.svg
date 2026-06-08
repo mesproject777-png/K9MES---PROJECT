@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Closed cardboard box">
+  <defs>
+    <linearGradient id="closedFace" x1="0" y1="20" x2="0" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F0B15F"/>
+      <stop offset="1" stop-color="#C27630"/>
+    </linearGradient>
+  </defs>
+  <path d="M17 32h62v48H17Z" fill="url(#closedFace)" stroke="#3A2618" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M17 32 48 18l31 14-31 14Z" fill="#F6C477" stroke="#3A2618" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M48 46v34" stroke="#3A2618" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M43 20h10v60H43Z" fill="#9D5E25" opacity=".55"/>
+  <path d="M27 56h16M27 66h13M61 56h11M61 66h13" stroke="#70431F" stroke-width="4" stroke-linecap="round"/>
+  <path d="M28 73h15" stroke="#3A2618" stroke-width="4" stroke-linecap="round"/>
+</svg>

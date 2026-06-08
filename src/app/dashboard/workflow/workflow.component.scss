@@ -851,7 +851,8 @@ button.preview-node:focus-visible {
   gap: 5px;
 }
 
-.preview-node-copy strong {
+.preview-node-copy strong,
+.product-title {
   color: #06155a;
   font-size: 1.08rem;
   font-weight: 900;
@@ -988,6 +989,59 @@ button.preview-node:focus-visible {
   top: 22px;
   left: 76px;
   height: 46px;
+}
+
+.product-visual {
+  position: relative;
+  width: 188px;
+  height: 48px;
+  display: block;
+}
+
+.product-shaft {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 20px;
+  height: 12px;
+  border: 1px solid #1f2937;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #d7d7d7 0%, #565656 48%, #1f1f1f 54%, #9a9a9a 100%);
+  box-shadow: 0 4px 8px rgba(16, 24, 40, 0.22);
+}
+
+.product-hub,
+.product-cap {
+  position: absolute;
+  top: 8px;
+  width: 34px;
+  height: 34px;
+  border: 2px solid #2f2f2f;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #f1f1f1 0 18%, #737373 48%, #202020 72%);
+  box-shadow: 0 5px 10px rgba(16, 24, 40, 0.24);
+}
+
+.product-hub.left {
+  left: 28px;
+}
+
+.product-hub.right {
+  right: 28px;
+}
+
+.product-cap {
+  top: 15px;
+  width: 20px;
+  height: 20px;
+}
+
+.product-cap.left {
+  left: 16px;
+}
+
+.product-cap.right {
+  right: 16px;
 }
 
 .preview-process-flow {
@@ -1424,6 +1478,14 @@ button.preview-node:focus-visible {
 .logistics-icon {
   font-size: 58px;
   font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 48;
+}
+
+.logistics-image {
+  display: block;
+  width: 72px;
+  height: 62px;
+  margin: 0 auto;
+  object-fit: contain;
 }
 
 .cart-node .logistics-icon {

@@ -8105,6 +8105,204 @@ public static class ConvertedEndpoints
             });
         });
 
+        app.MapGet("/api/reports/activity-quality/options", async (HttpRequest request) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            await EnsureSerialTrackingSchemaAsync(connection);
+            await EnsureWorkflowSchemaAsync(connection);
+
+            var now = DateTime.Now;
+            var fromDate = ReadDateQuery(request, "fromDate") ?? now.Date;
+            var toDate = ReadDateQuery(request, "toDate") ?? now;
+            if (toDate.Date == toDate)
+            {
+                toDate = toDate.Date.AddDays(1).AddTicks(-1);
+            }
+
+            var startHour = ReadIntQuery(request, "startHour");
+            if (startHour is >= 0 and <= 23)
+            {
+                fromDate = fromDate.Date.AddHours(startHour.Value);
+            }
+
+            var siteValues = ReadQueryList(request, "siteIds");
+            var stationValues = ReadQueryList(request, "stationIds");
+            var productLineValues = ReadQueryList(request, "productLineIds");
+            var partNumbers = ReadQueryList(request, "partNumbers");
+            var workOrders = ReadQueryList(request, "workOrders");
+            var pcValues = ReadQueryList(request, "pcIds");
+
+            const string activityCte = """
+                WITH activity AS (
+                  SELECT
+                    l.created_at AS date_time,
+                    sn.site_id::text AS site_id,
+                    COALESCE(s.name, '') AS site,
+                    l.station_code AS station,
+                    COALESCE(l.station_name, l.station_code) AS station_name,
+                    COALESCE(pl.description, pl.code, '') AS product_line,
+                    i.pn AS part_number,
+                    wo.wo AS work_order,
+                    COALESCE(l.pc_name, '') AS pc,
+                    COALESCE(l.changed_by, '') AS user_name
+                  FROM serial_station_logs l
+                  JOIN serial_numbers sn ON sn.id = l.serial_id
+                  JOIN work_orders wo ON wo.id = l.work_order_id
+                  JOIN items i ON i.id = l.item_id
+                  LEFT JOIN sites s ON s.id = sn.site_id
+                  LEFT JOIN product_lines pl ON pl.id = i.product_line_id
+                  WHERE UPPER(l.action_result) IN ('PASS', 'FAIL')
+
+                  UNION ALL
+
+                  SELECT
+                    l.created_at AS date_time,
+                    w.site_id::text AS site_id,
+                    COALESCE(w.site_name, '') AS site,
+                    l.station_code AS station,
+                    COALESCE(l.station_name, l.station_code) AS station_name,
+                    COALESCE(p.item_type, '') AS product_line,
+                    p.pn AS part_number,
+                    w.wo AS work_order,
+                    '' AS pc,
+                    COALESCE(l.changed_by, '') AS user_name
+                  FROM workflow_serial_station_logs l
+                  JOIN workflow_serial_numbers sn ON sn.id = l.workflow_serial_id
+                  JOIN workflow_part_numbers p ON p.id = l.workflow_part_id
+                  JOIN workflow_work_orders w ON w.id = l.workflow_work_order_id
+                  WHERE UPPER(l.action_result) IN ('PASS', 'FAIL')
+                ),
+                filtered AS (
+                  SELECT *
+                  FROM activity
+                  WHERE date_time >= @fromDate
+                    AND date_time <= @toDate
+                    AND (cardinality(@siteValues) = 0 OR site_id = ANY(@siteValues) OR site = ANY(@siteValues))
+                    AND (cardinality(@stationValues) = 0 OR station = ANY(@stationValues) OR station_name = ANY(@stationValues))
+                    AND (cardinality(@productLineValues) = 0 OR product_line = ANY(@productLineValues))
+                    AND (cardinality(@partNumbers) = 0 OR part_number = ANY(@partNumbers))
+                    AND (cardinality(@workOrders) = 0 OR work_order = ANY(@workOrders))
+                    AND (cardinality(@pcValues) = 0 OR pc = ANY(@pcValues))
+                )
+                """;
+
+            var parameters = new (string Name, object? Value)[]
+            {
+                ("fromDate", fromDate),
+                ("toDate", toDate),
+                ("siteValues", siteValues),
+                ("stationValues", stationValues),
+                ("productLineValues", productLineValues),
+                ("partNumbers", partNumbers),
+                ("workOrders", workOrders),
+                ("pcValues", pcValues)
+            };
+
+            var sites = await QueryRowsAsync(
+                connection,
+                """
+                SELECT MIN(COALESCE(site_id, 0)) AS id, site_name AS name
+                FROM workflow_work_orders
+                WHERE BTRIM(COALESCE(site_name, '')) <> ''
+                GROUP BY site_name
+                ORDER BY name ASC
+                """);
+
+            var stations = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT r.station_code, r.station_name
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                JOIN workflow_routing_steps r ON r.workflow_part_id = p.id
+                WHERE (cardinality(@siteValues) = 0 OR w.site_id::text = ANY(@siteValues) OR w.site_name = ANY(@siteValues))
+                ORDER BY station_code ASC
+                """,
+                parameters);
+
+            var productLines = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT COALESCE(NULLIF(p.item_type, ''), pl.description, pl.code, '') AS value
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                LEFT JOIN items i ON UPPER(BTRIM(i.pn)) = UPPER(BTRIM(p.pn))
+                LEFT JOIN product_lines pl ON pl.id = i.product_line_id
+                JOIN workflow_routing_steps r ON r.workflow_part_id = p.id
+                WHERE (cardinality(@siteValues) = 0 OR w.site_id::text = ANY(@siteValues) OR w.site_name = ANY(@siteValues))
+                  AND (cardinality(@stationValues) = 0 OR r.station_code = ANY(@stationValues) OR r.station_name = ANY(@stationValues))
+                  AND BTRIM(COALESCE(NULLIF(p.item_type, ''), pl.description, pl.code, '')) <> ''
+                ORDER BY value ASC
+                """,
+                parameters);
+
+            var partNumbersResult = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT p.id, p.pn, p.description
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                LEFT JOIN items i ON UPPER(BTRIM(i.pn)) = UPPER(BTRIM(p.pn))
+                LEFT JOIN product_lines pl ON pl.id = i.product_line_id
+                JOIN workflow_routing_steps r ON r.workflow_part_id = p.id
+                WHERE (cardinality(@siteValues) = 0 OR w.site_id::text = ANY(@siteValues) OR w.site_name = ANY(@siteValues))
+                  AND (cardinality(@stationValues) = 0 OR r.station_code = ANY(@stationValues) OR r.station_name = ANY(@stationValues))
+                  AND (cardinality(@productLineValues) = 0 OR COALESCE(NULLIF(p.item_type, ''), pl.description, pl.code, '') = ANY(@productLineValues))
+                  AND BTRIM(COALESCE(p.pn, '')) <> ''
+                ORDER BY pn ASC
+                """,
+                parameters);
+
+            var workOrdersResult = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT w.id, w.wo, p.pn AS part_number, w.site_name AS site
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                LEFT JOIN items i ON UPPER(BTRIM(i.pn)) = UPPER(BTRIM(p.pn))
+                LEFT JOIN product_lines pl ON pl.id = i.product_line_id
+                JOIN workflow_routing_steps r ON r.workflow_part_id = p.id
+                WHERE (cardinality(@siteValues) = 0 OR w.site_id::text = ANY(@siteValues) OR w.site_name = ANY(@siteValues))
+                  AND (cardinality(@stationValues) = 0 OR r.station_code = ANY(@stationValues) OR r.station_name = ANY(@stationValues))
+                  AND (cardinality(@productLineValues) = 0 OR COALESCE(NULLIF(p.item_type, ''), pl.description, pl.code, '') = ANY(@productLineValues))
+                  AND (cardinality(@partNumbers) = 0 OR p.pn = ANY(@partNumbers))
+                  AND BTRIM(COALESCE(w.wo, '')) <> ''
+                ORDER BY wo ASC
+                """,
+                parameters);
+
+            var pcs = await QueryRowsAsync(
+                connection,
+                activityCte + """
+                SELECT DISTINCT pc AS value
+                FROM filtered
+                WHERE BTRIM(pc) <> ''
+                ORDER BY value ASC
+                """,
+                parameters);
+
+            var users = await QueryRowsAsync(
+                connection,
+                activityCte + """
+                SELECT DISTINCT user_name AS value
+                FROM filtered
+                WHERE BTRIM(user_name) <> ''
+                ORDER BY value ASC
+                """,
+                parameters);
+
+            return Results.Json(new
+            {
+                sites,
+                stations,
+                productLines,
+                partNumbers = partNumbersResult,
+                workOrders = workOrdersResult,
+                pcs,
+                users
+            });
+        });
+
         app.MapGet("/api/reports/activity-quality", async (HttpRequest request) =>
         {
             await using var connection = await OpenConnectionAsync();

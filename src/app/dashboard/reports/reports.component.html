@@ -80,24 +80,6 @@
             <h1>Activity &amp; Quality Dashboard</h1>
             <p>Real-time shop floor activity and quality analysis</p>
           </div>
-          <div class="aq-header-actions">
-            <button type="button" class="aq-icon-action" title="Refresh" (click)="loadActivityQualityDashboard()">
-              <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
-            </button>
-            <div class="aq-export-wrap">
-              <button type="button" class="aq-icon-action" title="Export" (click)="showExportMenu = !showExportMenu">
-                <span class="material-symbols-outlined" aria-hidden="true">ios_share</span>
-              </button>
-              <div class="aq-export-menu" *ngIf="showExportMenu">
-                <button type="button" (click)="exportChartImage()">Export chart image</button>
-                <button type="button" (click)="exportActivityData()">Export data CSV</button>
-                <button type="button" (click)="viewUnderlyingData()">View underlying data</button>
-              </div>
-            </div>
-            <button type="button" class="aq-icon-action" title="Full screen" (click)="toggleFullScreen()">
-              <span class="material-symbols-outlined" aria-hidden="true">{{ fullScreenEnabled ? 'fullscreen_exit' : 'fullscreen' }}</span>
-            </button>
-          </div>
         </div>
 
         <p class="message error" *ngIf="activityErrorMessage">{{ activityErrorMessage }}</p>
@@ -105,22 +87,80 @@
         <section class="aq-filter-card">
           <div class="aq-filter-grid">
             <label>
-              <span>From Date</span>
-              <input type="date" [(ngModel)]="activityFilters.fromDate" [disabled]="activityFilters.dateSelection !== 'custom'" />
-            </label>
-            <label>
-              <span>To Date</span>
-              <input type="date" [(ngModel)]="activityFilters.toDate" [disabled]="activityFilters.dateSelection !== 'custom'" />
-            </label>
-            <label>
-              <span>Date Selection</span>
+              <span>Date Range</span>
               <select [(ngModel)]="activityFilters.dateSelection" (ngModelChange)="onActivityDateSelectionChange()">
+                <option [ngValue]="''">Select Date</option>
                 <option *ngFor="let option of dateSelections" [ngValue]="option.value">{{ option.label }}</option>
               </select>
+            </label>
+            <label *ngIf="activityFilters.dateSelection === 'custom'">
+              <span>From Date</span>
+              <input type="date" [(ngModel)]="activityFilters.fromDate" />
+            </label>
+            <label *ngIf="activityFilters.dateSelection === 'custom'">
+              <span>To Date</span>
+              <input type="date" [(ngModel)]="activityFilters.toDate" />
             </label>
             <label *ngIf="showStartHour">
               <span>Start Hour</span>
               <input type="number" min="0" max="23" [(ngModel)]="activityFilters.startHour" />
+            </label>
+
+            <label>
+              <span>Site</span>
+              <select [(ngModel)]="activityFilters.site" (ngModelChange)="onActivityFilterChange('site')" [disabled]="isActivityFilterDisabled('site')">
+                <option value="">Select Site</option>
+                <option [value]="allDropdownValue">All Sites</option>
+                <option *ngFor="let value of activityOptionValues('site')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Station</span>
+              <select [(ngModel)]="activityFilters.station" (ngModelChange)="onActivityFilterChange('station')" [disabled]="isActivityFilterDisabled('station')">
+                <option value="">Select Station</option>
+                <option [value]="allDropdownValue">All Stations</option>
+                <option *ngFor="let value of activityOptionValues('station')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Product Line</span>
+              <select [(ngModel)]="activityFilters.productLine" (ngModelChange)="onActivityFilterChange('productLine')" [disabled]="isActivityFilterDisabled('productLine')">
+                <option value="">Select Product Line</option>
+                <option [value]="allDropdownValue">All Product Lines</option>
+                <option *ngFor="let value of activityOptionValues('productLine')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Part Number</span>
+              <select [(ngModel)]="activityFilters.partNumber" (ngModelChange)="onActivityFilterChange('partNumber')" [disabled]="isActivityFilterDisabled('partNumber')">
+                <option value="">Select Part Number</option>
+                <option [value]="allDropdownValue">All Part Numbers</option>
+                <option *ngFor="let value of activityOptionValues('partNumber')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Work Order</span>
+              <select [(ngModel)]="activityFilters.workOrder" (ngModelChange)="onActivityFilterChange('workOrder')" [disabled]="isActivityFilterDisabled('workOrder')">
+                <option value="">Select Work Order</option>
+                <option [value]="allDropdownValue">All Work Orders</option>
+                <option *ngFor="let value of activityOptionValues('workOrder')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>User</span>
+              <select [(ngModel)]="activityFilters.user" (ngModelChange)="onActivityFilterChange('user')" [disabled]="isActivityFilterDisabled('user')">
+                <option value="">Select User</option>
+                <option [value]="allDropdownValue">All Users</option>
+                <option *ngFor="let value of activityOptionValues('user')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>PC</span>
+              <select [(ngModel)]="activityFilters.pc" (ngModelChange)="onActivityFilterChange('pc')" [disabled]="isActivityFilterDisabled('pc')">
+                <option value="">Select PC</option>
+                <option [value]="allDropdownValue">All PCs</option>
+                <option *ngFor="let value of activityOptionValues('pc')" [value]="value">{{ value }}</option>
+              </select>
             </label>
             <label>
               <span>Pivot</span>
@@ -128,53 +168,16 @@
                 <option *ngFor="let option of pivotOptions" [value]="option.value">{{ option.group }} - {{ option.label }}</option>
               </select>
             </label>
-
-            <label>
-              <span>Site</span>
-              <input list="aq-sites" [(ngModel)]="activityFilters.site" [disabled]="activityFilters.allSites" />
-            </label>
-            <label>
-              <span>Station</span>
-              <input list="aq-stations" [(ngModel)]="activityFilters.station" [disabled]="activityFilters.allStations" />
-            </label>
-            <label>
-              <span>Product Line</span>
-              <input list="aq-pl" [(ngModel)]="activityFilters.productLine" [disabled]="activityFilters.allProductLines" />
-            </label>
-            <label>
-              <span>Part Number</span>
-              <input list="aq-pn" [(ngModel)]="activityFilters.partNumber" [disabled]="activityFilters.allPartNumbers" />
-            </label>
-            <label>
-              <span>Work Order</span>
-              <input list="aq-wo" [(ngModel)]="activityFilters.workOrder" [disabled]="activityFilters.allWorkOrders" />
-            </label>
-            <label>
-              <span>User</span>
-              <input list="aq-users" [(ngModel)]="activityFilters.user" [disabled]="activityFilters.allUsers" />
-            </label>
-            <label>
-              <span>PC</span>
-              <input list="aq-pcs" [(ngModel)]="activityFilters.pc" [disabled]="activityFilters.allPcs" />
-            </label>
           </div>
 
-          <datalist id="aq-sites"><option *ngFor="let value of optionValues('site')" [value]="value"></option></datalist>
-          <datalist id="aq-stations"><option *ngFor="let value of optionValues('station')" [value]="value"></option></datalist>
-          <datalist id="aq-pl"><option *ngFor="let value of optionValues('product_line')" [value]="value"></option></datalist>
-          <datalist id="aq-pn"><option *ngFor="let value of optionValues('part_number')" [value]="value"></option></datalist>
-          <datalist id="aq-wo"><option *ngFor="let value of optionValues('work_order')" [value]="value"></option></datalist>
-          <datalist id="aq-users"><option *ngFor="let value of optionValues('user_name')" [value]="value"></option></datalist>
-          <datalist id="aq-pcs"><option *ngFor="let value of optionValues('pc')" [value]="value"></option></datalist>
-
           <div class="aq-checks">
-            <label><input type="checkbox" [(ngModel)]="activityFilters.allSites" /> All Sites</label>
-            <label><input type="checkbox" [(ngModel)]="activityFilters.allStations" /> All Stations</label>
-            <label><input type="checkbox" [(ngModel)]="activityFilters.allProductLines" /> All PL</label>
-            <label><input type="checkbox" [(ngModel)]="activityFilters.allPartNumbers" /> All PN</label>
-            <label><input type="checkbox" [(ngModel)]="activityFilters.allWorkOrders" /> All WO</label>
-            <label><input type="checkbox" [(ngModel)]="activityFilters.allPcs" /> All PC</label>
-            <label><input type="checkbox" [(ngModel)]="activityFilters.allUsers" /> All Users</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allSites" (ngModelChange)="onActivityAllFilterChange('site', $event)" /> All Sites</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allStations" (ngModelChange)="onActivityAllFilterChange('station', $event)" /> All Stations</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allProductLines" (ngModelChange)="onActivityAllFilterChange('productLine', $event)" /> All PL</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allPartNumbers" (ngModelChange)="onActivityAllFilterChange('partNumber', $event)" /> All PN</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allWorkOrders" (ngModelChange)="onActivityAllFilterChange('workOrder', $event)" /> All WO</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allPcs" (ngModelChange)="onActivityAllFilterChange('pc', $event)" /> All PC</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allUsers" (ngModelChange)="onActivityAllFilterChange('user', $event)" /> All Users</label>
           </div>
 
           <div class="aq-filter-actions">
@@ -409,16 +412,8 @@
             </div>
 
             <label>
-              <span>Site</span>
-              <select [(ngModel)]="debugFilters.site">
-                <option value="">All Sites</option>
-                <option *ngFor="let site of debugOptions.sites" [value]="site.name">{{ site.name }}</option>
-              </select>
-            </label>
-
-            <label>
               <span>Date Range</span>
-              <select [(ngModel)]="debugFilters.dateRange" (change)="onDebugDateRangeChange()">
+              <select [(ngModel)]="debugFilters.dateRange" (change)="onDebugDateRangeChange()" [disabled]="isDebugFilterDisabled('dateRange')">
                 <option value="today">Today</option>
                 <option value="yesterday">Yesterday</option>
                 <option value="thisWeek">This Week</option>
@@ -429,17 +424,25 @@
 
             <label *ngIf="isDebugCustomRange">
               <span>From Date</span>
-              <input type="date" [(ngModel)]="debugFilters.fromDate">
+              <input type="date" [(ngModel)]="debugFilters.fromDate" (change)="onDebugCustomDateChange()" [disabled]="isDebugFilterDisabled('fromDate')">
             </label>
 
             <label *ngIf="isDebugCustomRange">
               <span>To Date</span>
-              <input type="date" [(ngModel)]="debugFilters.toDate">
+              <input type="date" [(ngModel)]="debugFilters.toDate" (change)="onDebugCustomDateChange()" [disabled]="isDebugFilterDisabled('toDate')">
+            </label>
+
+            <label>
+              <span>Site</span>
+              <select [(ngModel)]="debugFilters.site" (ngModelChange)="onDebugFilterChange('site')" [disabled]="isDebugFilterDisabled('site')">
+                <option value="">All Sites</option>
+                <option *ngFor="let site of debugOptions.sites" [value]="site.name">{{ site.name }}</option>
+              </select>
             </label>
 
             <label>
               <span>Repair Station</span>
-              <select [(ngModel)]="debugFilters.repairStation">
+              <select [(ngModel)]="debugFilters.repairStation" (ngModelChange)="onDebugFilterChange('repairStation')" [disabled]="isDebugFilterDisabled('repairStation')">
                 <option value="">All Stations</option>
                 <option *ngFor="let station of debugOptions.repairStations" [value]="station.station_code">
                   {{ station.station_name || station.station_code }}
@@ -449,7 +452,7 @@
 
             <label>
               <span>Status</span>
-              <select [(ngModel)]="debugFilters.status">
+              <select [(ngModel)]="debugFilters.status" (ngModelChange)="onDebugFilterChange('status')" [disabled]="isDebugFilterDisabled('status')">
                 <option value="">All</option>
                 <option value="Pending">Pending</option>
                 <option value="Passed">Passed</option>
@@ -458,7 +461,7 @@
 
             <label>
               <span>Failure Remark</span>
-              <select [(ngModel)]="debugFilters.failureRemark">
+              <select [(ngModel)]="debugFilters.failureRemark" (ngModelChange)="onDebugFilterChange('failureRemark')" [disabled]="isDebugFilterDisabled('failureRemark')">
                 <option value="">All Failure Remarks</option>
                 <option *ngFor="let row of debugOptions.remarks" [value]="row.remark">{{ row.remark }}</option>
               </select>
@@ -466,7 +469,7 @@
 
             <label>
               <span>Part Number (PN)</span>
-              <select [(ngModel)]="debugFilters.partNumber">
+              <select [(ngModel)]="debugFilters.partNumber" (ngModelChange)="onDebugFilterChange('partNumber')" [disabled]="isDebugFilterDisabled('partNumber')">
                 <option value="">All Part Numbers</option>
                 <option *ngFor="let part of debugOptions.partNumbers" [value]="part.pn">{{ part.pn }}</option>
               </select>
@@ -474,7 +477,7 @@
 
             <label>
               <span>Work Order</span>
-              <select [(ngModel)]="debugFilters.workOrder">
+              <select [(ngModel)]="debugFilters.workOrder" (ngModelChange)="onDebugFilterChange('workOrder')" [disabled]="isDebugFilterDisabled('workOrder')">
                 <option value="">All Work Orders</option>
                 <option *ngFor="let work of debugOptions.workOrders" [value]="work.wo">{{ work.wo }}</option>
               </select>
@@ -483,18 +486,18 @@
             <label>
               <span>Search SN</span>
               <span class="debug-search">
-                <input type="search" placeholder="Enter SN Number" [(ngModel)]="debugFilters.searchSn" (keydown.enter)="loadDebugDashboard()">
+                <input type="search" placeholder="Enter SN Number" [(ngModel)]="debugFilters.searchSn" (keydown.enter)="loadDebugDashboard()" [disabled]="isDebugFilterDisabled('searchSn')">
                 <span class="material-symbols-outlined" aria-hidden="true">search</span>
               </span>
             </label>
 
             <div class="debug-all-row">
-              <label><input type="checkbox" [checked]="!debugFilters.site" (change)="setDebugAllFilter('site', $any($event.target).checked)">All Sites</label>
-              <label><input type="checkbox" [checked]="!debugFilters.repairStation" (change)="setDebugAllFilter('repairStation', $any($event.target).checked)">All Stations</label>
-              <label><input type="checkbox" [checked]="!debugFilters.status" (change)="setDebugAllFilter('status', $any($event.target).checked)">All Status</label>
-              <label><input type="checkbox" [checked]="!debugFilters.failureRemark" (change)="setDebugAllFilter('failureRemark', $any($event.target).checked)">All Remarks</label>
-              <label><input type="checkbox" [checked]="!debugFilters.partNumber" (change)="setDebugAllFilter('partNumber', $any($event.target).checked)">All PN</label>
-              <label><input type="checkbox" [checked]="!debugFilters.workOrder" (change)="setDebugAllFilter('workOrder', $any($event.target).checked)">All WO</label>
+              <label><input type="checkbox" [checked]="debugAllFilters.site" (change)="setDebugAllFilter('site', $any($event.target).checked)">All Sites</label>
+              <label><input type="checkbox" [checked]="debugAllFilters.repairStation" (change)="setDebugAllFilter('repairStation', $any($event.target).checked)" [disabled]="isDebugFilterDisabled('repairStation')">All Stations</label>
+              <label><input type="checkbox" [checked]="debugAllFilters.status" (change)="setDebugAllFilter('status', $any($event.target).checked)" [disabled]="isDebugFilterDisabled('status')">All Status</label>
+              <label><input type="checkbox" [checked]="debugAllFilters.failureRemark" (change)="setDebugAllFilter('failureRemark', $any($event.target).checked)" [disabled]="isDebugFilterDisabled('failureRemark')">All Remarks</label>
+              <label><input type="checkbox" [checked]="debugAllFilters.partNumber" (change)="setDebugAllFilter('partNumber', $any($event.target).checked)" [disabled]="isDebugFilterDisabled('partNumber')">All PN</label>
+              <label><input type="checkbox" [checked]="debugAllFilters.workOrder" (change)="setDebugAllFilter('workOrder', $any($event.target).checked)" [disabled]="isDebugFilterDisabled('workOrder')">All WO</label>
             </div>
 
             <button type="button" class="debug-apply" (click)="loadDebugDashboard()" [disabled]="debugLoading">
@@ -731,20 +734,13 @@
               <span>Date Selection</span>
               <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'dateSelection' }"></ng-container>
             </label>
-            <label class="field-control">
+            <label class="field-control" *ngIf="todaysFilters.dateSelection === 'Custom'">
               <span>From Date</span>
-              <input type="date" class="todays-field-input" [(ngModel)]="todaysFilters.fromDate" (change)="onTodaysDateChange()" [disabled]="todaysFilters.dateSelection !== 'Exact Dates'" required>
+              <input type="date" class="todays-field-input" [(ngModel)]="todaysFilters.fromDate" (change)="onTodaysDateChange()" required>
             </label>
-            <label class="field-control">
+            <label class="field-control" *ngIf="todaysFilters.dateSelection === 'Custom'">
               <span>To Date</span>
-              <input type="date" class="todays-field-input" [(ngModel)]="todaysFilters.toDate" (change)="onTodaysDateChange()" [disabled]="todaysFilters.dateSelection !== 'Exact Dates'" required>
-            </label>
-            <label class="field-control">
-              <span>Pivot</span>
-              <select [(ngModel)]="todaysFilters.xAxis" (change)="onTodaysDateChange()">
-                <option value="hour" [disabled]="isDateRangeOver48Hours">Time - Per hour</option>
-                <option value="day">Time - Per day</option>
-              </select>
+              <input type="date" class="todays-field-input" [(ngModel)]="todaysFilters.toDate" (change)="onTodaysDateChange()" required>
             </label>
             <label class="field-control">
               <span>Site</span>
@@ -773,6 +769,13 @@
             <label class="field-control">
               <span>PC</span>
               <ng-container *ngTemplateOutlet="todaysDropdown; context: { field: 'pc' }"></ng-container>
+            </label>
+            <label class="field-control">
+              <span>Pivot</span>
+              <select [(ngModel)]="todaysFilters.xAxis" (change)="onTodaysPivotChange()">
+                <option value="hour" [disabled]="isDateRangeOver48Hours">Time - Per hour</option>
+                <option value="day">Time - Per day</option>
+              </select>
             </label>
           </div>
 
