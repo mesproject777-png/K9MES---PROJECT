@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Open cardboard box">
+  <defs>
+    <linearGradient id="boxFace" x1="0" y1="18" x2="0" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F4B767"/>
+      <stop offset="1" stop-color="#C77A32"/>
+    </linearGradient>
+  </defs>
+  <path d="M20 40h56v38H20Z" fill="url(#boxFace)" stroke="#3A2618" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M48 40v38" stroke="#3A2618" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M20 40 7 26l30-8 11 22Z" fill="#FFD18C" stroke="#3A2618" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M76 40 89 26l-30-8-11 22Z" fill="#FFD18C" stroke="#3A2618" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M20 40 9 58l30 11 9-29Z" fill="#E8A65A" stroke="#3A2618" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M76 40 87 58 57 69l-9-29Z" fill="#E8A65A" stroke="#3A2618" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M32 57v13M26 64h12M63 57h11M63 66h8" stroke="#70431F" stroke-width="4" stroke-linecap="round"/>
+  <path d="M48 40 37 18M48 40 59 18" stroke="#3A2618" stroke-width="4" stroke-linecap="round" opacity=".45"/>
+</svg>

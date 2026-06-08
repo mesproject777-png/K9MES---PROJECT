@@ -19,12 +19,13 @@ import { AuthService } from '../../services/auth.service';
 
 type ReportsView = 'menu' | 'standard' | 'scrapSn' | 'undoScrap' | 'activityQuality' | 'todays' | 'debug';
 type ReportsTab = 'tree' | 'station';
-type DateSelection = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
+type DateSelection = '' | 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
 type TodaysDashboardTab = 'filters' | 'overview';
 type TodaysDropdownKey = 'dateSelection' | 'site' | 'station' | 'partNumber' | 'workOrder' | 'pc' | 'user';
 const TODAYS_ALL_VALUE = '__all__';
 type DebugDateRange = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
 type DebugViewBy = 'station' | 'day';
+type DebugFilterKey = 'site' | 'repairStation' | 'status' | 'failureRemark' | 'partNumber' | 'workOrder';
 
 interface ActivityQualityKpiSummary {
   totalPass: number;
@@ -70,6 +71,16 @@ interface ActivityQualityStationFailRate {
   failCount: number;
   totalCount: number;
   failRate: number;
+}
+
+interface ActivityQualityOptions {
+  sites: ReportSiteOption[];
+  stations: ReportStationOption[];
+  productLines: { value: string }[];
+  partNumbers: { pn: string }[];
+  workOrders: { wo: string }[];
+  pcs: { value: string }[];
+  users: { value: string }[];
 }
 
 interface ActivityQualityResponse {
@@ -335,6 +346,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   readonly scrapSnApi = `${environment.apiUrl}/api/reports/scrap-sn`;
   readonly undoScrapApi = `${environment.apiUrl}/api/reports/undo-scrap`;
   readonly activityQualityApi = `${environment.apiUrl}/api/reports/activity-quality`;
+  readonly activityQualityOptionsApi = `${environment.apiUrl}/api/reports/activity-quality/options`;
   readonly sitesApi = `${environment.apiUrl}/api/sites`;
   readonly stationsApi = `${environment.apiUrl}/api/stations`;
   readonly partNumbersApi = `${environment.apiUrl}/api/items`;
@@ -343,6 +355,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   readonly todaysDataApi = `${environment.apiUrl}/api/reports/todays-dashboard/data`;
   readonly debugOptionsApi = `${environment.apiUrl}/api/reports/debug-dashboard/options`;
   readonly debugDataApi = `${environment.apiUrl}/api/reports/debug-dashboard/data`;
+  readonly allDropdownValue = TODAYS_ALL_VALUE;
 
   activeView: ReportsView = 'menu';
   activeTab: ReportsTab = 'tree';
@@ -357,6 +370,8 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   report: WorkOrderTreeReport | null = null;
   selectedStation: WorkOrderTreeStation | null = null;
   activityLoading = false;
+  activityLookupLoading = false;
+  activityLookupsLoaded = false;
   activityErrorMessage = '';
   showExportMenu = false;
   showPassSeries = true;
@@ -390,7 +405,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   activityFilters = {
     fromDate: '',
     toDate: '',
-    dateSelection: 'today' as DateSelection,
+    dateSelection: '' as DateSelection,
     startHour: 0,
     site: '',
     station: '',
@@ -400,15 +415,16 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     pc: '',
     user: '',
     pivotBy: 'perHour',
-    allSites: true,
-    allStations: true,
-    allProductLines: true,
-    allPartNumbers: true,
-    allWorkOrders: true,
-    allPcs: true,
-    allUsers: true,
+    allSites: false,
+    allStations: false,
+    allProductLines: false,
+    allPartNumbers: false,
+    allWorkOrders: false,
+    allPcs: false,
+    allUsers: false,
   };
   activityData: ActivityQualityResponse = this.emptyActivityQualityResponse();
+  activityOptions: ActivityQualityOptions = this.emptyActivityQualityOptions();
   flowCardsPerRow = this.getFlowCardsPerRow();
   connectorPath = '';
   connectorWidth = 0;
@@ -431,7 +447,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   };
   pcOptions = ['PC-01', 'PC-02', 'PC-03', 'Line PC', 'Packing PC'];
   userOptions = ['Operator A', 'Operator B', 'Supervisor', 'Quality User', 'Maintenance'];
-  dateSelectionOptions = ['All Dates', 'Exact Dates', 'Today', 'Yesterday', 'Yesterday to Now', 'This Week', 'Last 24 hours'];
+  dateSelectionOptions = ['All Dates', 'Custom', 'Today', 'Yesterday', 'Yesterday to Now', 'This Week', 'Last 24 hours'];
   todaysFilters = {
     dateSelection: '',
     fromDate: '',
@@ -479,6 +495,14 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     workOrder: '',
     searchSn: '',
     viewBy: 'station' as DebugViewBy,
+  };
+  debugAllFilters: Record<DebugFilterKey, boolean> = {
+    site: true,
+    repairStation: true,
+    status: true,
+    failureRemark: true,
+    partNumber: true,
+    workOrder: true,
   };
   debugSelectedBucket: DebugChartBucket | null = null;
   debugHoveredBucket: DebugChartBucket | null = null;
@@ -568,6 +592,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   openActivityQualityDashboard(): void {
     this.activeView = 'activityQuality';
     this.activityErrorMessage = '';
+    this.loadActivityQualityLookups();
     if (this.activityData.chartData.length === 0 && !this.activityLoading) {
       this.loadActivityQualityDashboard();
     }
@@ -679,12 +704,48 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     });
   }
 
+  loadActivityQualityLookups(force = false): void {
+    if (!force && (this.activityLookupsLoaded || this.activityLookupLoading)) {
+      return;
+    }
+
+    this.applyDateSelection();
+    this.activityLookupLoading = true;
+    this.activityLookupsLoaded = false;
+
+    this.http.get<ActivityQualityOptions>(this.activityQualityOptionsApi, { params: this.buildActivityQualityParams(false) }).subscribe({
+      next: (response) => {
+        this.activityOptions = {
+          ...this.emptyActivityQualityOptions(),
+          ...response,
+          sites: this.mergeTodaysSites(response.sites || []),
+          stations: response.stations || [],
+          productLines: response.productLines || [],
+          partNumbers: response.partNumbers || [],
+          workOrders: response.workOrders || [],
+          pcs: response.pcs || [],
+          users: response.users || [],
+        };
+        this.activityLookupLoading = false;
+        this.activityLookupsLoaded = true;
+      },
+      error: () => {
+        this.activityOptions = {
+          ...this.emptyActivityQualityOptions(),
+          sites: this.mergeTodaysSites([]),
+        };
+        this.activityLookupLoading = false;
+        this.activityLookupsLoaded = true;
+      }
+    });
+  }
+
   resetActivityFilters(): void {
     this.stopRerun();
     this.rerunEnabled = false;
     this.activityFilters = {
       ...this.activityFilters,
-      dateSelection: 'today',
+      dateSelection: '',
       startHour: 0,
       site: '',
       station: '',
@@ -694,20 +755,71 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       pc: '',
       user: '',
       pivotBy: 'perHour',
-      allSites: true,
-      allStations: true,
-      allProductLines: true,
-      allPartNumbers: true,
-      allWorkOrders: true,
-      allPcs: true,
-      allUsers: true,
+      allSites: false,
+      allStations: false,
+      allProductLines: false,
+      allPartNumbers: false,
+      allWorkOrders: false,
+      allPcs: false,
+      allUsers: false,
     };
     this.applyDateSelection();
+    this.activityOptions = this.emptyActivityQualityOptions();
+    this.activityLookupsLoaded = false;
     this.loadActivityQualityDashboard();
+    this.loadActivityQualityLookups(true);
+  }
+
+  onActivityFilterChange(field: 'site' | 'station' | 'productLine' | 'partNumber' | 'workOrder' | 'pc' | 'user'): void {
+    this.setActivityAllStateFromValue(field);
+    if (field !== 'user') {
+      this.resetActivityAfter(field);
+      this.loadActivityQualityLookups(true);
+    }
+  }
+
+  onActivityAllFilterChange(
+    field: 'site' | 'station' | 'productLine' | 'partNumber' | 'workOrder' | 'pc' | 'user',
+    checked: boolean
+  ): void {
+    const valueField = field === 'productLine' ? 'productLine' : field;
+    if (checked) {
+      this.activityFilters[valueField] = this.allDropdownValue;
+    } else if (this.activityFilters[valueField] === this.allDropdownValue) {
+      this.activityFilters[valueField] = '';
+    }
+
+    if (field !== 'user') {
+      this.resetActivityAfter(field);
+      this.loadActivityQualityLookups(true);
+    }
+  }
+
+  isActivityFilterDisabled(field: 'site' | 'station' | 'productLine' | 'partNumber' | 'workOrder' | 'pc' | 'user'): boolean {
+    switch (field) {
+      case 'site':
+        return false;
+      case 'station':
+        return !this.isActivityFilterReady('site');
+      case 'productLine':
+        return !this.isActivityFilterReady('station');
+      case 'partNumber':
+        return !this.isActivityFilterReady('station');
+      case 'workOrder':
+        return !this.isActivityFilterReady('partNumber');
+      case 'pc':
+        return !this.isActivityFilterReady('workOrder');
+      case 'user':
+        return !this.isActivityFilterReady('pc');
+      default:
+        return false;
+    }
   }
 
   onActivityDateSelectionChange(): void {
     this.applyDateSelection();
+    this.resetActivityAfterDate();
+    this.loadActivityQualityLookups(true);
   }
 
   get showStartHour(): boolean {
@@ -906,6 +1018,27 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
   optionValues(field: keyof ActivityQualityDetailRow): string[] {
     return Array.from(new Set(this.activityData.detailedRows.map((row) => String(row[field] || '').trim()).filter(Boolean))).sort();
+  }
+
+  activityOptionValues(field: 'site' | 'station' | 'productLine' | 'partNumber' | 'workOrder' | 'pc' | 'user'): string[] {
+    switch (field) {
+      case 'site':
+        return this.activityOptions.sites.map((site) => site.name).filter(Boolean);
+      case 'station':
+        return this.activityOptions.stations.map((station) => station.station_code || station.station_name || '').filter(Boolean);
+      case 'productLine':
+        return this.activityOptions.productLines.map((row) => row.value).filter(Boolean);
+      case 'partNumber':
+        return this.activityOptions.partNumbers.map((row) => row.pn).filter(Boolean);
+      case 'workOrder':
+        return this.activityOptions.workOrders.map((row) => row.wo).filter(Boolean);
+      case 'pc':
+        return this.activityOptions.pcs.map((row) => row.value).filter(Boolean);
+      case 'user':
+        return this.activityOptions.users.map((row) => row.value).filter(Boolean);
+      default:
+        return [];
+    }
   }
 
   trackByChartPoint(index: number, point: ActivityQualityChartPoint): string {
@@ -1115,6 +1248,14 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
   onDebugDateRangeChange(): void {
     this.applyDebugDateRange();
+    this.resetDebugAfter('dateRange');
+    if (!this.canDebugViewByDay) {
+      this.debugFilters.viewBy = 'station';
+    }
+  }
+
+  onDebugCustomDateChange(): void {
+    this.resetDebugAfter('dateRange');
     if (!this.canDebugViewByDay) {
       this.debugFilters.viewBy = 'station';
     }
@@ -1143,16 +1284,57 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       searchSn: '',
       viewBy: 'station',
     };
+    this.debugAllFilters = {
+      site: true,
+      repairStation: true,
+      status: true,
+      failureRemark: true,
+      partNumber: true,
+      workOrder: true,
+    };
     this.applyDebugDateRange();
     this.loadDebugDashboard();
   }
 
   setDebugAllFilter(
-    field: 'site' | 'repairStation' | 'status' | 'failureRemark' | 'partNumber' | 'workOrder',
+    field: DebugFilterKey,
     checked: boolean
   ): void {
+    this.debugAllFilters[field] = checked;
     if (checked) {
       this.debugFilters[field] = '';
+    }
+    this.resetDebugAfter(field);
+  }
+
+  onDebugFilterChange(field: DebugFilterKey): void {
+    this.debugAllFilters[field] = !this.debugFilters[field];
+    this.resetDebugAfter(field);
+  }
+
+  isDebugFilterDisabled(field: 'dateRange' | 'fromDate' | 'toDate' | 'site' | 'repairStation' | 'status' | 'failureRemark' | 'partNumber' | 'workOrder' | 'searchSn'): boolean {
+    switch (field) {
+      case 'dateRange':
+        return false;
+      case 'fromDate':
+      case 'toDate':
+        return this.debugFilters.dateRange !== 'custom';
+      case 'site':
+        return !this.isDebugDateReady;
+      case 'repairStation':
+        return !this.isDebugFilterReady('site');
+      case 'status':
+        return !this.isDebugFilterReady('repairStation');
+      case 'failureRemark':
+        return !this.isDebugFilterReady('status');
+      case 'partNumber':
+        return !this.isDebugFilterReady('failureRemark');
+      case 'workOrder':
+        return !this.isDebugFilterReady('partNumber');
+      case 'searchSn':
+        return !this.isDebugFilterReady('workOrder');
+      default:
+        return false;
     }
   }
 
@@ -1282,7 +1464,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
         this.setTodaysDateRange(lastDay, today);
         break;
       }
-      case 'Exact Dates':
+      case 'Custom':
       default:
         if (!this.todaysFilters.fromDate) this.todaysFilters.fromDate = this.getTodayInputValue();
         if (!this.todaysFilters.toDate) this.todaysFilters.toDate = this.getTodayInputValue();
@@ -1296,6 +1478,10 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   onTodaysDateChange(): void {
     this.enforceXAxisDateRule();
     this.resetTodaysAfter('date');
+  }
+
+  onTodaysPivotChange(): void {
+    this.enforceXAxisDateRule();
   }
 
   onTodaysSiteChange(): void {
@@ -2420,6 +2606,99 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.errorMessage = '';
   }
 
+  private resetActivityAfter(field: 'site' | 'station' | 'productLine' | 'partNumber' | 'workOrder' | 'pc'): void {
+    if (field === 'site') {
+      this.activityFilters.station = '';
+    }
+    if (field === 'site' || field === 'station') {
+      this.activityFilters.productLine = '';
+    }
+    if (field === 'site' || field === 'station' || field === 'productLine') {
+      this.activityFilters.partNumber = '';
+    }
+    if (field === 'site' || field === 'station' || field === 'productLine' || field === 'partNumber') {
+      this.activityFilters.workOrder = '';
+    }
+    if (field !== 'pc') {
+      this.activityFilters.pc = '';
+      this.activityFilters.user = '';
+    } else {
+      this.activityFilters.user = '';
+    }
+    this.activityErrorMessage = '';
+  }
+
+  private resetActivityAfterDate(): void {
+    this.activityFilters.site = '';
+    this.activityFilters.station = '';
+    this.activityFilters.productLine = '';
+    this.activityFilters.partNumber = '';
+    this.activityFilters.workOrder = '';
+    this.activityFilters.pc = '';
+    this.activityFilters.user = '';
+    this.activityFilters.allSites = false;
+    this.activityFilters.allStations = false;
+    this.activityFilters.allProductLines = false;
+    this.activityFilters.allPartNumbers = false;
+    this.activityFilters.allWorkOrders = false;
+    this.activityFilters.allPcs = false;
+    this.activityFilters.allUsers = false;
+    this.activityErrorMessage = '';
+  }
+
+  private setActivityAllStateFromValue(field: 'site' | 'station' | 'productLine' | 'partNumber' | 'workOrder' | 'pc' | 'user'): void {
+    const isAll = this.activityFilters[field] === this.allDropdownValue;
+    if (field === 'site') this.activityFilters.allSites = isAll;
+    if (field === 'station') this.activityFilters.allStations = isAll;
+    if (field === 'productLine') this.activityFilters.allProductLines = isAll;
+    if (field === 'partNumber') this.activityFilters.allPartNumbers = isAll;
+    if (field === 'workOrder') this.activityFilters.allWorkOrders = isAll;
+    if (field === 'pc') this.activityFilters.allPcs = isAll;
+    if (field === 'user') this.activityFilters.allUsers = isAll;
+  }
+
+  private isActivityFilterReady(field: 'site' | 'station' | 'productLine' | 'partNumber' | 'workOrder' | 'pc'): boolean {
+    switch (field) {
+      case 'site':
+        return this.activityFilters.allSites || Boolean(this.activityFilters.site);
+      case 'station':
+        return this.activityFilters.allStations || Boolean(this.activityFilters.station);
+      case 'productLine':
+        return this.activityFilters.allProductLines || Boolean(this.activityFilters.productLine);
+      case 'partNumber':
+        return this.activityFilters.allPartNumbers || Boolean(this.activityFilters.partNumber);
+      case 'workOrder':
+        return this.activityFilters.allWorkOrders || Boolean(this.activityFilters.workOrder);
+      case 'pc':
+        return this.activityFilters.allPcs || Boolean(this.activityFilters.pc);
+      default:
+        return false;
+    }
+  }
+
+  private resetDebugAfter(field: DebugFilterKey | 'dateRange'): void {
+    const order: DebugFilterKey[] = ['site', 'repairStation', 'status', 'failureRemark', 'partNumber', 'workOrder'];
+    const start = field === 'dateRange' ? 0 : order.indexOf(field) + 1;
+    order.slice(start).forEach((key) => {
+      this.debugFilters[key] = '';
+      this.debugAllFilters[key] = false;
+    });
+    this.debugFilters.searchSn = '';
+    this.errorMessage = '';
+  }
+
+  private isDebugFilterReady(field: DebugFilterKey): boolean {
+    return this.debugAllFilters[field] || Boolean(this.debugFilters[field]);
+  }
+
+  private get isDebugDateReady(): boolean {
+    if (this.debugFilters.dateRange !== 'custom') {
+      return Boolean(this.debugFilters.dateRange);
+    }
+
+    return Boolean(this.debugFilters.fromDate && this.debugFilters.toDate);
+  }
+
   private startOfDay(date: Date): Date {
     const value = new Date(date);
     value.setHours(0, 0, 0, 0);
@@ -2788,7 +3067,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     return Math.max(2, Math.min(8, estimatedCards));
   }
 
-  private buildActivityQualityParams(): HttpParams {
+  private buildActivityQualityParams(includeUser = true): HttpParams {
     let params = new HttpParams()
       .set('fromDate', this.activityFilters.fromDate)
       .set('toDate', this.activityFilters.toDate)
@@ -2805,8 +3084,11 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       { all: this.activityFilters.allPartNumbers, value: this.activityFilters.partNumber, key: 'partNumbers' },
       { all: this.activityFilters.allWorkOrders, value: this.activityFilters.workOrder, key: 'workOrders' },
       { all: this.activityFilters.allPcs, value: this.activityFilters.pc, key: 'pcIds' },
-      { all: this.activityFilters.allUsers, value: this.activityFilters.user, key: 'userIds' },
     ];
+
+    if (includeUser) {
+      filterMap.push({ all: this.activityFilters.allUsers, value: this.activityFilters.user, key: 'userIds' });
+    }
 
     filterMap.forEach((filter) => {
       if (!filter.all && filter.value.trim()) {
@@ -2818,6 +3100,12 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   }
 
   private applyDateSelection(): void {
+    if (!this.activityFilters.dateSelection) {
+      this.activityFilters.fromDate = '';
+      this.activityFilters.toDate = '';
+      return;
+    }
+
     const today = new Date();
     let from = new Date(today);
     let to = new Date(today);
@@ -2902,6 +3190,18 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       detailedRows: [],
       symptomsPareto: [],
       stationFailRates: [],
+    };
+  }
+
+  private emptyActivityQualityOptions(): ActivityQualityOptions {
+    return {
+      sites: [],
+      stations: [],
+      productLines: [],
+      partNumbers: [],
+      workOrders: [],
+      pcs: [],
+      users: [],
     };
   }
 

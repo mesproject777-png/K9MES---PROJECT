@@ -547,8 +547,8 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     return [
       { id: 'operator', kind: 'operator', title: 'Operator / Technician', icon: 'engineering' },
       ...stationNodes,
-      { id: 'cart', kind: 'logistics', variant: 'cart', title: 'Cart', icon: 'shopping_cart' },
-      { id: 'pallet', kind: 'logistics', variant: 'pallet', title: 'Pallet', icon: 'inventory_2' },
+      { id: 'cart', kind: 'logistics', variant: 'cart', title: 'Carton', icon: 'inventory_2' },
+      { id: 'pallet', kind: 'logistics', variant: 'pallet', title: 'Pallet', icon: 'pallet' },
       { id: 'truck', kind: 'logistics', variant: 'truck', title: 'Truck', subtitle: 'Dispatch / Shipping', icon: 'local_shipping' },
     ];
   }

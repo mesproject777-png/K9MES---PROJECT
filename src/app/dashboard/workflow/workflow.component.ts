@@ -1252,15 +1252,15 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         id: 'cart',
         kind: 'logistics',
         variant: 'cart',
-        title: 'Cart',
-        icon: 'shopping_cart',
+        title: 'Carton',
+        icon: 'inventory_2',
       },
       {
         id: 'pallet',
         kind: 'logistics',
         variant: 'pallet',
         title: 'Pallet',
-        icon: 'inventory_2',
+        icon: 'warehouse',
       },
       {
         id: 'truck',

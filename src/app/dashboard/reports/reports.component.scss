@@ -747,6 +747,12 @@
   align-items: center;
   gap: 14px;
   padding: 16px;
+  color: #ffffff;
+  border-color: transparent;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12), transparent 38%),
+    linear-gradient(135deg, #123f8c 0%, #0a6fae 48%, #0a8c7c 100%);
+  box-shadow: 0 14px 34px rgba(15, 39, 71, 0.14);
 }
 
 .aq-title {
@@ -764,6 +770,7 @@
 
 .aq-title h1 {
   font-size: 26px;
+  color: #ffffff;
 }
 
 .aq-title p,
@@ -772,6 +779,10 @@
   color: #667b95;
   font-size: 13px;
   font-weight: 700;
+}
+
+.aq-title p {
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .aq-header-actions,
@@ -1507,11 +1518,12 @@
   align-items: center;
   gap: 16px;
   padding: 20px 24px;
-  border-color: #b9d7f5;
+  color: #ffffff;
+  border-color: transparent;
   background:
-    linear-gradient(135deg, #d9efff 0%, #e7f8ff 42%, #dcfce7 100%),
-    radial-gradient(circle at 88% 18%, rgba(36, 109, 240, 0.24), transparent 34%);
-  box-shadow: 0 16px 38px rgba(8, 45, 87, 0.12);
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12), transparent 38%),
+    linear-gradient(135deg, #123f8c 0%, #0a6fae 48%, #0a8c7c 100%);
+  box-shadow: 0 16px 38px rgba(8, 45, 87, 0.18);
 }
 
 .todays-page-header h1,
@@ -1525,6 +1537,7 @@
 
 .todays-page-header h1 {
   font-size: 30px;
+  color: #ffffff;
 }
 
 .todays-page-header p,
@@ -1532,6 +1545,10 @@
   margin: 5px 0 0;
   color: #5f7591;
   font-weight: 800;
+}
+
+.todays-page-header p {
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .todays-back {

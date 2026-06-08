@@ -689,9 +689,13 @@
                 </div>
 
                 <div class="preview-node hierarchy-node product-node">
-                  <span class="preview-node-copy">
-                    <strong>Total devices</strong>
-                    <small>{{ previewTotalDevicesCount }} SN</small>
+                  <span class="product-title">Product</span>
+                  <span class="product-visual" aria-hidden="true">
+                    <span class="product-shaft"></span>
+                    <span class="product-hub left"></span>
+                    <span class="product-hub right"></span>
+                    <span class="product-cap left"></span>
+                    <span class="product-cap right"></span>
                   </span>
                 </div>
 
@@ -793,9 +797,13 @@
                           [class.pallet-node]="node.variant === 'pallet'"
                           [class.truck-node]="node.variant === 'truck'"
                         >
-                          <span class="logistics-icon material-symbols-outlined" aria-hidden="true">
-                            {{ node.icon }}
-                          </span>
+                          <ng-container [ngSwitch]="node.variant">
+                            <img *ngSwitchCase="'cart'" class="logistics-image" src="assets/sn-chart/carton-open.svg" alt="" aria-hidden="true">
+                            <img *ngSwitchCase="'pallet'" class="logistics-image" src="assets/sn-chart/pallet.svg" alt="" aria-hidden="true">
+                            <span *ngSwitchDefault class="logistics-icon material-symbols-outlined" aria-hidden="true">
+                              {{ node.icon }}
+                            </span>
+                          </ng-container>
                           <strong>{{ node.title }}</strong>
                           <small *ngIf="node.subtitle">{{ node.subtitle }}</small>
                         </div>

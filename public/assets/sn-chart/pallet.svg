@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 96" role="img" aria-label="Rack stacked with cardboard boxes">
+  <path d="M12 14h88v68H12Z" fill="#F8FAFC" stroke="#26323D" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M12 47h88" stroke="#26323D" stroke-width="5" stroke-linecap="round"/>
+  <path d="M12 82h88" stroke="#26323D" stroke-width="7" stroke-linecap="round"/>
+  <path d="M22 14v68M90 14v68" stroke="#26323D" stroke-width="6" stroke-linecap="round"/>
+  <g stroke="#3A2618" stroke-width="3.5" stroke-linejoin="round">
+    <rect x="28" y="20" width="22" height="22" rx="2" fill="#D98D42"/>
+    <rect x="54" y="20" width="22" height="22" rx="2" fill="#D98D42"/>
+    <rect x="28" y="54" width="22" height="22" rx="2" fill="#D98D42"/>
+    <rect x="54" y="54" width="22" height="22" rx="2" fill="#D98D42"/>
+  </g>
+  <g stroke="#74471F" stroke-width="3" stroke-linecap="round">
+    <path d="M39 20v22M65 20v22M39 54v22M65 54v22"/>
+    <path d="M32 31h14M58 31h14M32 65h14M58 65h14"/>
+  </g>
+  <path d="M8 84h96v8H8Z" fill="#B8742E" stroke="#3A2618" stroke-width="4" stroke-linejoin="round"/>
+</svg>

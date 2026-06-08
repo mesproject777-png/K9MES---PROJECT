@@ -51,7 +51,7 @@
 
           <section *ngIf="!logisticsLoading && logistics.variant === 'cart' && logisticsRows.length" class="logistics-section">
             <div class="logistics-section-title">
-              <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+              <img class="mini-logistics-image" src="assets/sn-chart/carton-closed.svg" alt="" aria-hidden="true">
               <h4>SNs In MultiBox {{ traceMultiboxNo }}</h4>
             </div>
 
@@ -91,13 +91,13 @@
 
           <section *ngIf="!logisticsLoading && logistics.variant === 'pallet' && logisticsMultiboxes.length" class="logistics-section">
             <div class="logistics-section-title">
-              <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+              <img class="mini-logistics-image" src="assets/sn-chart/pallet.svg" alt="" aria-hidden="true">
               <h4>MultiBoxes In Pallet {{ tracePalletNo }}</h4>
             </div>
 
             <div class="logistics-card-grid">
               <button type="button" class="logistics-drill-card" *ngFor="let multibox of logisticsMultiboxes" (click)="openMultiboxSerials(multibox)">
-                <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+                <img class="mini-logistics-image" src="assets/sn-chart/carton-closed.svg" alt="" aria-hidden="true">
                 <strong>{{ multibox.multiboxNo }}</strong>
                 <small>{{ multibox.rows.length }} SN</small>
                 <em>{{ multibox.multiboxStatus }}</em>
@@ -119,7 +119,7 @@
                 [class.selected]="selectedShipmentPalletNo === pallet.palletNo"
                 (click)="selectShipmentPallet(pallet)"
               >
-                <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+                <img class="mini-logistics-image" src="assets/sn-chart/pallet.svg" alt="" aria-hidden="true">
                 <strong>{{ pallet.palletNo }}</strong>
                 <small>{{ pallet.multiboxes.length }} MultiBox / {{ pallet.rows.length }} SN</small>
                 <em>{{ pallet.palletStatus }}</em>
@@ -128,13 +128,13 @@
 
             <div class="logistics-subsection" *ngIf="selectedShipmentPallet as pallet">
               <div class="logistics-section-title compact">
-                <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+                <img class="mini-logistics-image" src="assets/sn-chart/carton-closed.svg" alt="" aria-hidden="true">
                 <h4>MultiBoxes In {{ pallet.palletNo }}</h4>
               </div>
 
               <div class="logistics-card-grid">
                 <button type="button" class="logistics-drill-card" *ngFor="let multibox of pallet.multiboxes" (click)="openMultiboxSerials(multibox)">
-                  <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+                  <img class="mini-logistics-image" src="assets/sn-chart/carton-closed.svg" alt="" aria-hidden="true">
                   <strong>{{ multibox.multiboxNo }}</strong>
                   <small>{{ multibox.rows.length }} SN</small>
                   <em>{{ multibox.multiboxStatus }}</em>
@@ -327,9 +327,19 @@
                         (pointerdown)="openPreviewLogisticsDetails($event, node)"
                         (click)="openPreviewLogisticsDetails($event, node)"
                       >
-                        <span class="logistics-icon material-symbols-outlined" aria-hidden="true">
-                          {{ node.icon }}
-                        </span>
+                        <ng-container [ngSwitch]="node.variant">
+                          <img
+                            *ngSwitchCase="'cart'"
+                            class="logistics-image"
+                            [src]="getLogisticsStatus(node.variant) === 'Completed' ? 'assets/sn-chart/carton-closed.svg' : 'assets/sn-chart/carton-open.svg'"
+                            alt=""
+                            aria-hidden="true"
+                          >
+                          <img *ngSwitchCase="'pallet'" class="logistics-image" src="assets/sn-chart/pallet.svg" alt="" aria-hidden="true">
+                          <span *ngSwitchDefault class="logistics-icon material-symbols-outlined" aria-hidden="true">
+                            {{ node.icon }}
+                          </span>
+                        </ng-container>
                         <strong>{{ node.title }}</strong>
                         <small *ngIf="node.subtitle">{{ node.subtitle }}</small>
                         <small
@@ -659,7 +669,7 @@
     </div>
 
     <div class="preview-child-summary">
-      <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+      <img class="mini-logistics-image" src="assets/sn-chart/carton-closed.svg" alt="" aria-hidden="true">
       <strong>{{ activeSnListRows.length }} SN</strong>
       <small>{{ multibox.multiboxStatus }}</small>
     </div>

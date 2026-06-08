@@ -917,6 +917,21 @@ button.preview-node:focus-visible {
   font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 48;
 }
 
+.logistics-image {
+  display: block;
+  width: 72px;
+  height: 62px;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.mini-logistics-image {
+  display: block;
+  width: 44px;
+  height: 40px;
+  object-fit: contain;
+}
+
 .cart-node .logistics-icon {
   color: #095fa8;
 }
