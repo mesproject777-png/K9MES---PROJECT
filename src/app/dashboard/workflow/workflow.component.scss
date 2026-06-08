@@ -1138,17 +1138,56 @@ button.preview-node:focus-visible {
 }
 
 .station-diamond {
-  width: 116px;
-  height: 116px;
-  margin: 10px 12px;
-  border-color: #dfebfb;
+  width: 156px;
+  height: 156px;
+  margin: 0;
+  border: 0 !important;
   border-radius: 0;
-  transform: rotate(45deg);
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none;
+  overflow: visible;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  outline: none;
+}
+
+.station-diamond::before,
+.station-diamond::after {
+  content: '';
+  position: absolute;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  pointer-events: none;
+}
+
+.station-diamond::before {
+  inset: 0;
+  background: #dfebfb;
+}
+
+.station-diamond::after {
+  inset: 2px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
 
 .station-diamond:hover,
 .station-diamond:focus-visible {
-  transform: rotate(45deg) translate(-2px, -2px);
+  transform: translateY(-3px);
+  box-shadow: none !important;
+}
+
+.station-node.station-diamond,
+.station-node.station-diamond:hover,
+.station-node.station-diamond:focus-visible,
+.station-node.station-diamond.selected,
+.station-node.station-diamond.completed,
+.station-node.station-diamond.paused,
+.station-node.station-diamond.pending,
+.station-node.station-diamond.high-sn-alert {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: 0 !important;
 }
 
 .station-node-inner {
@@ -1160,8 +1199,11 @@ button.preview-node:focus-visible {
 }
 
 .station-diamond .station-node-inner {
-  width: 98px;
-  transform: rotate(-45deg);
+  position: relative;
+  z-index: 1;
+  width: 104px;
+  transform: none;
+  clip-path: none;
 }
 
 .station-diamond .station-icon {
@@ -1227,6 +1269,19 @@ button.preview-node:focus-visible {
   background: #f0fdf4;
 }
 
+.station-diamond.completed {
+  border: 0;
+  background: transparent !important;
+}
+
+.station-diamond.completed::before {
+  background: #86efac;
+}
+
+.station-diamond.completed::after {
+  background: #f0fdf4;
+}
+
 .station-node.completed .station-icon {
   background: #dcfce7;
   color: #15803d;
@@ -1234,6 +1289,19 @@ button.preview-node:focus-visible {
 
 .station-node.paused {
   border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.station-diamond.paused {
+  border: 0;
+  background: transparent !important;
+}
+
+.station-diamond.paused::before {
+  background: #fecaca;
+}
+
+.station-diamond.paused::after {
   background: #fff1f2;
 }
 
@@ -1246,6 +1314,15 @@ button.preview-node:focus-visible {
   border-color: #dfebfb;
 }
 
+.station-diamond.pending {
+  border: 0;
+  background: transparent !important;
+}
+
+.station-diamond.pending::before {
+  background: #dfebfb;
+}
+
 .station-node.selected {
   border-color: #0e6bf0;
   box-shadow:
@@ -1253,8 +1330,17 @@ button.preview-node:focus-visible {
     0 0 0 3px rgba(14, 107, 240, 0.08);
 }
 
-.station-node.station-square.high-sn-alert,
-.station-node.station-diamond.high-sn-alert {
+.station-diamond.selected {
+  border: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.station-diamond.selected::before {
+  background: #0e6bf0;
+}
+
+.station-node.station-square.high-sn-alert {
   border-color: #dc2626;
   background: #fecaca !important;
   z-index: 10;
@@ -1264,13 +1350,16 @@ button.preview-node:focus-visible {
   will-change: transform, box-shadow;
 }
 
-.station-node.station-square.high-sn-alert {
-  animation: highSnHeartbeatSquare 0.72s ease-in-out infinite;
-  transform-origin: center;
+.station-node.station-diamond.high-sn-alert {
+  border: 0 !important;
+  background: transparent !important;
+  z-index: 10;
+  box-shadow: none !important;
+  will-change: transform, box-shadow;
 }
 
-.station-node.station-diamond.high-sn-alert {
-  animation: highSnHeartbeatDiamond 0.72s ease-in-out infinite;
+.station-node.station-square.high-sn-alert {
+  animation: highSnHeartbeatSquare 0.72s ease-in-out infinite;
   transform-origin: center;
 }
 
@@ -1279,7 +1368,7 @@ button.preview-node:focus-visible {
   color: #b11;
 }
 
-.station-node.high-sn-alert::after {
+.station-node.station-square.high-sn-alert::after {
   content: '';
   position: absolute;
   inset: -7px;
@@ -1327,35 +1416,23 @@ button.preview-node:focus-visible {
 @keyframes highSnHeartbeatDiamond {
   0%,
   100% {
-    transform: translateY(0) rotate(45deg) scale(1);
-    box-shadow:
-      0 0 0 3px rgba(220, 38, 38, 0.18),
-      0 16px 34px rgba(185, 28, 28, 0.22);
+    transform: translateY(0) scale(1);
   }
 
   16% {
-    transform: translateY(-10px) rotate(45deg) scale(1.18);
-    box-shadow:
-      0 0 0 8px rgba(220, 38, 38, 0.24),
-      0 30px 56px rgba(185, 28, 28, 0.42);
+    transform: translateY(-10px) scale(1.18);
   }
 
   34% {
-    transform: translateY(5px) rotate(45deg) scale(0.94);
-    box-shadow:
-      0 0 0 2px rgba(220, 38, 38, 0.16),
-      0 10px 22px rgba(185, 28, 28, 0.18);
+    transform: translateY(5px) scale(0.94);
   }
 
   52% {
-    transform: translateY(-6px) rotate(45deg) scale(1.11);
-    box-shadow:
-      0 0 0 6px rgba(220, 38, 38, 0.22),
-      0 24px 46px rgba(185, 28, 28, 0.34);
+    transform: translateY(-6px) scale(1.11);
   }
 
   74% {
-    transform: translateY(0) rotate(45deg) scale(1);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -1777,11 +1854,28 @@ button.preview-node:focus-visible {
 .station-task-list {
   display: grid;
   gap: 8px;
-  padding-left: 30px;
+  padding: 10px;
+  list-style: none;
 }
 
 .station-task-list li {
-  padding-left: 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: #f7fbff;
+  color: #10284f;
+}
+
+.station-task-list li::before {
+  content: 'check_circle';
+  flex: 0 0 auto;
+  color: #12805c;
+  font-family: 'Material Symbols Outlined';
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.2;
 }
 
 .station-empty-tasks {

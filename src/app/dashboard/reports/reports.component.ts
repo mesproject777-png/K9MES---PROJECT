@@ -1806,7 +1806,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   getStationIcon(index: number, station: WorkOrderTreeStation): string {
     const normalized = `${station.station_code} ${station.station_name}`.toLowerCase();
 
-    if (station.sample_mode === 'Sample') {
+    if (this.isSampleStation(station)) {
       return 'saved_search';
     }
 
@@ -1828,6 +1828,10 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
   getStationColorClass(index: number): string {
     return `station-color-${index % 24}`;
+  }
+
+  isSampleStation(station: Pick<WorkOrderTreeStation, 'sample_mode'> | null | undefined): boolean {
+    return String(station?.sample_mode || '').trim().toLowerCase() === 'sample';
   }
 
   get selectedStationTitle(): string {
