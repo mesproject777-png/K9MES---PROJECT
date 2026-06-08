@@ -501,7 +501,7 @@ public static class ConvertedEndpoints
 
             var rsn = request.Query["rsn"].ToString().Trim();
             var userCode = request.Query["userCode"].ToString().Trim();
-            var password = request.Query["password"].ToString();
+            var password = request.Query["password"].ToString().Trim();
             var workOrder = request.Query["workOrder"].ToString().Trim();
 
             if (string.IsNullOrWhiteSpace(userCode) || string.IsNullOrWhiteSpace(password))
@@ -527,13 +527,13 @@ public static class ConvertedEndpoints
                 """
                 SELECT login_id, password, is_active
                 FROM users
-                WHERE UPPER(login_id) = UPPER(@userCode)
+                WHERE UPPER(BTRIM(login_id)) = UPPER(BTRIM(@userCode))
                 LIMIT 1
                 """,
                 ("userCode", userCode));
             var userAuthenticated = userRows.Count > 0 &&
                 userRows[0]["password"] is string storedPassword &&
-                string.Equals(storedPassword, password, StringComparison.Ordinal) &&
+                string.Equals(storedPassword.Trim(), password, StringComparison.Ordinal) &&
                 !(userRows[0]["is_active"] is bool active && !active);
 
             var workOrderRows = await QueryRowsAsync(
@@ -558,8 +558,8 @@ public static class ConvertedEndpoints
                     SELECT l.station_login_id
                     FROM workflow_station_logins l
                     JOIN workflow_routing_steps r ON r.id = l.workflow_routing_step_id
-                    WHERE UPPER(l.station_login_id) = UPPER(@userCode)
-                      AND l.station_login_password = @password
+                    WHERE UPPER(BTRIM(l.station_login_id)) = UPPER(BTRIM(@userCode))
+                      AND BTRIM(l.station_login_password) = BTRIM(@password)
                       AND r.workflow_part_id = @workflowPartId
                       AND (l.workflow_work_order_id = @workflowWorkOrderId OR l.workflow_work_order_id IS NULL)
                     LIMIT 1
@@ -569,6 +569,24 @@ public static class ConvertedEndpoints
                     ("workflowPartId", workOrderRows[0]["workflow_part_id"]),
                     ("workflowWorkOrderId", workOrderRows[0]["id"]));
                 userAuthenticated = stationLoginRows.Count > 0;
+            }
+
+            if (!userAuthenticated)
+            {
+                var routingLoginRows = await QueryRowsAsync(
+                    connection,
+                    """
+                    SELECT r.station_login_id
+                    FROM workflow_routing_steps r
+                    WHERE UPPER(BTRIM(r.station_login_id)) = UPPER(BTRIM(@userCode))
+                      AND BTRIM(r.station_login_password) = BTRIM(@password)
+                      AND r.workflow_part_id = @workflowPartId
+                    LIMIT 1
+                    """,
+                    ("userCode", userCode),
+                    ("password", password),
+                    ("workflowPartId", workOrderRows[0]["workflow_part_id"]));
+                userAuthenticated = routingLoginRows.Count > 0;
             }
 
             if (!userAuthenticated)
@@ -1971,11 +1989,11 @@ public static class ConvertedEndpoints
                   COALESCE(w.site_name, '') AS site,
                   COALESCE(w.updated_at, p.updated_at) AS updated_at,
                   COUNT(*) OVER () AS total_count
-                FROM workflow_part_numbers p
-                LEFT JOIN workflow_work_orders w ON w.workflow_part_id = p.id
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
                 LEFT JOIN sn_types st ON st.id = p.sn_type_id
                 {(where.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", where))}
-                ORDER BY COALESCE(w.updated_at, p.updated_at) DESC, w.id DESC NULLS LAST, p.id DESC
+                ORDER BY w.updated_at DESC, w.id DESC
                 LIMIT @limit OFFSET @offset
                 """,
                 parameters.ToArray());
@@ -8530,9 +8548,36 @@ public static class ConvertedEndpoints
         int? excludeRoutingStepId = null,
         int? excludeWorkflowPartId = null)
     {
+        var filters = new List<string>
+        {
+            "UPPER(BTRIM(l.station_login_id)) = UPPER(BTRIM(@loginId))"
+        };
+        var parameters = new List<(string Name, object? Value)>
+        {
+            ("loginId", loginId)
+        };
+
+        if (excludeLoginRowId is not null)
+        {
+            filters.Add("l.id <> @excludeLoginRowId");
+            parameters.Add(("excludeLoginRowId", excludeLoginRowId.Value));
+        }
+
+        if (excludeRoutingStepId is not null)
+        {
+            filters.Add("r.id <> @excludeRoutingStepId");
+            parameters.Add(("excludeRoutingStepId", excludeRoutingStepId.Value));
+        }
+
+        if (excludeWorkflowPartId is not null)
+        {
+            filters.Add("r.workflow_part_id <> @excludeWorkflowPartId");
+            parameters.Add(("excludeWorkflowPartId", excludeWorkflowPartId.Value));
+        }
+
         var rows = await QueryRowsAsync(
             connection,
-            """
+            $"""
             SELECT station_code, pn, wo
             FROM (
                 SELECT r.station_code, p.pn, w.wo
@@ -8540,17 +8585,11 @@ public static class ConvertedEndpoints
                 JOIN workflow_routing_steps r ON r.id = l.workflow_routing_step_id
                 JOIN workflow_part_numbers p ON p.id = r.workflow_part_id
                 LEFT JOIN workflow_work_orders w ON w.id = l.workflow_work_order_id
-                WHERE UPPER(l.station_login_id) = UPPER(@loginId)
-                  AND (@excludeLoginRowId::integer IS NULL OR l.id <> @excludeLoginRowId::integer)
-                  AND (@excludeRoutingStepId::integer IS NULL OR r.id <> @excludeRoutingStepId::integer)
-                  AND (@excludeWorkflowPartId::integer IS NULL OR r.workflow_part_id <> @excludeWorkflowPartId::integer)
+                WHERE {string.Join(" AND ", filters)}
             ) conflicts
             LIMIT 1
             """,
-            ("loginId", loginId),
-            ("excludeLoginRowId", ToDbNullable(excludeLoginRowId)),
-            ("excludeRoutingStepId", ToDbNullable(excludeRoutingStepId)),
-            ("excludeWorkflowPartId", ToDbNullable(excludeWorkflowPartId)));
+            parameters.ToArray());
 
         return rows.Count > 0 ? rows[0] : null;
     }

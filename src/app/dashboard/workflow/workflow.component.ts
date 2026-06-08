@@ -525,7 +525,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       if (partNumber) {
         this.partNumberForm.patchValue({ pn: partNumber }, { emitEvent: false });
         this.workOrderForm.patchValue({ pn: partNumber }, { emitEvent: false });
-        this.restoreSavedPreviewForPartNumber(partNumber);
+        this.restoreSavedPreviewForPartNumber(partNumber, workOrder);
       }
 
       if (workOrder) {
@@ -1165,6 +1165,16 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   get previewBoxRight(): string {
     const qty = Number(this.workOrderForm.get('qty')?.value);
     return Number.isFinite(qty) && qty > 0 ? `Qty ${qty}` : 'BX-50002';
+  }
+
+  get previewProductSerialNumber(): string {
+    const lot = String(this.workOrderForm.get('lot')?.value ?? '').trim();
+    if (lot) {
+      return lot;
+    }
+
+    const partNumber = this.previewPartNumber;
+    return partNumber !== 'Part Number Pending' ? partNumber : 'SN Pending';
   }
 
   get previewTotalDevicesCount(): number {
@@ -2858,12 +2868,16 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.samplingLotSize = '1000';
   }
 
-  private restoreSavedPreviewForPartNumber(partNumber: string): void {
+  private restoreSavedPreviewForPartNumber(partNumber: string, workOrder = ''): void {
     if (!partNumber) {
       return;
     }
 
-    const params = new HttpParams().set('pn', partNumber);
+    let params = new HttpParams().set('pn', partNumber);
+    if (workOrder.trim()) {
+      params = params.set('wo', workOrder.trim());
+    }
+
     this.http.get<WorkflowSnapshot>(`${this.workflowApiUrl}/by-pn`, { params }).subscribe({
       next: (snapshot) => {
         this.applyWorkflowSnapshot(snapshot);
