@@ -1,5 +1,5 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Component, OnInit } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { environment } from '../../../environments/environment';
 
@@ -9,6 +9,9 @@ type WorkflowWorkOrderSummary = {
   snType: string;
   dueDate: string;
   quantity: number | null;
+  status: string;
+  revision: string;
+  lot: string;
   stationCount: number;
   bomCount: number;
   site: string;
@@ -21,6 +24,9 @@ type WorkflowWorkOrderApiRow = {
   sn_type: string;
   due_date: string | null;
   quantity: number | null;
+  status?: string | null;
+  revision?: string | null;
+  lot?: string | null;
   station_count: number;
   bom_count: number;
   site: string;
@@ -33,8 +39,9 @@ type WorkflowWorkOrderApiRow = {
   templateUrl: './work-order.component.html',
   styleUrl: './work-order.component.scss'
 })
-export class WorkOrderComponent implements OnInit {
+export class WorkOrderComponent implements OnInit, OnDestroy {
   private readonly apiUrl = `${environment.apiUrl}/api/workflow/work-orders`;
+  private readonly workflowUpdatedStorageKey = 'k9_workflow_work_orders_updated_at';
 
   rows: WorkflowWorkOrderSummary[] = [];
   woFilter = '';
@@ -44,6 +51,8 @@ export class WorkOrderComponent implements OnInit {
   total = 0;
   isLoading = false;
   errorMessage = '';
+  private lastObservedWorkflowUpdate = localStorage.getItem(this.workflowUpdatedStorageKey) || '';
+  private refreshTimer: number | null = null;
 
   constructor(
     private http: HttpClient,
@@ -52,6 +61,18 @@ export class WorkOrderComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadRows();
+    this.refreshTimer = window.setInterval(() => this.reloadIfWorkflowChanged(), 3000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshTimer !== null) {
+      window.clearInterval(this.refreshTimer);
+    }
+  }
+
+  @HostListener('window:focus')
+  onWindowFocus(): void {
+    this.reloadIfWorkflowChanged();
   }
 
   loadRows(): void {
@@ -170,6 +191,9 @@ export class WorkOrderComponent implements OnInit {
       snType: row.sn_type,
       dueDate: row.due_date || '',
       quantity: row.quantity,
+      status: row.status || '',
+      revision: row.revision || '',
+      lot: row.lot || '',
       stationCount: row.station_count,
       bomCount: row.bom_count,
       site: row.site,
@@ -177,8 +201,19 @@ export class WorkOrderComponent implements OnInit {
     };
   }
 
+  private reloadIfWorkflowChanged(): void {
+    const latestUpdate = localStorage.getItem(this.workflowUpdatedStorageKey) || '';
+    if (!latestUpdate || latestUpdate === this.lastObservedWorkflowUpdate) {
+      return;
+    }
+
+    this.lastObservedWorkflowUpdate = latestUpdate;
+    this.page = 1;
+    this.loadRows();
+  }
+
   private downloadRows(rows: WorkflowWorkOrderSummary[]): void {
-    const header = ['WO', 'Part Number', 'SN Type', 'Due Date', 'Quantity', 'Station', 'BOM', 'Site'];
+    const header = ['WO', 'Part Number', 'SN Type', 'Due Date', 'Quantity', 'Status', 'Revision', 'Lot', 'Station', 'BOM', 'Site', 'Last Updated'];
     const csvRows = [
       header.join(','),
       ...rows.map((row) => [
@@ -187,9 +222,13 @@ export class WorkOrderComponent implements OnInit {
         this.escapeCsv(row.snType),
         this.escapeCsv(row.dueDate ? String(row.dueDate).slice(0, 10) : ''),
         this.escapeCsv(row.quantity === null ? '' : String(row.quantity)),
+        this.escapeCsv(row.status),
+        this.escapeCsv(row.revision),
+        this.escapeCsv(row.lot),
         this.escapeCsv(String(row.stationCount)),
         this.escapeCsv(String(row.bomCount)),
         this.escapeCsv(row.site),
+        this.escapeCsv(row.updatedAt ? String(row.updatedAt).slice(0, 19).replace('T', ' ') : ''),
       ].join(',')),
     ];
 

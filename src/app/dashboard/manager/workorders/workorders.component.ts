@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { Router } from '@angular/router';
 import { environment } from '../../../../environments/environment';
 
 interface Site {
@@ -20,6 +21,7 @@ interface WorkOrderRow {
   revision: string;
   balance: number;
   lot?: string | null;
+  source?: 'legacy' | 'workflow';
 }
 
 interface WorkOrdersResponse {
@@ -82,7 +84,8 @@ export class WorkordersComponent implements OnInit {
 
   constructor(
     private http: HttpClient,
-    private fb: FormBuilder
+    private fb: FormBuilder,
+    private router: Router
   ) {
     const today = new Date().toISOString().slice(0, 10);
     this.woForm = this.fb.group({
@@ -193,6 +196,16 @@ export class WorkordersComponent implements OnInit {
   }
 
   openEditModal(row: WorkOrderRow): void {
+    if (row.source === 'workflow') {
+      this.router.navigate(['/dashboard/workflow'], {
+        queryParams: {
+          pn: row.pn,
+          wo: row.wo,
+        },
+      });
+      return;
+    }
+
     this.successMessage = '';
     this.errorMessage = '';
     this.isCreateModalOpen = true;
