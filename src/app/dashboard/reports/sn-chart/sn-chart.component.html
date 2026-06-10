@@ -1,0 +1,29 @@
+          <section class="sn-panel" *ngIf="activeTab === 'station'">
+            <div class="history-scroll" *ngIf="selectedStation && selectedStation.serials.length > 0; else noStationSerials">
+              <table class="history-table">
+                <thead>
+                  <tr>
+                    <th>SN</th>
+                    <th>Last Moved</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let serial of selectedStation.serials; trackBy: trackBySerial">
+                    <td>
+                      <button type="button" class="sn-link" (click)="openSerial(serial)">
+                        {{ serial.sn }}
+                      </button>
+                    </td>
+                    <td>{{ serial.last_moved_at ? (serial.last_moved_at | date: 'yyyy-MM-dd HH:mm:ss') : '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <ng-template #noStationSerials>
+              <div class="empty-state">
+                <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+                <strong>No SNs are currently present in this station.</strong>
+              </div>
+            </ng-template>
+          </section>

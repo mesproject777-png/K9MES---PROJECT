@@ -1,0 +1,143 @@
+          <section class="sn-panel" *ngIf="activeTab === 'tree'">
+            <div class="preview-canvas">
+              <div class="preview-hierarchy">
+                <div class="preview-node hierarchy-node plant-node">
+                  <span class="preview-node-icon plant-icon material-symbols-outlined" aria-hidden="true">factory</span>
+                  <span class="preview-node-copy">
+                    <strong>Plant</strong>
+                    <small>{{ report.workOrder.plant || 'Select Plant' }}</small>
+                  </span>
+                </div>
+
+                <span class="tree-link vertical" aria-hidden="true"></span>
+
+                <div class="preview-node hierarchy-node site-node">
+                  <span class="preview-node-icon site-icon material-symbols-outlined" aria-hidden="true">location_on</span>
+                  <span class="preview-node-copy">
+                    <strong>Site</strong>
+                    <small>{{ report.workOrder.site_name || 'Select Site' }}</small>
+                  </span>
+                </div>
+
+                <span class="tree-link vertical" aria-hidden="true"></span>
+
+                <div class="preview-node hierarchy-node work-order-node">
+                  <span class="preview-node-icon work-icon material-symbols-outlined" aria-hidden="true">assignment</span>
+                  <span class="preview-node-copy">
+                    <strong>Work Order</strong>
+                    <small>{{ report.workOrder.wo }}</small>
+                  </span>
+                </div>
+
+                <span class="tree-link vertical report-link" aria-hidden="true"></span>
+
+                <div class="preview-node hierarchy-node part-number-node report-chain-node">
+                  <span class="preview-node-icon part-icon material-symbols-outlined" aria-hidden="true">settings</span>
+                  <span class="preview-node-copy">
+                    <strong>Part Number</strong>
+                    <small>{{ report.partNumber.pn }}</small>
+                  </span>
+                </div>
+
+                <span class="tree-link vertical report-link" aria-hidden="true"></span>
+
+                <div class="preview-node hierarchy-node product-node report-total-node">
+                  <span class="preview-node-copy">
+                    <strong>Total devices</strong>
+                    <small>{{ report.summary.total_serials }} SN</small>
+                  </span>
+                </div>
+              </div>
+
+              <div class="product-process-link report-product-process-link" aria-hidden="true">
+                <span class="product-line-down"></span>
+                <span class="product-line-across"></span>
+                <span class="product-line-drop"></span>
+              </div>
+
+              <div class="preview-process-flow" #reportProcessFlow>
+                <svg
+                  class="report-flow-lines"
+                  aria-hidden="true"
+                  *ngIf="connectorPath"
+                  [attr.width]="connectorWidth"
+                  [attr.height]="connectorHeight"
+                  [attr.viewBox]="'0 0 ' + connectorWidth + ' ' + connectorHeight"
+                >
+                  <path class="report-flow-line-path" [attr.d]="connectorPath"></path>
+                </svg>
+
+                <ng-container *ngFor="let row of flowRows; let rowIndex = index">
+                  <div
+                    class="preview-flow-row-wrap"
+                    [class.turn-left]="row.turnSide === 'left'"
+                    [class.turn-right]="row.turnSide === 'right'"
+                  >
+                    <div class="preview-flow-row" [class.reverse-row]="row.isReversed">
+                      <ng-container *ngFor="let node of row.nodes; let i = index; trackBy: trackByFlowNode">
+                        <ng-container [ngSwitch]="node.kind">
+                          <div
+                            *ngSwitchCase="'operator'"
+                            #reportFlowNode
+                            class="operator-node flow-card"
+                            [attr.data-flow-id]="node.id"
+                          >
+                            <span class="operator-avatar" aria-hidden="true">
+                              <span class="material-symbols-outlined">{{ node.icon }}</span>
+                            </span>
+                            <strong>{{ node.title }}</strong>
+                          </div>
+
+                          <button
+                            *ngSwitchCase="'station'"
+                            #reportFlowNode
+                            type="button"
+                            class="station-node flow-card report-station-node"
+                            [attr.data-flow-id]="node.id"
+                            [class.station-diamond]="isSampleStation(node.station)"
+                            [class.station-square]="!isSampleStation(node.station)"
+                            [class.hot]="!isSampleStation(node.station) && isHighSnStation(node.station)"
+                            [class.empty-count]="node.station?.sn_count === 0"
+                            [ngClass]="node.station?.colorClass"
+                            (mousedown)="activateStation(node.station, $event)"
+                            (pointerdown)="activateStation(node.station, $event)"
+                            (click)="activateStation(node.station, $event)"
+                          >
+                            <span class="station-node-inner">
+                              <span class="station-icon material-symbols-outlined" aria-hidden="true">{{ node.station?.icon }}</span>
+                              <strong>{{ node.station?.station_code || node.station?.station_name }}</strong>
+                              <small class="sn-count">{{ node.station?.sn_count || 0 }} SN</small>
+                            </span>
+                          </button>
+
+                          <div
+                            *ngSwitchCase="'logistics'"
+                            #reportFlowNode
+                            class="logistics-node flow-card"
+                            [attr.data-flow-id]="node.id"
+                            [class.cart-node]="node.variant === 'cart'"
+                            [class.pallet-node]="node.variant === 'pallet'"
+                            [class.truck-node]="node.variant === 'truck'"
+                          >
+                            <span class="logistics-icon material-symbols-outlined" aria-hidden="true">
+                              {{ node.icon }}
+                            </span>
+                            <strong>{{ node.title }}</strong>
+                          </div>
+                        </ng-container>
+
+                        <span class="flow-line" *ngIf="i < row.nodes.length - 1" aria-hidden="true"></span>
+                      </ng-container>
+                    </div>
+                    <div
+                      class="flow-row-turn"
+                      *ngIf="rowIndex < flowRows.length - 1"
+                      [class.right-turn]="row.turnSide === 'right'"
+                      [class.left-turn]="row.turnSide === 'left'"
+                      aria-hidden="true"
+                    ></div>
+                  </div>
+                </ng-container>
+              </div>
+            </div>
+          </section>

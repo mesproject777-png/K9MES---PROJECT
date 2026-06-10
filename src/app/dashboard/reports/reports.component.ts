@@ -342,6 +342,7 @@ interface DebugDashboardData {
   styleUrl: './reports.component.scss'
 })
 export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked, OnDestroy {
+  readonly controller = this;
   readonly reportsApi = `${environment.apiUrl}/api/reports/work-order-tree`;
   readonly scrapSnApi = `${environment.apiUrl}/api/reports/scrap-sn`;
   readonly undoScrapApi = `${environment.apiUrl}/api/reports/undo-scrap`;
@@ -702,6 +703,10 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
         this.activityErrorMessage = error?.error?.message || error?.error?.error || 'Unable to load Activity & Quality Dashboard.';
       }
     });
+  }
+
+  get showStandardReportsShell(): boolean {
+    return this.activeView === 'standard' || this.activeView === 'scrapSn' || this.activeView === 'undoScrap';
   }
 
   loadActivityQualityLookups(force = false): void {
