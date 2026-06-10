@@ -731,9 +731,17 @@
 }
 
 .aq-page {
+  width: 100%;
+  max-width: 100%;
   display: grid;
   gap: 18px;
+  overflow-x: hidden;
   color: #0f2747;
+}
+
+.aq-page,
+.aq-page * {
+  box-sizing: border-box;
 }
 
 .aq-page.fullscreen {
@@ -871,12 +879,15 @@
 }
 
 .aq-filter-card {
+  width: 100%;
+  max-width: 100%;
   padding: 16px;
+  overflow: hidden;
 }
 
 .aq-filter-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
 }
 
@@ -958,8 +969,10 @@
 }
 
 .aq-kpis {
+  width: 100%;
+  max-width: 100%;
   display: grid;
-  grid-template-columns: repeat(8, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 12px;
 }
 
@@ -1027,6 +1040,8 @@
 .aq-chart-card,
 .aq-analysis-card,
 .aq-table-card {
+  min-width: 0;
+  max-width: 100%;
   padding: 16px;
 }
 

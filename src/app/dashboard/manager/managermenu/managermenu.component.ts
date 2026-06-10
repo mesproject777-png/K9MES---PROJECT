@@ -17,13 +17,6 @@ type ManagerActionCard = {
 export class ManagermenuComponent {
   readonly cards: ManagerActionCard[] = [
     {
-	  id: 'hlManager1',
-      title: 'List WOs',
-      description: 'View, search, and manage work orders.',
-      icon: 'fact_check',
-      route: '/dashboard/manager/workorders'
-    },
-    {
 	  id: 'hlManagerSgdPo',
       title: 'List SGD PO',
       description: 'Create and manage SGD purchase orders.',
@@ -43,13 +36,6 @@ export class ManagermenuComponent {
       description: 'Track serial status and pass/fail history.',
       icon: 'track_changes',
       route: '/dashboard/manager/sntracker'
-    },
-    {
-	  id: 'hlManager4',
-      title: 'Pass/Fail Report',
-      description: 'Review pass/fail results and trends.',
-      icon: 'analytics',
-      route: '/dashboard/reports'
     },
     {
 	  id: 'hlManager5',

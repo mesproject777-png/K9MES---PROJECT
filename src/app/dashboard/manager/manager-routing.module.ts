@@ -8,7 +8,6 @@ import { ManagerComponent } from './manager.component';
 import { ManagermenuComponent } from './managermenu/managermenu.component';
 import { PnwochangeComponent } from './pnwochange/pnwochange.component';
 import { SgdpoComponent } from './sgdpo/sgdpo.component';
-import { WorkordersComponent } from './workorders/workorders.component';
 
 const routes: Routes = [
   {
@@ -17,7 +16,6 @@ const routes: Routes = [
     children: [
       { path: '', component: ManagermenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/menu' } },
       { path: 'menu', component: ManagermenuComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/menu' } },
-      { path: 'workorders', component: WorkordersComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/workorders' } },
       { path: 'sgd-po', component: SgdpoComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/sgdpo' } },
       { path: 'generatesn', component: GenerateSnComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/generatesn' } },
       { path: 'pn-wo-change', component: PnwochangeComponent, canActivate: [permissionGuard], data: { pageKey: 'dashboard/manager/pnwochange' } },

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Npgsql;
 
@@ -120,13 +120,28 @@ public static class WorkflowEndpoints
                     WHERE b.workflow_part_id = p.id
                   ) AS bom_count,
                   COALESCE(w.site_name, '') AS site,
-                  COALESCE(w.updated_at, p.updated_at) AS updated_at,
+                  COALESCE(activity.latest_at, p.updated_at) AS updated_at,
                   COUNT(*) OVER () AS total_count
-                FROM workflow_work_orders w
-                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                FROM workflow_part_numbers p
+                LEFT JOIN workflow_work_orders w ON w.workflow_part_id = p.id
                 LEFT JOIN sn_types st ON st.id = p.sn_type_id
+                LEFT JOIN LATERAL (
+                  SELECT MAX(activity_at) AS latest_at
+                  FROM (VALUES
+                    (p.updated_at),
+                    (w.updated_at),
+                    ((SELECT MAX(r.updated_at) FROM workflow_routing_steps r WHERE r.workflow_part_id = p.id)),
+                    ((SELECT MAX(b.updated_at) FROM workflow_bom_children b WHERE b.workflow_part_id = p.id)),
+                    ((SELECT MAX(sr.updated_at) FROM workflow_station_rules sr WHERE sr.workflow_part_id = p.id)),
+                    ((SELECT MAX(lp.updated_at) FROM workflow_station_label_printing lp WHERE lp.workflow_part_id = p.id)),
+                    ((SELECT MAX(ww.updated_at) FROM workflow_station_weighing ww WHERE ww.workflow_part_id = p.id)),
+                    ((SELECT MAX(ss.updated_at) FROM workflow_station_sampling ss WHERE ss.workflow_part_id = p.id)),
+                    ((SELECT MAX(rp.updated_at) FROM workflow_station_repair rp WHERE rp.workflow_part_id = p.id)),
+                    ((SELECT MAX(ps.updated_at) FROM workflow_preview_station_statuses ps WHERE ps.workflow_part_id = p.id))
+                  ) AS updates(activity_at)
+                ) activity ON TRUE
                 {(where.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", where))}
-                ORDER BY w.updated_at DESC, w.id DESC
+                ORDER BY COALESCE(activity.latest_at, p.updated_at) DESC, COALESCE(w.id, 0) DESC, p.id DESC
                 LIMIT @limit OFFSET @offset
                 """,
                 parameters.ToArray());
@@ -1992,5 +2007,6 @@ public static class WorkflowEndpoints
         return value is null ? DBNull.Value : value;
     }
 }
+
 
 

@@ -7,13 +7,11 @@ import { ManagerComponent } from './manager.component';
 import { ManagermenuComponent } from './managermenu/managermenu.component';
 import { PnwochangeComponent } from './pnwochange/pnwochange.component';
 import { SgdpoComponent } from './sgdpo/sgdpo.component';
-import { WorkordersComponent } from './workorders/workorders.component';
 
 @NgModule({
   declarations: [
     ManagerComponent,
     ManagermenuComponent,
-    WorkordersComponent,
     SgdpoComponent,
   ],
   imports: [

@@ -5,6 +5,7 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
+  ViewEncapsulation,
   HostListener,
   OnDestroy,
   OnInit,
@@ -339,7 +340,8 @@ interface DebugDashboardData {
   selector: 'app-reports',
   standalone: false,
   templateUrl: './reports.component.html',
-  styleUrl: './reports.component.scss'
+  styleUrl: './reports.component.scss',
+  encapsulation: ViewEncapsulation.None
 })
 export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked, OnDestroy {
   readonly controller = this;

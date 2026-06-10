@@ -37,7 +37,6 @@ export class RoleComponent implements OnInit {
     { key: 'dashboard/engineering/partnumber', label: 'Engineering - Part Number' },
     { key: 'dashboard/engineering/itemrevisions', label: 'Engineering - Item Revisions' },
     { key: 'dashboard/manager/menu', label: 'Manager Menu' },
-    { key: 'dashboard/manager/workorders', label: 'Manager - List WOs' },
     { key: 'dashboard/manager/sgdpo', label: 'Manager - List SGD PO' },
     { key: 'dashboard/manager/pnwochange', label: 'Manager - PN & WO Change' },
     { key: 'dashboard/label', label: 'Labels' },
