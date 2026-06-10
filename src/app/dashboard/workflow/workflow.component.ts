@@ -3072,6 +3072,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         if (snapshot?.routing?.length || this.routeSteps.length === 0) {
           this.applyWorkflowSnapshot(snapshot);
         }
+        localStorage.setItem('k9_workflow_work_orders_updated_at', String(Date.now()));
         onSuccess?.();
       },
       error: (error) => {

@@ -1985,6 +1985,9 @@ public static class ConvertedEndpoints
                   COALESCE(st.sn_type_name, p.sn_type_name, '') AS sn_type,
                   w.due_date,
                   w.qty AS quantity,
+                  COALESCE(w.status, '') AS status,
+                  COALESCE(w.revision, '') AS revision,
+                  COALESCE(w.lot, '') AS lot,
                   (
                     SELECT COUNT(*)::int
                     FROM workflow_routing_steps r
@@ -2045,25 +2048,82 @@ public static class ConvertedEndpoints
 
             if (!string.IsNullOrWhiteSpace(pn))
             {
-                where.Add("i.pn ILIKE @pn");
+                where.Add("w.pn ILIKE @pn");
                 parameters.Add(("pn", $"%{pn}%"));
             }
 
             parameters.Add(("limit", limit));
             parameters.Add(("offset", offset));
             await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+            await EnsureSerialTrackingSchemaAsync(connection);
             var rows = await QueryRowsAsync(
                 connection,
                 $"""
-                SELECT w.id, w.wo, s.name AS site_name, pl.description AS pl_desc, w.due_date, w.qty, w.status,
-                       i.pn, ir.revision, w.balance, w.lot, COUNT(*) OVER () AS total_count
-                FROM work_orders w
-                JOIN sites s ON s.id = w.site_id
-                JOIN items i ON i.id = w.item_id
-                JOIN item_revisions ir ON ir.id = w.item_revision_id
-                LEFT JOIN product_lines pl ON pl.id = i.product_line_id
-                {(where.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", where))}
-                ORDER BY w.created_at DESC, w.id DESC
+                WITH all_work_orders AS (
+                    SELECT
+                      w.id,
+                      'legacy' AS source,
+                      w.wo,
+                      s.name AS site_name,
+                      pl.description AS pl_desc,
+                      w.due_date,
+                      w.qty,
+                      w.status,
+                      i.pn,
+                      ir.revision,
+                      w.balance,
+                      w.lot,
+                      COALESCE(w.updated_at, w.created_at) AS updated_at
+                    FROM work_orders w
+                    JOIN sites s ON s.id = w.site_id
+                    JOIN items i ON i.id = w.item_id
+                    JOIN item_revisions ir ON ir.id = w.item_revision_id
+                    LEFT JOIN product_lines pl ON pl.id = i.product_line_id
+
+                    UNION ALL
+
+                    SELECT
+                      w.id,
+                      'workflow' AS source,
+                      w.wo,
+                      COALESCE(w.site_name, '') AS site_name,
+                      COALESCE(p.item_type, '') AS pl_desc,
+                      w.due_date,
+                      w.qty,
+                      w.status,
+                      p.pn,
+                      COALESCE(w.revision, '') AS revision,
+                      CASE
+                        WHEN w.qty IS NULL THEN NULL
+                        ELSE GREATEST(w.qty - COALESCE(g.generated_count, 0), 0)
+                      END AS balance,
+                      w.lot,
+                      w.updated_at
+                    FROM workflow_work_orders w
+                    JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                    LEFT JOIN (
+                        SELECT workflow_work_order_id, COUNT(*)::int AS generated_count
+                        FROM workflow_serial_numbers
+                        GROUP BY workflow_work_order_id
+                    ) g ON g.workflow_work_order_id = w.id
+                ),
+                ranked_work_orders AS (
+                    SELECT *,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY UPPER(BTRIM(wo))
+                               ORDER BY updated_at DESC NULLS LAST,
+                                        CASE source WHEN 'workflow' THEN 0 ELSE 1 END,
+                                        id DESC
+                           ) AS row_rank
+                    FROM all_work_orders w
+                    {(where.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", where))}
+                )
+                SELECT id, source, wo, site_name, pl_desc, due_date, qty, status, pn, revision, balance, lot,
+                       COUNT(*) OVER () AS total_count
+                FROM ranked_work_orders
+                WHERE row_rank = 1
+                ORDER BY updated_at DESC NULLS LAST, id DESC
                 LIMIT @limit OFFSET @offset
                 """,
                 parameters.ToArray());

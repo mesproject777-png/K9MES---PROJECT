@@ -53,6 +53,11 @@
           <th>SN Type</th>
           <th>Due Date</th>
           <th>Quantity</th>
+          <th>Status</th>
+          <th>Revision</th>
+          <th>Lot</th>
+          <th>Site</th>
+          <th>Last Updated</th>
           <th>Station</th>
           <th>BOM</th>
           <th>SNList</th>
@@ -66,6 +71,11 @@
           <td>{{ row.snType || '-' }}</td>
           <td>{{ row.dueDate ? (row.dueDate | date: 'yyyy-MM-dd') : '-' }}</td>
           <td>{{ row.quantity ?? '-' }}</td>
+          <td>{{ row.status || '-' }}</td>
+          <td>{{ row.revision || '-' }}</td>
+          <td>{{ row.lot || '-' }}</td>
+          <td>{{ row.site || '-' }}</td>
+          <td>{{ row.updatedAt ? (row.updatedAt | date: 'yyyy-MM-dd HH:mm') : '-' }}</td>
           <td>
             <button
               type="button"
@@ -85,7 +95,7 @@
           </td>
         </tr>
         <tr *ngIf="pagedRows.length === 0">
-          <td colspan="9" class="empty-state">No workflow work orders found.</td>
+          <td colspan="14" class="empty-state">No workflow work orders found.</td>
         </tr>
       </tbody>
     </table>
