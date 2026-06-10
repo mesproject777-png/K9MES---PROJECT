@@ -1312,7 +1312,61 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       return [];
     }
 
-    return this.stationRulesByStation[this.activePreviewStation.station_code] || [];
+    return this.buildEnabledStationTasks(this.activePreviewStation.station_code);
+  }
+
+  private buildEnabledStationTasks(stationCode: string): string[] {
+    const code = String(stationCode || '').trim();
+    if (!code) {
+      return [];
+    }
+
+    const tasks: string[] = [];
+    const weighing = this.stationWeighingByStation[code];
+    const labelPrinting = this.stationLabelPrintingByStation[code];
+    const sampling = this.stationSamplingByStation[code];
+    const repair = this.stationRepairByStation[code];
+
+    if (weighing?.isWeighingEnabled) {
+      const values = [
+        weighing.minimumWeight ? `Min ${weighing.minimumWeight}` : '',
+        weighing.maximumWeight ? `Max ${weighing.maximumWeight}` : '',
+        weighing.tolerance ? `Tolerance ${weighing.tolerance}` : '',
+      ].filter(Boolean).join(', ');
+      tasks.push(values ? `Weighing check: ${values}` : 'Weighing check enabled');
+    }
+
+    if (labelPrinting?.isLabelPrintingEnabled) {
+      const label = [labelPrinting.labelCode, labelPrinting.labelDescription].filter(Boolean).join(' - ');
+      const printer = labelPrinting.ipAddress || labelPrinting.printerName;
+      tasks.push(`Label printing: ${label || 'Enabled'}${printer ? ` on ${printer}` : ''}`);
+    }
+
+    if (sampling?.isSamplingEnabled) {
+      tasks.push(this.formatSamplingTask(sampling));
+    }
+
+    if (repair?.isRepairStationEnabled) {
+      tasks.push(`Repair routing: ${repair.repairStationName || 'Repair station selected'}`);
+    }
+
+    tasks.push(...(this.stationRulesByStation[code] || []));
+    return tasks;
+  }
+
+  private formatSamplingTask(config: StationSamplingConfig): string {
+    const type = String(config.samplingType || 'PERIODIC').replace(/_/g, ' ').toLowerCase()
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+    if (config.samplingType === 'PERIODIC') {
+      return `Sampling: ${config.sampleQty || '1'} every ${config.intervalQty || '10'} units`;
+    }
+
+    if (config.samplingType === 'LOT') {
+      return `Sampling: ${config.sampleQty || '1'} per lot of ${config.lotSize || '1000'}`;
+    }
+
+    return `Sampling: ${type}`;
   }
 
   getSiteOptionsForSelectedPlant(): Site[] {
@@ -1371,6 +1425,10 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
   getPreviewStatusClass(status: PreviewStatus): string {
     return status.toLowerCase().replace(/\s+/g, '-');
+  }
+
+  isSampleStation(station: Pick<RoutingStepRow, 'sample_mode'> | null | undefined): boolean {
+    return String(station?.sample_mode || '').trim().toLowerCase() === 'sample';
   }
 
   savePreview(): boolean {
@@ -2396,7 +2454,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   private getPreviewStationIcon(index: number, step: RoutingStepRow): string {
     const normalizedName = `${step.station_name} ${step.station_code}`.toLowerCase();
 
-    if (step.sample_mode === 'Sample') {
+    if (this.isSampleStation(step)) {
       return 'saved_search';
     }
 

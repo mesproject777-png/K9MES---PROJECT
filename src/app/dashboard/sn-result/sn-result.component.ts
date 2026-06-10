@@ -27,6 +27,45 @@ import { PackingHierarchyRow, PackingService } from '../../services/packing.serv
 type SnResultTab = 'preview' | 'history';
 type PreviewStatus = 'Completed' | 'In Progress' | 'Pending' | 'Paused' | 'Failed';
 
+type StationLabelPrintingConfig = {
+  stationId: number | null;
+  stationName: string;
+  isLabelPrintingEnabled: boolean;
+  labelCode: string;
+  labelDescription: string;
+  printerId: string;
+  printerName: string;
+  ipAddress: string;
+  port: string;
+  status: string;
+};
+
+type StationWeighingConfig = {
+  stationId: number | null;
+  stationName: string;
+  isWeighingEnabled: boolean;
+  minimumWeight: string;
+  maximumWeight: string;
+  tolerance: string;
+};
+
+type StationSamplingConfig = {
+  stationId: number | null;
+  stationName: string;
+  isSamplingEnabled: boolean;
+  samplingType: string;
+  intervalQty: string;
+  sampleQty: string;
+  lotSize: string;
+};
+
+type StationRepairConfig = {
+  stationId: number | null;
+  stationName: string;
+  isRepairStationEnabled: boolean;
+  repairStationName: string;
+};
+
 type WorkflowSnapshot = {
   partNumber?: {
     pn?: string;
@@ -61,6 +100,10 @@ type WorkflowSnapshot = {
     qty: number;
   }>;
   stationRules?: Record<string, string[]>;
+  stationLabelPrinting?: Record<string, StationLabelPrintingConfig>;
+  stationWeighing?: Record<string, StationWeighingConfig>;
+  stationSampling?: Record<string, StationSamplingConfig>;
+  stationRepair?: Record<string, StationRepairConfig>;
   previewStatuses?: Record<string, PreviewStatus>;
 };
 
@@ -410,7 +453,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
       return [];
     }
 
-    return this.workflowSnapshot?.stationRules?.[this.activePreviewStation.station_code] || [];
+    return this.buildEnabledStationTasks(this.activePreviewStation.station_code);
   }
 
   get activePreviewStationMultiboxNo(): string {
@@ -435,6 +478,60 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
 
     return String(this.traceResult?.serial?.shipment_no || '').trim();
+  }
+
+  private buildEnabledStationTasks(stationCode: string): string[] {
+    const code = String(stationCode || '').trim();
+    if (!code) {
+      return [];
+    }
+
+    const tasks: string[] = [];
+    const weighing = this.workflowSnapshot?.stationWeighing?.[code];
+    const labelPrinting = this.workflowSnapshot?.stationLabelPrinting?.[code];
+    const sampling = this.workflowSnapshot?.stationSampling?.[code];
+    const repair = this.workflowSnapshot?.stationRepair?.[code];
+
+    if (weighing?.isWeighingEnabled) {
+      const values = [
+        weighing.minimumWeight ? `Min ${weighing.minimumWeight}` : '',
+        weighing.maximumWeight ? `Max ${weighing.maximumWeight}` : '',
+        weighing.tolerance ? `Tolerance ${weighing.tolerance}` : '',
+      ].filter(Boolean).join(', ');
+      tasks.push(values ? `Weighing check: ${values}` : 'Weighing check enabled');
+    }
+
+    if (labelPrinting?.isLabelPrintingEnabled) {
+      const label = [labelPrinting.labelCode, labelPrinting.labelDescription].filter(Boolean).join(' - ');
+      const printer = labelPrinting.ipAddress || labelPrinting.printerName;
+      tasks.push(`Label printing: ${label || 'Enabled'}${printer ? ` on ${printer}` : ''}`);
+    }
+
+    if (sampling?.isSamplingEnabled) {
+      tasks.push(this.formatSamplingTask(sampling));
+    }
+
+    if (repair?.isRepairStationEnabled) {
+      tasks.push(`Repair routing: ${repair.repairStationName || 'Repair station selected'}`);
+    }
+
+    tasks.push(...(this.workflowSnapshot?.stationRules?.[code] || []));
+    return tasks;
+  }
+
+  private formatSamplingTask(config: StationSamplingConfig): string {
+    const type = String(config.samplingType || 'PERIODIC').replace(/_/g, ' ').toLowerCase()
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+    if (config.samplingType === 'PERIODIC') {
+      return `Sampling: ${config.sampleQty || '1'} every ${config.intervalQty || '10'} units`;
+    }
+
+    if (config.samplingType === 'LOT') {
+      return `Sampling: ${config.sampleQty || '1'} per lot of ${config.lotSize || '1000'}`;
+    }
+
+    return `Sampling: ${type}`;
   }
 
   get activeLogisticsTitle(): string {
