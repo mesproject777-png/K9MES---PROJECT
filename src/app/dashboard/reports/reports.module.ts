@@ -6,6 +6,7 @@ import { ReportsComponent } from './reports.component';
 import { ActivityQualityDashboardComponent } from './activity-quality-dashboard/activity-quality-dashboard.component';
 import { DebugDashboardComponent } from './debug-dashboard/debug-dashboard.component';
 import { ReportsMenuComponent } from './reports-menu/reports-menu.component';
+import { SamplingDashboardComponent } from './sampling-dashboard/sampling-dashboard.component';
 import { ScrapSnComponent } from './scrap-sn/scrap-sn.component';
 import { SnChartComponent } from './sn-chart/sn-chart.component';
 import { TodayDashboardComponent } from './today-dashboard/today-dashboard.component';
@@ -18,6 +19,7 @@ import { WorkOrderTreeComponent } from './work-order-tree/work-order-tree.compon
     ActivityQualityDashboardComponent,
     DebugDashboardComponent,
     ReportsMenuComponent,
+    SamplingDashboardComponent,
     ScrapSnComponent,
     TodayDashboardComponent,
     UndoScrapComponent,

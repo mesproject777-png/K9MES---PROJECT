@@ -7,20 +7,32 @@ type WorkflowWorkOrderSummary = {
   wo: string;
   partNumber: string;
   snType: string;
+  plant: string;
+  site: string;
   dueDate: string;
   quantity: number | null;
+  status: string;
+  revision: string;
+  lot: string;
   stationCount: number;
   bomCount: number;
+  updatedAt: string;
 };
 
 type WorkflowWorkOrderApiRow = {
   wo: string | null;
   part_number: string;
   sn_type: string;
+  plant?: string | null;
+  site?: string | null;
   due_date: string | null;
   quantity: number | null;
+  status?: string | null;
+  revision?: string | null;
+  lot?: string | null;
   station_count: number;
   bom_count: number;
+  updated_at?: string | null;
 };
 
 @Component({
@@ -179,10 +191,16 @@ export class WorkOrderComponent implements OnInit, OnDestroy {
       wo: row.wo || '',
       partNumber: row.part_number,
       snType: row.sn_type,
+      plant: row.plant || '',
+      site: row.site || '',
       dueDate: row.due_date || '',
       quantity: row.quantity,
+      status: row.status || '',
+      revision: row.revision || '',
+      lot: row.lot || '',
       stationCount: row.station_count,
       bomCount: row.bom_count,
+      updatedAt: row.updated_at || '',
     };
   }
 
@@ -198,17 +216,23 @@ export class WorkOrderComponent implements OnInit, OnDestroy {
   }
 
   private downloadRows(rows: WorkflowWorkOrderSummary[]): void {
-    const header = ['WO', 'Part Number', 'SN Type', 'Due Date', 'Quantity', 'Station', 'BOM'];
+    const header = ['WO', 'Part Number', 'SN Type', 'Plant', 'Site', 'Due Date', 'Quantity', 'Status', 'Revision', 'Lot', 'Station', 'BOM', 'Updated At'];
     const csvRows = [
       header.join(','),
       ...rows.map((row) => [
         this.escapeCsv(row.wo),
         this.escapeCsv(row.partNumber),
         this.escapeCsv(row.snType),
+        this.escapeCsv(row.plant),
+        this.escapeCsv(row.site),
         this.escapeCsv(row.dueDate ? String(row.dueDate).slice(0, 10) : ''),
         this.escapeCsv(row.quantity === null ? '' : String(row.quantity)),
+        this.escapeCsv(row.status),
+        this.escapeCsv(row.revision),
+        this.escapeCsv(row.lot),
         this.escapeCsv(String(row.stationCount)),
         this.escapeCsv(String(row.bomCount)),
+        this.escapeCsv(row.updatedAt ? String(row.updatedAt).slice(0, 19).replace('T', ' ') : ''),
       ].join(',')),
     ];
 

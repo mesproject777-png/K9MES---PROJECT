@@ -107,8 +107,13 @@ public static class WorkflowEndpoints
                   COALESCE(w.wo, '') AS wo,
                   p.pn AS part_number,
                   COALESCE(st.sn_type_name, p.sn_type_name, '') AS sn_type,
+                  COALESCE(w.plant, '') AS plant,
+                  COALESCE(w.site_name, '') AS site,
                   w.due_date,
                   w.qty AS quantity,
+                  COALESCE(w.status, '') AS status,
+                  COALESCE(w.revision, '') AS revision,
+                  COALESCE(w.lot, '') AS lot,
                   (
                     SELECT COUNT(*)::int
                     FROM workflow_routing_steps r
@@ -119,7 +124,6 @@ public static class WorkflowEndpoints
                     FROM workflow_bom_children b
                     WHERE b.workflow_part_id = p.id
                   ) AS bom_count,
-                  COALESCE(w.site_name, '') AS site,
                   COALESCE(activity.latest_at, p.updated_at) AS updated_at,
                   COUNT(*) OVER () AS total_count
                 FROM workflow_part_numbers p

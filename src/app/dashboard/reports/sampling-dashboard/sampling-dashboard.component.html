@@ -1,0 +1,291 @@
+<section class="debug-dashboard-window">
+  <header class="debug-header">
+    <button type="button" class="icon-button debug-back" title="Back to reports" (click)="backToMenu()">
+      <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+    </button>
+    <div>
+      <h1>Sampling Dashboard</h1>
+      <p>Sampling requests, pending samples, and completed sample checks</p>
+    </div>
+    <span class="header-spacer"></span>
+  </header>
+
+  <div class="debug-layout">
+    <aside class="debug-filter-panel">
+      <div class="debug-filter-title">
+        <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+        <strong>Filters</strong>
+      </div>
+
+      <label>
+        <span>Date Range</span>
+        <select [(ngModel)]="samplingFilters.dateRange" (change)="onDateRangeChange()" [disabled]="isFilterDisabled('dateRange')">
+          <option value="">Select Date</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="thisWeek">This Week</option>
+          <option value="thisMonth">This Month</option>
+          <option value="custom">Custom Range</option>
+        </select>
+      </label>
+
+      <label *ngIf="isCustomRange">
+        <span>From Date</span>
+        <input type="date" [(ngModel)]="samplingFilters.fromDate" (change)="onCustomDateChange()" [disabled]="isFilterDisabled('fromDate')">
+      </label>
+
+      <label *ngIf="isCustomRange">
+        <span>To Date</span>
+        <input type="date" [(ngModel)]="samplingFilters.toDate" (change)="onCustomDateChange()" [disabled]="isFilterDisabled('toDate')">
+      </label>
+
+      <label>
+        <span>Plant</span>
+        <select [(ngModel)]="samplingFilters.plant" (ngModelChange)="onFilterChange('plant')" [disabled]="isFilterDisabled('plant')">
+          <option value="">Select Plant</option>
+          <option *ngFor="let plant of plantOptions" [value]="plant">{{ plant }}</option>
+        </select>
+      </label>
+
+      <label>
+        <span>Site</span>
+        <select [(ngModel)]="samplingFilters.site" (ngModelChange)="onFilterChange('site')" [disabled]="isFilterDisabled('site')">
+          <option value="">Select Site</option>
+          <option *ngFor="let site of siteOptionsForSelectedPlant" [value]="site.name">{{ site.name }}</option>
+        </select>
+      </label>
+
+      <label>
+        <span>Sampling Station</span>
+        <select [(ngModel)]="samplingFilters.samplingStation" (ngModelChange)="onFilterChange('samplingStation')" [disabled]="isFilterDisabled('samplingStation')">
+          <option value="">Select Station</option>
+          <option *ngFor="let station of samplingOptions.samplingStations" [value]="station.station_code">
+            {{ station.station_name || station.station_code }}
+          </option>
+        </select>
+      </label>
+
+      <label>
+        <span>Status</span>
+        <select [(ngModel)]="samplingFilters.status" (ngModelChange)="onFilterChange('status')" [disabled]="isFilterDisabled('status')">
+          <option value="">Select Status</option>
+          <option value="Pending">Pending</option>
+          <option value="Passed">Passed</option>
+        </select>
+      </label>
+
+      <label>
+        <span>Sampling Type</span>
+        <select [(ngModel)]="samplingFilters.samplingType" (ngModelChange)="onFilterChange('samplingType')" [disabled]="isFilterDisabled('samplingType')">
+          <option value="">Select Sampling Type</option>
+          <option *ngFor="let type of samplingOptions.samplingTypes" [value]="type.sampling_type">{{ type.sampling_type }}</option>
+        </select>
+      </label>
+
+      <label>
+        <span>Part Number (PN)</span>
+        <select [(ngModel)]="samplingFilters.partNumber" (ngModelChange)="onFilterChange('partNumber')" [disabled]="isFilterDisabled('partNumber')">
+          <option value="">Select Part Number</option>
+          <option *ngFor="let part of samplingOptions.partNumbers" [value]="part.pn">{{ part.pn }}</option>
+        </select>
+      </label>
+
+      <label>
+        <span>Work Order</span>
+        <select [(ngModel)]="samplingFilters.workOrder" (ngModelChange)="onFilterChange('workOrder')" [disabled]="isFilterDisabled('workOrder')">
+          <option value="">Select Work Order</option>
+          <option *ngFor="let work of samplingOptions.workOrders" [value]="work.wo">{{ work.wo }}</option>
+        </select>
+      </label>
+
+      <label>
+        <span>Search SN</span>
+        <span class="debug-search">
+          <input type="search" placeholder="Enter SN or RSN" [(ngModel)]="samplingFilters.searchSn" (keydown.enter)="loadSamplingDashboard()" [disabled]="isFilterDisabled('searchSn')">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+        </span>
+      </label>
+
+      <div class="debug-all-row">
+        <label><input type="checkbox" [checked]="samplingAllFilters.plant" (change)="setAllFilter('plant', $any($event.target).checked)" [disabled]="isFilterDisabled('plant')">All Plants</label>
+        <label><input type="checkbox" [checked]="samplingAllFilters.site" (change)="setAllFilter('site', $any($event.target).checked)" [disabled]="isFilterDisabled('site')">All Sites</label>
+        <label><input type="checkbox" [checked]="samplingAllFilters.samplingStation" (change)="setAllFilter('samplingStation', $any($event.target).checked)" [disabled]="isFilterDisabled('samplingStation')">All Stations</label>
+        <label><input type="checkbox" [checked]="samplingAllFilters.status" (change)="setAllFilter('status', $any($event.target).checked)" [disabled]="isFilterDisabled('status')">All Status</label>
+        <label><input type="checkbox" [checked]="samplingAllFilters.samplingType" (change)="setAllFilter('samplingType', $any($event.target).checked)" [disabled]="isFilterDisabled('samplingType')">All Types</label>
+        <label><input type="checkbox" [checked]="samplingAllFilters.partNumber" (change)="setAllFilter('partNumber', $any($event.target).checked)" [disabled]="isFilterDisabled('partNumber')">All PN</label>
+        <label><input type="checkbox" [checked]="samplingAllFilters.workOrder" (change)="setAllFilter('workOrder', $any($event.target).checked)" [disabled]="isFilterDisabled('workOrder')">All WO</label>
+      </div>
+
+      <button type="button" class="debug-apply" (click)="loadSamplingDashboard()" [disabled]="samplingLoading || !isSamplingDashboardReady">
+        <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+        Go
+      </button>
+      <button type="button" class="debug-reset" (click)="resetFilters()">Reset</button>
+    </aside>
+
+    <main class="debug-content" *ngIf="samplingHasRun; else samplingStartState">
+      <div class="debug-kpi-grid">
+        <article class="debug-kpi debug-kpi--blue">
+          <span class="material-symbols-outlined" aria-hidden="true">science</span>
+          <small>Total Sampling SNs</small>
+          <strong>{{ formatNumber(summarySource.total) }}</strong>
+          <em>{{ activeBucket?.label || 'Current filters' }}</em>
+        </article>
+        <article class="debug-kpi debug-kpi--amber">
+          <span class="material-symbols-outlined" aria-hidden="true">hourglass_top</span>
+          <small>Pending</small>
+          <strong>{{ formatNumber(summarySource.pending) }}</strong>
+          <em>{{ summarySource.pendingPercent | number:'1.1-1' }}% of Total</em>
+        </article>
+        <article class="debug-kpi debug-kpi--green">
+          <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+          <small>Passed</small>
+          <strong>{{ formatNumber(summarySource.passed) }}</strong>
+          <em>{{ summarySource.passedPercent | number:'1.1-1' }}% of Total</em>
+        </article>
+        <article class="debug-kpi debug-kpi--purple">
+          <span class="material-symbols-outlined" aria-hidden="true">schedule</span>
+          <small>Average Sampling Time</small>
+          <strong>{{ summarySource.avgSampleMinutes | number:'1.1-1' }} <span>mins</span></strong>
+          <em>Request to pass time</em>
+        </article>
+      </div>
+
+      <section class="debug-card debug-main-chart">
+        <div class="debug-card-heading">
+          <h2>{{ chartTitle }}</h2>
+          <div class="debug-view-toggle">
+            <span>View By :</span>
+            <button type="button" [class.active]="samplingFilters.viewBy === 'station'" (click)="setViewBy('station')">
+              <span class="material-symbols-outlined" aria-hidden="true">bar_chart</span>
+              Station
+            </button>
+            <button type="button" [class.active]="samplingFilters.viewBy === 'day'" [disabled]="!canViewByDay" (click)="setViewBy('day')">
+              <span class="material-symbols-outlined" aria-hidden="true">calendar_today</span>
+              Day
+            </button>
+          </div>
+          <div class="debug-legend">
+            <span><i class="pending"></i>Pending</span>
+            <span><i class="passed"></i>Passed</span>
+          </div>
+        </div>
+
+        <div class="debug-empty" *ngIf="!samplingLoading && samplingData.chart.length === 0">No sampling data for this selection.</div>
+        <div class="debug-loading" *ngIf="samplingLoading">Loading Sampling Dashboard...</div>
+
+        <div class="debug-bar-chart" *ngIf="!samplingLoading && samplingData.chart.length > 0">
+          <button
+            type="button"
+            class="debug-bar-group"
+            *ngFor="let bucket of samplingData.chart; trackBy: trackByBucket"
+            [class.selected]="samplingSelectedBucket?.label === bucket.label"
+            (mouseenter)="hoverBucket(bucket)"
+            (mouseleave)="hoverBucket(null)"
+            (click)="selectBucket(bucket)"
+          >
+            <strong>{{ formatNumber(bucket.total) }}</strong>
+            <span class="debug-bar-stack" [style.height.%]="getBarHeight(bucket)">
+              <i class="debug-segment pending" [style.height.%]="getSegmentHeight(bucket, 'pending')">{{ bucket.pending }}</i>
+              <i class="debug-segment passed" [style.height.%]="getSegmentHeight(bucket, 'passed')">{{ bucket.passed }}</i>
+            </span>
+            <em>{{ bucket.label }}</em>
+          </button>
+        </div>
+      </section>
+
+      <div class="debug-lower-grid">
+        <section class="debug-card">
+          <div class="debug-card-heading"><h2>Sampling Status Overview</h2></div>
+          <div class="debug-donut-wrap">
+            <div class="debug-donut" [style.--passed]="(samplingData.summary.total ? (samplingData.summary.passed * 100 / samplingData.summary.total) : 0) + '%'">
+              <strong>{{ formatNumber(samplingData.summary.total) }}</strong>
+              <span>Total</span>
+            </div>
+            <div class="debug-donut-legend">
+              <span><i class="pending"></i>Pending <strong>{{ formatNumber(samplingData.summary.pending) }}</strong></span>
+              <span><i class="passed"></i>Passed <strong>{{ formatNumber(samplingData.summary.passed) }}</strong></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="debug-card">
+          <div class="debug-card-heading">
+            <h2>Sampling Type Mix</h2>
+            <button type="button" title="Download SN list" (click)="downloadCsv()">
+              <span class="material-symbols-outlined" aria-hidden="true">download</span>
+            </button>
+          </div>
+          <div class="debug-remark-bars">
+            <button type="button" *ngFor="let row of samplingData.samplingTypes; trackBy: trackByType" (click)="samplingFilters.samplingType = row.samplingType; loadSamplingDashboard()">
+              <span>{{ row.samplingType }}</span>
+              <i><b [style.width.%]="getTypeWidth(row)"></b></i>
+              <strong>{{ row.count }} <small>({{ row.percentage | number:'1.1-1' }}%)</small></strong>
+            </button>
+            <div class="debug-empty-mini" *ngIf="samplingData.samplingTypes.length === 0">No sampling types for this selection.</div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <ng-template #samplingStartState>
+      <main class="debug-content">
+        <section class="debug-card debug-start-panel">
+          <span class="material-symbols-outlined" aria-hidden="true">science</span>
+          <strong>Select filters and click Go to load the Sampling Dashboard.</strong>
+        </section>
+      </main>
+    </ng-template>
+
+    <aside class="debug-detail-panel" *ngIf="samplingDetailsOpen">
+      <div class="debug-detail-heading">
+        <div>
+          <h2>{{ samplingDetailsTitle }}</h2>
+          <span>{{ formatNumber(samplingDetailsRows.length) }} SN</span>
+        </div>
+        <button type="button" title="Download" (click)="downloadCsv()">
+          <span class="material-symbols-outlined" aria-hidden="true">download</span>
+        </button>
+        <button type="button" title="Close" (click)="closeDetails()">
+          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+        </button>
+      </div>
+      <div class="debug-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>SN Number</th>
+              <th>Status</th>
+              <th>Part Number</th>
+              <th>Work Order</th>
+              <th>Station</th>
+              <th>Sampling Type</th>
+              <th>Requested Time</th>
+              <th>Passed Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of pagedRows; trackBy: trackBySn">
+              <td>{{ row.snNumber }}</td>
+              <td><span class="debug-status" [class.passed]="row.status === 'Passed'">{{ row.status }}</span></td>
+              <td>{{ row.partNumber }}</td>
+              <td>{{ row.workOrder }}</td>
+              <td>{{ row.station }}</td>
+              <td>{{ row.samplingType }}</td>
+              <td>{{ row.requestedTime }}</td>
+              <td>{{ row.passedTime || '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="debug-table-footer">
+        <span>Showing {{ showingStart }} to {{ showingEnd }} of {{ formatNumber(samplingDetailsRows.length) }}</span>
+        <div>
+          <button type="button" (click)="setPage(samplingCurrentPage - 1)" [disabled]="samplingCurrentPage === 1">chevron_left</button>
+          <button type="button" *ngFor="let page of pageNumbers" [class.active]="page === samplingCurrentPage" [disabled]="page === '...'" (click)="setPage(page)">{{ page }}</button>
+          <button type="button" (click)="setPage(samplingCurrentPage + 1)" [disabled]="samplingCurrentPage === totalPages">chevron_right</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>

@@ -18,7 +18,7 @@ import { Subscription } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { AuthService } from '../../services/auth.service';
 
-type ReportsView = 'menu' | 'standard' | 'scrapSn' | 'undoScrap' | 'activityQuality' | 'todays' | 'debug';
+type ReportsView = 'menu' | 'standard' | 'scrapSn' | 'undoScrap' | 'activityQuality' | 'todays' | 'debug' | 'sampling';
 type ReportsTab = 'tree' | 'station';
 type DateSelection = '' | 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
 type TodaysDashboardTab = 'filters' | 'overview';
@@ -621,6 +621,11 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.debugSelectedBucket = null;
     this.debugHoveredBucket = null;
     this.closeDebugDetails();
+  }
+
+  openSamplingDashboard(): void {
+    this.activeView = 'sampling';
+    this.errorMessage = '';
   }
 
   backToMenu(): void {

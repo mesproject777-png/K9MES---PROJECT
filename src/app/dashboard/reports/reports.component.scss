@@ -2501,6 +2501,10 @@
   background: linear-gradient(135deg, #0f5ed7, #12a36d);
 }
 
+.action-card--sampling .action-card__icon {
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+}
+
 .debug-dashboard-window {
   min-height: calc(100vh - 32px);
   background: #f5f8fc;
