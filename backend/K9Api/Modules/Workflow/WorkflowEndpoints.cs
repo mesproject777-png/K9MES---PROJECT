@@ -109,8 +109,13 @@ public static class WorkflowEndpoints
                   COALESCE(w.wo, '') AS wo,
                   p.pn AS part_number,
                   COALESCE(st.sn_type_name, p.sn_type_name, '') AS sn_type,
+                  COALESCE(w.plant, '') AS plant,
+                  COALESCE(w.site_name, '') AS site,
                   w.due_date,
                   w.qty AS quantity,
+                  COALESCE(w.status, '') AS status,
+                  COALESCE(w.revision, '') AS revision,
+                  COALESCE(w.lot, '') AS lot,
                   (
                     SELECT COUNT(*)::int
                     FROM workflow_routing_steps r
@@ -121,7 +126,6 @@ public static class WorkflowEndpoints
                     FROM workflow_bom_children b
                     WHERE b.workflow_part_id = p.id
                   ) AS bom_count,
-                  COALESCE(w.site_name, '') AS site,
                   COALESCE(activity.latest_at, p.updated_at) AS updated_at,
                   COUNT(*) OVER () AS total_count
                 FROM workflow_part_numbers p
@@ -712,10 +716,10 @@ public static class WorkflowEndpoints
                         """
                         INSERT INTO workflow_station_sampling
                           (workflow_part_id, station_code, station_id, station_name, sampling_type,
-                           interval_qty, sample_qty, lot_size, is_sampling_enabled)
+                           interval_qty, interval_time_minutes, sample_qty, lot_size, is_sampling_enabled)
                         VALUES
                           (@workflowPartId, @stationCode, @stationId, @stationName, @samplingType,
-                           @intervalQty, @sampleQty, @lotSize, @isSamplingEnabled)
+                           @intervalQty, @intervalTimeMinutes, @sampleQty, @lotSize, @isSamplingEnabled)
                         """,
                         ("workflowPartId", workflowPartId),
                         ("stationCode", stationCode),
@@ -723,6 +727,7 @@ public static class WorkflowEndpoints
                         ("stationName", ToDbNullable(ReadString(configGroup.Value, "stationName")?.Trim())),
                         ("samplingType", ReadString(configGroup.Value, "samplingType")?.Trim() ?? "PERIODIC"),
                         ("intervalQty", ReadInt(configGroup.Value, "intervalQty") ?? 10),
+                        ("intervalTimeMinutes", ReadInt(configGroup.Value, "intervalTimeMinutes") ?? 5),
                         ("sampleQty", ReadInt(configGroup.Value, "sampleQty") ?? 1),
                         ("lotSize", ReadInt(configGroup.Value, "lotSize") ?? 1000),
                         ("isSamplingEnabled", ReadBool(configGroup.Value, "isSamplingEnabled") ?? false));
@@ -919,7 +924,7 @@ public static class WorkflowEndpoints
                 connection,
                 """
                 SELECT station_code, station_id, station_name, sampling_type,
-                       interval_qty, sample_qty, lot_size, is_sampling_enabled
+                       interval_qty, interval_time_minutes, sample_qty, lot_size, is_sampling_enabled
                 FROM workflow_station_sampling
                 WHERE workflow_part_id = @workflowPartId
                 ORDER BY station_code ASC
@@ -997,6 +1002,7 @@ public static class WorkflowEndpoints
                         stationName = Convert.ToString(row["station_name"]) ?? string.Empty,
                         samplingType = Convert.ToString(row["sampling_type"]) ?? "PERIODIC",
                         intervalQty = Convert.ToString(row["interval_qty"]) ?? "10",
+                        intervalTimeMinutes = Convert.ToString(row["interval_time_minutes"]) ?? "5",
                         sampleQty = Convert.ToString(row["sample_qty"]) ?? "1",
                         lotSize = Convert.ToString(row["lot_size"]) ?? "1000",
                         isSamplingEnabled = row["is_sampling_enabled"] is bool enabled && enabled
@@ -1572,6 +1578,7 @@ public static class WorkflowEndpoints
               station_name VARCHAR(220),
               sampling_type VARCHAR(30) NOT NULL DEFAULT 'PERIODIC',
               interval_qty INTEGER NOT NULL DEFAULT 10,
+              interval_time_minutes INTEGER NOT NULL DEFAULT 5,
               sample_qty INTEGER NOT NULL DEFAULT 1,
               lot_size INTEGER NOT NULL DEFAULT 1000,
               is_sampling_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -1582,6 +1589,7 @@ public static class WorkflowEndpoints
             """);
 
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS station_id INTEGER");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS interval_time_minutes INTEGER NOT NULL DEFAULT 5");
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS is_sampling_enabled BOOLEAN NOT NULL DEFAULT FALSE");
 
         await ExecuteAsync(
@@ -1773,9 +1781,41 @@ public static class WorkflowEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_serial ON public.workflow_serial_station_logs (workflow_serial_id, created_at DESC)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_station ON public.workflow_serial_station_logs (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_station_logs ADD COLUMN IF NOT EXISTS debug_remark TEXT");
+        await EnsureWorkflowSamplingRuntimeSchemaAsync(connection);
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_multiboxes_open ON public.workflow_multiboxes (workflow_part_id, workflow_work_order_id, status)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_pallet_items_pallet ON public.workflow_pallet_items (pallet_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_shipment_items_shipment ON public.workflow_shipment_items (shipment_id)");
+    }
+
+    private static async Task EnsureWorkflowSamplingRuntimeSchemaAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS interval_time_minutes INTEGER NOT NULL DEFAULT 5");
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_station_sampling_events (
+              id BIGSERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              workflow_work_order_id INTEGER NOT NULL REFERENCES workflow_work_orders(id) ON DELETE CASCADE,
+              workflow_serial_id BIGINT NOT NULL REFERENCES workflow_serial_numbers(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              sampling_type VARCHAR(30) NOT NULL DEFAULT 'PERIODIC_TIME',
+              interval_time_minutes INTEGER NOT NULL DEFAULT 5,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE INDEX IF NOT EXISTS idx_workflow_sampling_events_station
+            ON public.workflow_station_sampling_events (workflow_part_id, workflow_work_order_id, station_code, sampling_type, created_at DESC)
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE INDEX IF NOT EXISTS idx_workflow_sampling_events_serial_station
+            ON public.workflow_station_sampling_events (workflow_serial_id, station_code, sampling_type)
+            """);
     }
 
     private static async Task EnsureWorkflowStationLoginsTableAsync(NpgsqlConnection connection)

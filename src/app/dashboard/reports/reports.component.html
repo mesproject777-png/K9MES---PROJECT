@@ -6,6 +6,7 @@
   <ng-template #reportContent>
     <app-activity-quality-dashboard *ngIf="activeView === 'activityQuality'" [vm]="controller"></app-activity-quality-dashboard>
     <app-debug-dashboard *ngIf="activeView === 'debug'" [vm]="controller"></app-debug-dashboard>
+    <app-sampling-dashboard *ngIf="activeView === 'sampling'" [vm]="controller"></app-sampling-dashboard>
     <app-today-dashboard *ngIf="activeView === 'todays'" [vm]="controller"></app-today-dashboard>
     <ng-container *ngIf="showStandardReportsShell">
     <div class="reports-toolbar">

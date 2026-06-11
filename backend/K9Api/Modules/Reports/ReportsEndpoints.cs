@@ -295,6 +295,268 @@ public static class ReportsEndpoints
             });
         });
 
+        app.MapGet("/api/reports/sampling-dashboard/options", async (HttpRequest request) =>
+        {
+            await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+
+            var sites = await QueryRowsAsync(
+                connection,
+                """
+                SELECT MIN(COALESCE(w.site_id, 0)) AS id, w.site_name AS name, w.plant
+                FROM workflow_work_orders w
+                WHERE BTRIM(COALESCE(w.site_name, '')) <> ''
+                GROUP BY w.site_name, w.plant
+                ORDER BY w.plant ASC, name ASC
+                """);
+
+            var samplingStations = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT station_code, COALESCE(NULLIF(BTRIM(station_name), ''), station_code) AS station_name
+                FROM (
+                  SELECT cfg.station_code, cfg.station_name
+                  FROM workflow_station_sampling cfg
+                  WHERE BTRIM(COALESCE(cfg.station_code, '')) <> ''
+
+                  UNION ALL
+
+                  SELECT route.station_code, route.station_name
+                  FROM workflow_routing_steps route
+                  WHERE BTRIM(COALESCE(route.station_code, '')) <> ''
+
+                  UNION ALL
+
+                  SELECT ms.masterstation_code AS station_code, ms.masterstation_name AS station_name
+                  FROM masterstation ms
+                  WHERE BTRIM(COALESCE(ms.masterstation_code, '')) <> ''
+                ) source
+                ORDER BY station_code ASC
+                """);
+
+            var samplingTypes = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT sampling_type
+                FROM (
+                  SELECT sampling_type
+                  FROM workflow_station_sampling
+                  WHERE BTRIM(COALESCE(sampling_type, '')) <> ''
+
+                  UNION ALL SELECT 'PERIODIC'
+                  UNION ALL SELECT 'PERIODIC_TIME'
+                  UNION ALL SELECT 'RANDOM'
+                  UNION ALL SELECT 'LOT'
+                  UNION ALL SELECT 'FIRST_PIECE'
+                ) source
+                ORDER BY sampling_type ASC
+                """);
+
+            var partNumbers = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT p.id, p.pn, p.description
+                FROM workflow_part_numbers p
+                WHERE BTRIM(COALESCE(p.pn, '')) <> ''
+                ORDER BY p.pn ASC
+                """);
+
+            var workOrders = await QueryRowsAsync(
+                connection,
+                """
+                SELECT DISTINCT w.id, w.wo, p.pn AS part_number, w.site_name AS site
+                FROM workflow_work_orders w
+                JOIN workflow_part_numbers p ON p.id = w.workflow_part_id
+                WHERE BTRIM(COALESCE(w.wo, '')) <> ''
+                ORDER BY w.wo ASC
+                """);
+
+            return Results.Json(new { sites, samplingStations, samplingTypes, partNumbers, workOrders });
+        });
+
+        app.MapGet("/api/reports/sampling-dashboard/data", async (HttpRequest request) =>
+        {
+            var site = request.Query["site"].ToString().Trim();
+            var plant = request.Query["plant"].ToString().Trim();
+            var station = request.Query["station"].ToString().Trim();
+            var pn = request.Query["pn"].ToString().Trim();
+            var wo = request.Query["wo"].ToString().Trim();
+            var status = request.Query["status"].ToString().Trim();
+            var samplingType = request.Query["samplingType"].ToString().Trim();
+            var snSearch = request.Query["sn"].ToString().Trim();
+            var fromDateRaw = request.Query["fromDate"].ToString().Trim();
+            var toDateRaw = request.Query["toDate"].ToString().Trim();
+            var viewBy = request.Query["viewBy"].ToString().Trim().ToLowerInvariant();
+
+            var fromDate = DateTime.TryParse(fromDateRaw, out var parsedFrom) ? parsedFrom.Date : DateTime.Today;
+            var toDate = DateTime.TryParse(toDateRaw, out var parsedTo) ? parsedTo.Date : DateTime.Today;
+            if (toDate < fromDate)
+            {
+                (fromDate, toDate) = (toDate, fromDate);
+            }
+
+            await using var connection = await OpenConnectionAsync();
+            await EnsureWorkflowSchemaAsync(connection);
+
+            var rows = await QueryRowsAsync(
+                connection,
+                """
+                WITH sampling_events AS (
+                  SELECT
+                    event.id AS event_id,
+                    event.workflow_serial_id,
+                    sn.sn,
+                    sn.rsn,
+                    sn.status AS serial_status,
+                    p.pn,
+                    w.wo,
+                    w.plant,
+                    w.site_name,
+                    event.station_code,
+                    COALESCE(cfg.station_name, route.station_name, event.station_code) AS station_name,
+                    event.sampling_type,
+                    event.interval_time_minutes,
+                    event.created_at AS requested_time,
+                    pass_log.created_at AS passed_time
+                  FROM workflow_station_sampling_events event
+                  JOIN workflow_serial_numbers sn ON sn.id = event.workflow_serial_id
+                  JOIN workflow_work_orders w ON w.id = event.workflow_work_order_id
+                  JOIN workflow_part_numbers p ON p.id = event.workflow_part_id
+                  LEFT JOIN workflow_station_sampling cfg
+                    ON cfg.workflow_part_id = event.workflow_part_id
+                   AND UPPER(BTRIM(cfg.station_code)) = UPPER(BTRIM(event.station_code))
+                  LEFT JOIN workflow_routing_steps route
+                    ON route.workflow_part_id = event.workflow_part_id
+                   AND UPPER(BTRIM(route.station_code)) = UPPER(BTRIM(event.station_code))
+                  LEFT JOIN LATERAL (
+                    SELECT log.created_at
+                    FROM workflow_serial_station_logs log
+                    WHERE log.workflow_serial_id = event.workflow_serial_id
+                      AND UPPER(log.action_result) = 'PASS'
+                      AND UPPER(BTRIM(log.station_code)) = UPPER(BTRIM(event.station_code))
+                      AND log.created_at >= event.created_at
+                    ORDER BY log.created_at ASC, log.id ASC
+                    LIMIT 1
+                  ) pass_log ON TRUE
+                  WHERE event.created_at::date >= @fromDate::date
+                    AND event.created_at::date <= @toDate::date
+                )
+                SELECT *
+                FROM sampling_events
+                WHERE (@site = '' OR UPPER(BTRIM(site_name)) = UPPER(BTRIM(@site)))
+                  AND (@plant = '' OR UPPER(BTRIM(COALESCE(plant, ''))) = UPPER(BTRIM(@plant)))
+                  AND (@station = '' OR UPPER(BTRIM(station_code)) = UPPER(BTRIM(@station)) OR UPPER(BTRIM(station_name)) = UPPER(BTRIM(@station)))
+                  AND (@pn = '' OR UPPER(BTRIM(pn)) = UPPER(BTRIM(@pn)))
+                  AND (@wo = '' OR UPPER(BTRIM(wo)) = UPPER(BTRIM(@wo)))
+                  AND (@samplingType = '' OR UPPER(BTRIM(sampling_type)) = UPPER(BTRIM(@samplingType)))
+                  AND (@sn = '' OR UPPER(sn) LIKE UPPER('%' || @sn || '%') OR UPPER(rsn) LIKE UPPER('%' || @sn || '%'))
+                  AND (
+                    @status = ''
+                    OR (@status = 'Pending' AND passed_time IS NULL)
+                    OR (@status = 'Passed' AND passed_time IS NOT NULL)
+                  )
+                ORDER BY requested_time DESC, event_id DESC
+                """,
+                ("site", site),
+                ("plant", plant),
+                ("station", station),
+                ("pn", pn),
+                ("wo", wo),
+                ("samplingType", samplingType),
+                ("sn", snSearch),
+                ("status", status),
+                ("fromDate", fromDate),
+                ("toDate", toDate));
+
+            static string Read(Dictionary<string, object?> row, string key) => Convert.ToString(row[key]) ?? string.Empty;
+            static DateTime ReadDate(Dictionary<string, object?> row, string key)
+            {
+                var value = row[key];
+                if (value is DateTime date) return date;
+                return DateTime.TryParse(Convert.ToString(value), out var parsed) ? parsed : DateTime.MinValue;
+            }
+
+            var total = rows.Count;
+            var passed = rows.Count(row => row["passed_time"] is not null && row["passed_time"] is not DBNull);
+            var pending = Math.Max(0, total - passed);
+            var sampleDurations = rows
+                .Where(row => row["passed_time"] is not null && row["passed_time"] is not DBNull)
+                .Select(row => (ReadDate(row, "passed_time") - ReadDate(row, "requested_time")).TotalMinutes)
+                .Where(minutes => minutes >= 0)
+                .ToList();
+            var avgSampleMinutes = sampleDurations.Count == 0 ? 0 : Math.Round(sampleDurations.Average(), 1);
+
+            object ToSn(Dictionary<string, object?> row) => new
+            {
+                snNumber = Read(row, "sn"),
+                rsn = Read(row, "rsn"),
+                status = row["passed_time"] is null || row["passed_time"] is DBNull ? "Pending" : "Passed",
+                partNumber = Read(row, "pn"),
+                workOrder = Read(row, "wo"),
+                station = string.IsNullOrWhiteSpace(Read(row, "station_name")) ? Read(row, "station_code") : Read(row, "station_name"),
+                samplingType = Read(row, "sampling_type"),
+                requestedTime = ReadDate(row, "requested_time") == DateTime.MinValue ? "" : ReadDate(row, "requested_time").ToString("yyyy-MM-dd HH:mm:ss"),
+                passedTime = ReadDate(row, "passed_time") == DateTime.MinValue ? "" : ReadDate(row, "passed_time").ToString("yyyy-MM-dd HH:mm:ss")
+            };
+
+            object BuildBucket(string label, IEnumerable<Dictionary<string, object?>> bucketRows)
+            {
+                var list = bucketRows.ToList();
+                var bucketPassed = list.Count(row => row["passed_time"] is not null && row["passed_time"] is not DBNull);
+                return new
+                {
+                    label,
+                    pending = Math.Max(0, list.Count - bucketPassed),
+                    passed = bucketPassed,
+                    total = list.Count,
+                    sns = list.Select(ToSn).ToArray()
+                };
+            }
+
+            var stationBuckets = rows
+                .GroupBy(row => string.IsNullOrWhiteSpace(Read(row, "station_code")) ? Read(row, "station_name") : Read(row, "station_code"))
+                .OrderByDescending(group => group.Count())
+                .Select(group => BuildBucket(group.Key, group))
+                .ToArray();
+
+            var days = Enumerable.Range(0, (toDate - fromDate).Days + 1)
+                .Select(offset => fromDate.AddDays(offset))
+                .ToArray();
+            var dayBuckets = days
+                .Select(day => BuildBucket(day.ToString("dd MMM"), rows.Where(row => ReadDate(row, "requested_time").Date == day.Date)))
+                .ToArray();
+
+            var typeRows = rows
+                .GroupBy(row => string.IsNullOrWhiteSpace(Read(row, "sampling_type")) ? "Unknown" : Read(row, "sampling_type"))
+                .OrderByDescending(group => group.Count())
+                .Select(group => new
+                {
+                    samplingType = group.Key,
+                    count = group.Count(),
+                    percentage = total == 0 ? 0 : Math.Round(group.Count() * 100.0 / total, 2)
+                })
+                .ToArray();
+
+            return Results.Json(new
+            {
+                lastUpdated = DateTime.Now,
+                summary = new
+                {
+                    total,
+                    pending,
+                    passed,
+                    avgSampleMinutes,
+                    pendingPercent = total == 0 ? 0 : Math.Round(pending * 100.0 / total, 2),
+                    passedPercent = total == 0 ? 0 : Math.Round(passed * 100.0 / total, 2)
+                },
+                chart = viewBy == "day" ? dayBuckets : stationBuckets,
+                stationBuckets,
+                dayBuckets,
+                samplingTypes = typeRows,
+                sns = rows.Select(ToSn).ToArray()
+            });
+        });
+
         app.MapGet("/api/reports/todays-dashboard/options", async (HttpRequest request) =>
         {
             var site = request.Query["site"].ToString().Trim();
@@ -1533,6 +1795,7 @@ public static class ReportsEndpoints
               station_name VARCHAR(220),
               sampling_type VARCHAR(30) NOT NULL DEFAULT 'PERIODIC',
               interval_qty INTEGER NOT NULL DEFAULT 10,
+              interval_time_minutes INTEGER NOT NULL DEFAULT 5,
               sample_qty INTEGER NOT NULL DEFAULT 1,
               lot_size INTEGER NOT NULL DEFAULT 1000,
               is_sampling_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -1543,7 +1806,34 @@ public static class ReportsEndpoints
             """);
 
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS station_id INTEGER");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS interval_time_minutes INTEGER NOT NULL DEFAULT 5");
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS is_sampling_enabled BOOLEAN NOT NULL DEFAULT FALSE");
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_station_sampling_events (
+              id BIGSERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              workflow_work_order_id INTEGER NOT NULL REFERENCES workflow_work_orders(id) ON DELETE CASCADE,
+              workflow_serial_id BIGINT NOT NULL REFERENCES workflow_serial_numbers(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              sampling_type VARCHAR(30) NOT NULL DEFAULT 'PERIODIC_TIME',
+              interval_time_minutes INTEGER NOT NULL DEFAULT 5,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE INDEX IF NOT EXISTS idx_workflow_sampling_events_station
+            ON public.workflow_station_sampling_events (workflow_part_id, workflow_work_order_id, station_code, sampling_type, created_at DESC)
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE INDEX IF NOT EXISTS idx_workflow_sampling_events_serial_station
+            ON public.workflow_station_sampling_events (workflow_serial_id, station_code, sampling_type)
+            """);
 
         await ExecuteAsync(
             connection,

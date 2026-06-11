@@ -1168,6 +1168,9 @@
           <p class="template-detail" *ngIf="samplingType === 'PERIODIC'">
             Select the first Sample Qty SNs in every Interval Qty cycle.
           </p>
+          <p class="template-detail" *ngIf="samplingType === 'PERIODIC_TIME'">
+            Select the first device checked at this station after each Interval Time window.
+          </p>
           <p class="template-detail" *ngIf="samplingType === 'RANDOM'">
             Randomly select Sample Qty SNs in every Interval Qty cycle.
           </p>
@@ -1185,12 +1188,17 @@
             <input id="samplingIntervalQty" type="number" min="1" [(ngModel)]="samplingIntervalQty" />
           </div>
 
+          <div class="weighing-field" *ngIf="samplingType === 'PERIODIC_TIME'">
+            <label for="samplingIntervalTimeMinutes">Interval Time (mins)</label>
+            <input id="samplingIntervalTimeMinutes" type="number" min="1" [(ngModel)]="samplingIntervalTimeMinutes" />
+          </div>
+
           <div class="weighing-field" *ngIf="samplingType === 'LOT'">
             <label for="samplingLotSize">Lot Size</label>
             <input id="samplingLotSize" type="number" min="1" [(ngModel)]="samplingLotSize" />
           </div>
 
-          <div class="weighing-field" *ngIf="samplingType !== 'FIRST_PIECE'">
+          <div class="weighing-field" *ngIf="samplingType !== 'FIRST_PIECE' && samplingType !== 'PERIODIC_TIME'">
             <label for="samplingSampleQty">Sample Qty</label>
             <input id="samplingSampleQty" type="number" min="1" [(ngModel)]="samplingSampleQty" />
           </div>
