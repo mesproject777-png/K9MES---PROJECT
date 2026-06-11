@@ -479,6 +479,8 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   todaysMetricRows: TodaysSnDetail[] | null = null;
   todaysMetricLabel = '';
   openTodaysDropdown: TodaysDropdownKey | null = null;
+  activityStationDropdownOpen = false;
+  debugStationDropdownOpen = false;
   todaysCurrentPage = 1;
   readonly todaysPageSize = 10;
   todaysAutoRefreshEnabled = true;
@@ -578,6 +580,8 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   @HostListener('document:click')
   onDocumentClick(): void {
     this.openTodaysDropdown = null;
+    this.activityStationDropdownOpen = false;
+    this.debugStationDropdownOpen = false;
   }
 
   openStandardReports(): void {
@@ -788,6 +792,60 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     }
   }
 
+  toggleActivityStationDropdown(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (this.isActivityFilterDisabled('station')) {
+      this.activityStationDropdownOpen = false;
+      return;
+    }
+
+    this.activityStationDropdownOpen = !this.activityStationDropdownOpen;
+  }
+
+  selectActivityAllStations(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    this.activityFilters.allStations = true;
+    this.activityFilters.station = this.allDropdownValue;
+    this.activityStationDropdownOpen = false;
+    this.resetActivityAfter('station');
+    this.loadActivityQualityLookups(true);
+  }
+
+  toggleActivityStation(value: string, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const selected = this.getSelectedMultiValues(this.activityFilters.station);
+    const next = selected.includes(value)
+      ? selected.filter((item) => item !== value)
+      : [...selected, value];
+
+    this.activityFilters.allStations = false;
+    this.activityFilters.station = this.joinSelectedMultiValues(next);
+    this.resetActivityAfter('station');
+    this.loadActivityQualityLookups(true);
+  }
+
+  isActivityStationSelected(value: string): boolean {
+    return this.getSelectedMultiValues(this.activityFilters.station).includes(value);
+  }
+
+  getActivityStationLabel(): string {
+    if (this.activityFilters.allStations || this.isTodaysAllValue(this.activityFilters.station)) {
+      return 'All Stations';
+    }
+
+    const selected = this.getSelectedMultiValues(this.activityFilters.station);
+    if (selected.length === 0) {
+      return 'Select Station';
+    }
+
+    return selected.length === 1 ? selected[0] : `${selected.length} Stations`;
+  }
   onActivityAllFilterChange(
     field: 'site' | 'station' | 'productLine' | 'partNumber' | 'workOrder' | 'pc' | 'user',
     checked: boolean
@@ -797,6 +855,10 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       this.activityFilters[valueField] = this.allDropdownValue;
     } else if (this.activityFilters[valueField] === this.allDropdownValue) {
       this.activityFilters[valueField] = '';
+    }
+
+    if (field === 'station') {
+      this.activityStationDropdownOpen = false;
     }
 
     if (field !== 'user') {
@@ -1117,8 +1179,9 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     if (this.todaysFilters.site && !this.isTodaysAllValue(this.todaysFilters.site)) {
       params = params.set('site', this.todaysFilters.site);
     }
-    if (this.todaysFilters.station && !this.isTodaysAllValue(this.todaysFilters.station)) {
-      params = params.set('station', this.todaysFilters.station);
+    const selectedStations = this.getSelectedMultiValues(this.todaysFilters.station);
+    if (selectedStations.length > 0) {
+      params = params.set('stationIds', selectedStations.join(','));
     }
     if (this.todaysFilters.partNumber && !this.isTodaysAllValue(this.todaysFilters.partNumber)) {
       params = params.set('pn', this.todaysFilters.partNumber);
@@ -1155,8 +1218,9 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     if (this.todaysFilters.site && !this.isTodaysAllValue(this.todaysFilters.site)) {
       params = params.set('site', this.todaysFilters.site);
     }
-    if (this.todaysFilters.station && !this.isTodaysAllValue(this.todaysFilters.station)) {
-      params = params.set('station', this.todaysFilters.station);
+    const selectedStations = this.getSelectedMultiValues(this.todaysFilters.station);
+    if (selectedStations.length > 0) {
+      params = params.set('stationIds', selectedStations.join(','));
     }
     if (this.todaysFilters.partNumber && !this.isTodaysAllValue(this.todaysFilters.partNumber)) {
       params = params.set('pn', this.todaysFilters.partNumber);
@@ -1336,6 +1400,63 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.resetDebugAfter(field);
   }
 
+  toggleDebugStationDropdown(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (this.isDebugFilterDisabled('repairStation')) {
+      this.debugStationDropdownOpen = false;
+      return;
+    }
+
+    this.debugStationDropdownOpen = !this.debugStationDropdownOpen;
+  }
+
+  selectDebugAllStations(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    this.debugAllFilters.repairStation = true;
+    this.debugFilters.repairStation = '';
+    this.debugStationDropdownOpen = false;
+    this.resetDebugAfter('repairStation');
+  }
+
+  toggleDebugStation(value: string, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const selected = this.getSelectedMultiValues(this.debugFilters.repairStation);
+    const next = selected.includes(value)
+      ? selected.filter((item) => item !== value)
+      : [...selected, value];
+
+    this.debugAllFilters.repairStation = false;
+    this.debugFilters.repairStation = this.joinSelectedMultiValues(next);
+    this.resetDebugAfter('repairStation');
+  }
+
+  isDebugStationSelected(value: string): boolean {
+    return this.getSelectedMultiValues(this.debugFilters.repairStation).includes(value);
+  }
+
+  getDebugStationLabel(): string {
+    if (this.debugAllFilters.repairStation) {
+      return 'All Stations';
+    }
+
+    const selected = this.getSelectedMultiValues(this.debugFilters.repairStation);
+    if (selected.length === 0) {
+      return 'Select Station';
+    }
+
+    if (selected.length > 1) {
+      return `${selected.length} Stations`;
+    }
+
+    const station = this.debugOptions.repairStations.find((item) => item.station_code === selected[0]);
+    return station?.station_name || selected[0];
+  }
   isDebugFilterDisabled(field: 'dateRange' | 'fromDate' | 'toDate' | 'site' | 'repairStation' | 'status' | 'failureRemark' | 'partNumber' | 'workOrder' | 'searchSn'): boolean {
     switch (field) {
       case 'dateRange':
@@ -1425,7 +1546,8 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       .set('viewBy', this.debugFilters.viewBy);
 
     if (this.debugFilters.site) params = params.set('site', this.debugFilters.site);
-    if (this.debugFilters.repairStation) params = params.set('station', this.debugFilters.repairStation);
+    const selectedRepairStations = this.getSelectedMultiValues(this.debugFilters.repairStation);
+    if (selectedRepairStations.length > 0) params = params.set('stationIds', selectedRepairStations.join(','));
     if (this.debugFilters.partNumber) params = params.set('pn', this.debugFilters.partNumber);
     if (this.debugFilters.workOrder) params = params.set('wo', this.debugFilters.workOrder);
     if (this.debugFilters.status) params = params.set('status', this.debugFilters.status);
@@ -1560,6 +1682,11 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     event.preventDefault();
     event.stopPropagation();
 
+    if (field === 'station') {
+      this.toggleTodaysStationOption(value);
+      return;
+    }
+
     this.todaysFilters[field] = value;
     this.openTodaysDropdown = null;
 
@@ -1567,8 +1694,6 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       this.onDateSelectionChange();
     } else if (field === 'site') {
       this.onTodaysSiteChange();
-    } else if (field === 'station') {
-      this.onTodaysStationChange();
     } else if (field === 'partNumber') {
       this.onTodaysPartNumberChange();
     } else if (field === 'workOrder') {
@@ -1578,6 +1703,22 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     }
   }
 
+  toggleTodaysStationOption(value: string): void {
+    if (this.isTodaysAllValue(value)) {
+      this.todaysFilters.station = TODAYS_ALL_VALUE;
+      this.openTodaysDropdown = null;
+      this.onTodaysStationChange();
+      return;
+    }
+
+    const selected = this.getSelectedMultiValues(this.todaysFilters.station);
+    const next = selected.includes(value)
+      ? selected.filter((item) => item !== value)
+      : [...selected, value];
+
+    this.todaysFilters.station = this.joinSelectedMultiValues(next);
+    this.onTodaysStationChange();
+  }
   isTodaysDropdownDisabled(field: TodaysDropdownKey): boolean {
     switch (field) {
       case 'site':
@@ -1603,18 +1744,38 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       return this.getTodaysDropdownPlaceholder(field);
     }
 
+    if (field === 'station') {
+      if (this.isTodaysAllValue(value)) {
+        return 'All Stations';
+      }
+
+      const selected = this.getSelectedMultiValues(value);
+      if (selected.length > 1) {
+        return `${selected.length} Stations`;
+      }
+
+      const selectedValue = selected[0] || value;
+      const option = this.getTodaysDropdownOptions(field).find((item) => item.value === selectedValue);
+      return option?.label || selectedValue;
+    }
+
     const option = this.getTodaysDropdownOptions(field).find((item) => item.value === value);
     return option?.label || value;
   }
-
   getTodaysDropdownValue(field: TodaysDropdownKey): string {
     return String(this.todaysFilters[field] || '');
   }
 
   isTodaysDropdownSelected(field: TodaysDropdownKey, value: string): boolean {
-    return this.getTodaysDropdownValue(field) === value;
-  }
+    const currentValue = this.getTodaysDropdownValue(field);
+    if (field === 'station') {
+      return this.isTodaysAllValue(value)
+        ? this.isTodaysAllValue(currentValue)
+        : this.getSelectedMultiValues(currentValue).includes(value);
+    }
 
+    return currentValue === value;
+  }
   getTodaysDropdownPlaceholder(field: TodaysDropdownKey): string {
     switch (field) {
       case 'dateSelection':
@@ -2616,6 +2777,10 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       return fallback;
     }
 
+    if (field === 'station') {
+      return this.getTodaysDropdownLabel(field);
+    }
+
     if (this.isTodaysAllValue(value)) {
       const options = this.getConcreteTodaysOptions(field);
       return options.length > 0
@@ -2676,6 +2841,8 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   private resetActivityAfter(field: 'site' | 'station' | 'productLine' | 'partNumber' | 'workOrder' | 'pc'): void {
     if (field === 'site') {
       this.activityFilters.station = '';
+      this.activityFilters.allStations = false;
+      this.activityStationDropdownOpen = false;
     }
     if (field === 'site' || field === 'station') {
       this.activityFilters.productLine = '';
@@ -2750,6 +2917,9 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       this.debugFilters[key] = '';
       this.debugAllFilters[key] = false;
     });
+    if (field === 'dateRange' || field === 'site') {
+      this.debugStationDropdownOpen = false;
+    }
     this.debugFilters.searchSn = '';
     this.errorMessage = '';
   }
@@ -2800,6 +2970,24 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
   isTodaysAllValue(value: string): boolean {
     return value === TODAYS_ALL_VALUE;
+  }
+
+  private getSelectedMultiValues(value: string): string[] {
+    if (!value || this.isTodaysAllValue(value)) {
+      return [];
+    }
+
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item, index, values) => Boolean(item) && values.indexOf(item) === index);
+  }
+
+  private joinSelectedMultiValues(values: string[]): string {
+    return values
+      .map((value) => value.trim())
+      .filter((value, index, list) => Boolean(value) && list.indexOf(value) === index)
+      .join(',');
   }
 
   private generateTodaysOverview(): void {
@@ -3028,8 +3216,9 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   }
 
   private getGeneratedStation(seed: number): string {
-    if (this.todaysFilters.station && !this.isTodaysAllValue(this.todaysFilters.station)) {
-      return this.todaysFilters.station;
+    const selectedStations = this.getSelectedMultiValues(this.todaysFilters.station);
+    if (selectedStations.length > 0) {
+      return selectedStations[seed % selectedStations.length];
     }
 
     const stations = this.getConcreteTodaysOptions('station').map((option) => option.value);
@@ -3039,8 +3228,9 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   }
 
   private getRepresentativeStation(seed: number): string {
-    if (this.todaysFilters.station && !this.isTodaysAllValue(this.todaysFilters.station)) {
-      return this.todaysFilters.station;
+    const selectedStations = this.getSelectedMultiValues(this.todaysFilters.station);
+    if (selectedStations.length > 0) {
+      return selectedStations[seed % selectedStations.length];
     }
 
     const stations = this.getConcreteTodaysOptions('station').map((option) => option.value);

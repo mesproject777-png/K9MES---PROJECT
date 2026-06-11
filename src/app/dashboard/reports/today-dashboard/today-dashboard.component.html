@@ -39,15 +39,10 @@
           <button type="button" class="icon-button todays-back" title="Back to reports" (click)="backToMenu()">
             <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
           </button>
-          <span class="todays-title-icon material-symbols-outlined" aria-hidden="true">monitoring</span>
           <div>
             <h1>Today's Dashboard</h1>
             <p>Real-time production monitoring and performance overview</p>
           </div>
-          <span class="header-spacer"></span>
-          <button type="button" class="auto-refresh-button" [class.off]="!todaysAutoRefreshEnabled" (click)="toggleTodaysAutoRefresh()">
-            Auto Refresh {{ todaysAutoRefreshEnabled ? 'ON' : 'OFF' }}
-          </button>
         </header>
 
         <section class="todays-filter-panel">

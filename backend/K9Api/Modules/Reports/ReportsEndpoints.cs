@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using Npgsql;
 
 public static class ReportsEndpoints
@@ -81,6 +81,11 @@ public static class ReportsEndpoints
         {
             var site = request.Query["site"].ToString().Trim();
             var station = request.Query["station"].ToString().Trim();
+            var stationValues = ReadQueryList(request, "stationIds");
+            if (stationValues.Length == 0 && !string.IsNullOrWhiteSpace(station))
+            {
+                stationValues = new[] { station };
+            }
             var pn = request.Query["pn"].ToString().Trim();
             var wo = request.Query["wo"].ToString().Trim();
             var status = request.Query["status"].ToString().Trim();
@@ -169,7 +174,12 @@ public static class ReportsEndpoints
                 SELECT *
                 FROM repair_events
                 WHERE (@site = '' OR UPPER(BTRIM(site_name)) = UPPER(BTRIM(@site)))
-                  AND (@station = '' OR UPPER(BTRIM(repair_station_code)) = UPPER(BTRIM(@station)) OR UPPER(BTRIM(repair_station_name)) = UPPER(BTRIM(@station)))
+                  AND (cardinality(@stationValues) = 0 OR EXISTS (
+                    SELECT 1
+                    FROM unnest(@stationValues) selected_station
+                    WHERE UPPER(BTRIM(repair_station_code)) = UPPER(BTRIM(selected_station))
+                       OR UPPER(BTRIM(repair_station_name)) = UPPER(BTRIM(selected_station))
+                  ))
                   AND (@pn = '' OR UPPER(BTRIM(pn)) = UPPER(BTRIM(@pn)))
                   AND (@wo = '' OR UPPER(BTRIM(wo)) = UPPER(BTRIM(@wo)))
                   AND (@remark = '' OR UPPER(failure_remark) LIKE UPPER('%' || @remark || '%'))
@@ -182,7 +192,7 @@ public static class ReportsEndpoints
                 ORDER BY failed_time DESC, fail_log_id DESC
                 """,
                 ("site", site),
-                ("station", station),
+                ("stationValues", stationValues),
                 ("pn", pn),
                 ("wo", wo),
                 ("remark", remark),
@@ -289,6 +299,11 @@ public static class ReportsEndpoints
         {
             var site = request.Query["site"].ToString().Trim();
             var station = request.Query["station"].ToString().Trim();
+            var stationValues = ReadQueryList(request, "stationIds");
+            if (stationValues.Length == 0 && !string.IsNullOrWhiteSpace(station))
+            {
+                stationValues = new[] { station };
+            }
             var pn = request.Query["pn"].ToString().Trim();
 
             await using var connection = await OpenConnectionAsync();
@@ -313,10 +328,18 @@ public static class ReportsEndpoints
                 parameters.Add(("site", site));
             }
 
-            if (!string.IsNullOrWhiteSpace(station))
+            if (stationValues.Length > 0)
             {
-                filters.Add("UPPER(BTRIM(r.station_code)) = UPPER(BTRIM(@station))");
-                parameters.Add(("station", station));
+                filters.Add(
+                    """
+                    EXISTS (
+                        SELECT 1
+                        FROM unnest(@stationValues) selected_station
+                        WHERE UPPER(BTRIM(r.station_code)) = UPPER(BTRIM(selected_station))
+                           OR UPPER(BTRIM(r.station_name)) = UPPER(BTRIM(selected_station))
+                    )
+                    """);
+                parameters.Add(("stationValues", stationValues));
             }
 
             if (!string.IsNullOrWhiteSpace(pn))
@@ -370,6 +393,11 @@ public static class ReportsEndpoints
         {
             var site = request.Query["site"].ToString().Trim();
             var station = request.Query["station"].ToString().Trim();
+            var stationValues = ReadQueryList(request, "stationIds");
+            if (stationValues.Length == 0 && !string.IsNullOrWhiteSpace(station))
+            {
+                stationValues = new[] { station };
+            }
             var pn = request.Query["pn"].ToString().Trim();
             var wo = request.Query["wo"].ToString().Trim();
             var fromDateRaw = request.Query["fromDate"].ToString().Trim();
@@ -420,7 +448,11 @@ public static class ReportsEndpoints
                   SELECT l.station_code, l.station_name, l.action_result, l.remark, l.changed_by, l.created_at
                   FROM workflow_serial_station_logs l
                   WHERE l.workflow_serial_id = sn.id
-                    AND (@station = '' OR UPPER(BTRIM(l.station_code)) = UPPER(BTRIM(@station)))
+                    AND (cardinality(@stationValues) = 0 OR EXISTS (
+                      SELECT 1
+                      FROM unnest(@stationValues) selected_station
+                      WHERE UPPER(BTRIM(l.station_code)) = UPPER(BTRIM(selected_station))
+                    ))
                   ORDER BY l.created_at DESC, l.id DESC
                   LIMIT 1
                 ) latest_log ON TRUE
@@ -431,16 +463,20 @@ public static class ReportsEndpoints
                   AND (@pn = '' OR UPPER(BTRIM(p.pn)) = UPPER(BTRIM(@pn)))
                   AND (@wo = '' OR UPPER(BTRIM(w.wo)) = UPPER(BTRIM(@wo)))
                   AND (
-                    @station = ''
+                    cardinality(@stationValues) = 0
                     OR latest_log.station_code IS NOT NULL
-                    OR UPPER(BTRIM(sn.current_station_code)) = UPPER(BTRIM(@station))
+                    OR EXISTS (
+                      SELECT 1
+                      FROM unnest(@stationValues) selected_station
+                      WHERE UPPER(BTRIM(sn.current_station_code)) = UPPER(BTRIM(selected_station))
+                    )
                   )
                   AND COALESCE(latest_log.created_at, sn.last_moved_at, sn.created_at)::date >= @fromDate::date
                   AND COALESCE(latest_log.created_at, sn.last_moved_at, sn.created_at)::date <= @toDate::date
                 ORDER BY event_time DESC, sn.id DESC
                 """,
                 ("site", site),
-                ("station", station),
+                ("stationValues", stationValues),
                 ("pn", pn),
                 ("wo", wo),
                 ("fromDate", fromDate),

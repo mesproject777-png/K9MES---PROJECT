@@ -1,8 +1,14 @@
 <div class="hierarchy-page">
   <div class="hierarchy-header">
-    <div>
-      <h2>Packing Hierarchy</h2>
-      <p>Track each product SN through Multibox, Pallet, and Shipment.</p>
+    <div class="hierarchy-title">
+      <button type="button" class="secondary-button nav-button" routerLink="/dashboard/operations" aria-label="Back to Operations modules">
+        <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+        Back
+      </button>
+      <div>
+        <h2>Packing Hierarchy</h2>
+        <p>Track each product SN through Multibox, Pallet, and Shipment.</p>
+      </div>
     </div>
 
     <form class="hierarchy-search" (ngSubmit)="load()">

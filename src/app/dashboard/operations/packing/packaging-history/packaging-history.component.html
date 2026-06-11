@@ -6,10 +6,16 @@
       <p>Use this page to find containers that are still open before adding more items.</p>
     </div>
 
-    <button type="button" class="refresh-button" (click)="refresh()" [disabled]="isLoading">
-      <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
-      Refresh
-    </button>
+    <div class="history-actions">
+      <button type="button" class="nav-button" routerLink="/dashboard/operations" aria-label="Back to Operations modules">
+        <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+        Back
+      </button>
+      <button type="button" class="refresh-button" (click)="refresh()" [disabled]="isLoading">
+        <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+        Refresh
+      </button>
+    </div>
   </div>
 
   <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>

@@ -11,6 +11,12 @@
   gap: 16px;
 }
 
+.hierarchy-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .hierarchy-header h2 {
   margin: 0;
   color: #102a43;
@@ -58,6 +64,12 @@
   border: 1px solid #c8d8e8;
   background: #ffffff;
   color: #102a43;
+}
+
+.nav-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .rules-strip {
@@ -165,6 +177,7 @@ td small {
 
 @media (max-width: 900px) {
   .hierarchy-header,
+  .hierarchy-title,
   .hierarchy-search {
     align-items: stretch;
     flex-direction: column;

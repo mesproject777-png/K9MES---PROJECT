@@ -49,12 +49,22 @@
 
             <label>
               <span>Repair Station</span>
-              <select [(ngModel)]="debugFilters.repairStation" (ngModelChange)="onDebugFilterChange('repairStation')" [disabled]="isDebugFilterDisabled('repairStation')">
-                <option value="">Select Station</option>
-                <option *ngFor="let station of debugOptions.repairStations" [value]="station.station_code">
-                  {{ station.station_name || station.station_code }}
-                </option>
-              </select>
+              <span class="report-multi-select" [class.open]="debugStationDropdownOpen" [class.disabled]="isDebugFilterDisabled('repairStation')" (click)="$event.stopPropagation()">
+                <button type="button" class="report-multi-select__trigger" [disabled]="isDebugFilterDisabled('repairStation')" (click)="toggleDebugStationDropdown($event)">
+                  <span>{{ getDebugStationLabel() }}</span>
+                  <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+                </button>
+                <span class="report-multi-select__panel" *ngIf="debugStationDropdownOpen">
+                  <button type="button" class="report-multi-select__option" [class.selected]="debugAllFilters.repairStation" (click)="selectDebugAllStations($event)">
+                    <span class="report-multi-select__mark material-symbols-outlined" aria-hidden="true">{{ debugAllFilters.repairStation ? 'check' : '' }}</span>
+                    All Stations
+                  </button>
+                  <button type="button" class="report-multi-select__option" *ngFor="let station of debugOptions.repairStations" [class.selected]="isDebugStationSelected(station.station_code)" (click)="toggleDebugStation(station.station_code, $event)">
+                    <span class="report-multi-select__mark material-symbols-outlined" aria-hidden="true">{{ isDebugStationSelected(station.station_code) ? 'check' : '' }}</span>
+                    {{ station.station_name || station.station_code }}
+                  </button>
+                </span>
+              </span>
             </label>
 
             <label>

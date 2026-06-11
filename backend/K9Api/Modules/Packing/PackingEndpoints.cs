@@ -703,6 +703,7 @@ public static class PackingEndpoints
               shipped_at TIMESTAMP
             )
             """);
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_shipments ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMP");
 
         await ExecuteAsync(
             connection,

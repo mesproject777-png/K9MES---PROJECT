@@ -59,6 +59,10 @@ h2 {
 }
 
 .btn {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid rgba(0, 0, 0, 0.18);
@@ -69,6 +73,12 @@ h2 {
 .btn[disabled] {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.btn--back {
+  border-color: #b9d2ee;
+  color: #102a43;
+  font-weight: 700;
 }
 
 .table-wrap {

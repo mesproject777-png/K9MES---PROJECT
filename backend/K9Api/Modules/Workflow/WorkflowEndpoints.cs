@@ -83,10 +83,12 @@ public static class WorkflowEndpoints
             var where = new List<string>();
             var parameters = new List<(string Name, object? Value)>();
 
+            var woFilter = string.IsNullOrWhiteSpace(wo) ? string.Empty : $"%{wo}%";
+            parameters.Add(("woFilter", woFilter));
+
             if (!string.IsNullOrWhiteSpace(wo))
             {
-                where.Add("w.wo ILIKE @wo");
-                parameters.Add(("wo", $"%{wo}%"));
+                where.Add("w.id IS NOT NULL");
             }
 
             if (!string.IsNullOrWhiteSpace(pn))
@@ -123,7 +125,14 @@ public static class WorkflowEndpoints
                   COALESCE(activity.latest_at, p.updated_at) AS updated_at,
                   COUNT(*) OVER () AS total_count
                 FROM workflow_part_numbers p
-                LEFT JOIN workflow_work_orders w ON w.workflow_part_id = p.id
+                LEFT JOIN LATERAL (
+                  SELECT wo_row.*
+                  FROM workflow_work_orders wo_row
+                  WHERE wo_row.workflow_part_id = p.id
+                    AND (@woFilter = '' OR wo_row.wo ILIKE @woFilter)
+                  ORDER BY wo_row.updated_at DESC, wo_row.id DESC
+                  LIMIT 1
+                ) w ON TRUE
                 LEFT JOIN sn_types st ON st.id = p.sn_type_id
                 LEFT JOIN LATERAL (
                   SELECT MAX(activity_at) AS latest_at
@@ -156,7 +165,11 @@ public static class WorkflowEndpoints
 
         app.MapGet("/api/workflow/station-logins", async (HttpRequest request) => await GetWorkflowStationLoginsAsync(request));
         app.MapPut("/api/workflow/station-logins", async (HttpContext context) => await SaveWorkflowStationLoginsAsync(context));
-        app.MapPost("/api/workflow/snapshot", async (HttpContext context) => await SaveWorkflowSnapshotAsync(context));
+        app.MapPost("/api/workflow/snapshot", async (HttpContext context) =>
+        {
+            var result = await SaveWorkflowSnapshotAsync(context);
+            await result.ExecuteAsync(context);
+        });
     }
 
     private static async Task<IResult> SaveWorkflowSnapshotAsync(HttpContext context)

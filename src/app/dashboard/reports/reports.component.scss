@@ -945,6 +945,99 @@
   color: #91a3b8;
   background: #f4f7fb;
 }
+.report-multi-select {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.report-multi-select__trigger {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #c9d9ed;
+  border-radius: 8px;
+  background: #fbfdff;
+  color: #0f2747;
+  font: inherit;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.report-multi-select__trigger > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-multi-select__trigger .material-symbols-outlined {
+  flex: 0 0 auto;
+  color: #365d8e;
+  font-size: 20px;
+}
+
+.report-multi-select__trigger:disabled {
+  color: #91a3b8;
+  background: #f4f7fb;
+  cursor: not-allowed;
+}
+
+.report-multi-select__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 45;
+  max-height: 220px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid #c8daf0;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(16, 42, 86, 0.16);
+}
+
+.report-multi-select__option {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #243b5f;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.report-multi-select__option:hover,
+.report-multi-select__option.selected {
+  background: #eef6ff;
+  color: #0d61d8;
+}
+
+.report-multi-select__mark {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #b8cbe3;
+  border-radius: 4px;
+  color: #0d61d8;
+  font-size: 15px;
+  line-height: 1;
+}
 
 .aq-checks {
   margin-top: 14px;
@@ -1564,8 +1657,8 @@
 .todays-page-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px 24px;
+  gap: 12px;
+  padding: 14px 18px;
   color: #ffffff;
   border-color: transparent;
   background:
@@ -1584,24 +1677,27 @@
 }
 
 .todays-page-header h1 {
-  font-size: 30px;
+  font-size: 26px;
   color: #ffffff;
+  line-height: 1.1;
 }
 
 .todays-page-header p,
 .per-day-title-wrap small {
-  margin: 5px 0 0;
+  margin: 3px 0 0;
   color: #5f7591;
   font-weight: 800;
 }
 
 .todays-page-header p {
   color: rgba(255, 255, 255, 0.78);
+  font-size: 15px;
+  line-height: 1.25;
 }
 
 .todays-back {
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   border: 1px solid #b7d3f2;
@@ -1609,36 +1705,6 @@
   background: rgba(255, 255, 255, 0.86);
   color: #073467;
   cursor: pointer;
-}
-
-.todays-title-icon {
-  width: 56px;
-  height: 56px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #246df0 0%, #16a34a 100%);
-  color: #ffffff;
-  font-size: 34px;
-  box-shadow: 0 14px 30px rgba(36, 109, 240, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.34);
-}
-
-.auto-refresh-button {
-  min-height: 42px;
-  padding: 0 18px;
-  border: 1px solid #15803d;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
-  color: #ffffff;
-  font-weight: 900;
-  cursor: pointer;
-  box-shadow: 0 10px 22px rgba(21, 128, 61, 0.2);
-}
-
-.auto-refresh-button.off {
-  border-color: #cbd5e1;
-  background: #f8fafc;
-  color: #475569;
 }
 
 .header-spacer,
@@ -1879,14 +1945,14 @@
 
 .todays-metric-grid {
   display: grid;
-  grid-template-columns: repeat(8, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 12px;
 }
 
 .todays-metric-card {
   min-width: 0;
-  min-height: 150px;
-  padding: 16px;
+  min-height: 138px;
+  padding: 14px;
   display: grid;
   align-content: start;
   gap: 9px;
@@ -2495,10 +2561,6 @@
   75% {
     translate: -2px;
   }
-}
-
-.action-card--debug .action-card__icon {
-  background: linear-gradient(135deg, #0f5ed7, #12a36d);
 }
 
 .debug-dashboard-window {
@@ -3357,3 +3419,4 @@
   text-align: center;
   overflow-wrap: anywhere;
 }
+

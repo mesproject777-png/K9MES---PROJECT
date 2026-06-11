@@ -13,6 +13,29 @@
   padding: 18px 20px;
 }
 
+.back-button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 0 14px;
+  border: 1px solid #b9d2ee;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #102a43;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.back-button:hover,
+.back-button:focus-visible {
+  outline: none;
+  border-color: #0d72df;
+  background: #eef6ff;
+}
+
 .ops-assembly-card h2 {
   margin: 0 0 14px;
   font-size: 1.35rem;

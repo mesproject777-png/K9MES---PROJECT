@@ -43,11 +43,22 @@
             </label>
             <label>
               <span>Station</span>
-              <select [(ngModel)]="activityFilters.station" (ngModelChange)="onActivityFilterChange('station')" [disabled]="isActivityFilterDisabled('station')">
-                <option value="">Select Station</option>
-                <option [value]="allDropdownValue">All Stations</option>
-                <option *ngFor="let value of activityOptionValues('station')" [value]="value">{{ value }}</option>
-              </select>
+              <span class="report-multi-select" [class.open]="activityStationDropdownOpen" [class.disabled]="isActivityFilterDisabled('station')" (click)="$event.stopPropagation()">
+                <button type="button" class="report-multi-select__trigger" [disabled]="isActivityFilterDisabled('station')" (click)="toggleActivityStationDropdown($event)">
+                  <span>{{ getActivityStationLabel() }}</span>
+                  <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+                </button>
+                <span class="report-multi-select__panel" *ngIf="activityStationDropdownOpen">
+                  <button type="button" class="report-multi-select__option" [class.selected]="activityFilters.allStations" (click)="selectActivityAllStations($event)">
+                    <span class="report-multi-select__mark material-symbols-outlined" aria-hidden="true">{{ activityFilters.allStations ? 'check' : '' }}</span>
+                    All Stations
+                  </button>
+                  <button type="button" class="report-multi-select__option" *ngFor="let value of activityOptionValues('station')" [class.selected]="isActivityStationSelected(value)" (click)="toggleActivityStation(value, $event)">
+                    <span class="report-multi-select__mark material-symbols-outlined" aria-hidden="true">{{ isActivityStationSelected(value) ? 'check' : '' }}</span>
+                    {{ value }}
+                  </button>
+                </span>
+              </span>
             </label>
             <label>
               <span>Product Line</span>

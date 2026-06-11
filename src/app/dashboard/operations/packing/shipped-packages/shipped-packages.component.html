@@ -6,6 +6,10 @@
     </div>
 
     <div class="page__actions">
+      <button class="btn btn--back" routerLink="/dashboard/operations" aria-label="Back to Operations modules">
+        <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+        Back
+      </button>
       <button class="btn" (click)="refresh()" [disabled]="isLoading">Refresh</button>
     </div>
   </div>

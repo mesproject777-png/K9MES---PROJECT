@@ -21,6 +21,13 @@
   box-shadow: 0 12px 28px rgba(23, 72, 120, 0.1);
 }
 
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .eyebrow {
   margin: 0 0 5px;
   color: #526b86;
@@ -55,7 +62,8 @@ h3 {
   font-weight: 700;
 }
 
-.refresh-button {
+.refresh-button,
+.nav-button {
   min-height: 42px;
   display: inline-flex;
   align-items: center;
@@ -71,7 +79,9 @@ h3 {
 }
 
 .refresh-button:hover,
-.refresh-button:focus-visible {
+.refresh-button:focus-visible,
+.nav-button:hover,
+.nav-button:focus-visible {
   outline: none;
   border-color: #0d72df;
   background: #eef6ff;

@@ -3010,7 +3010,11 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.http.get<WorkflowSnapshot>(`${this.workflowApiUrl}/by-pn`, { params }).subscribe({
       next: (snapshot) => {
         this.applyWorkflowSnapshot(snapshot);
-        this.setPartNumberReadonlyState(true, !this.lockedEditWorkOrder);
+        if (this.isWorkflowEditMode) {
+          this.applyWorkflowEditFieldLocks(snapshot);
+        } else {
+          this.setPartNumberReadonlyState(true, true);
+        }
         this.previewActionMessageType = 'success';
         this.previewActionMessage = 'Saved workflow loaded from database.';
         this.scheduleClearMessages();
@@ -3125,20 +3129,27 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   private saveWorkflowSnapshot(onSuccess?: () => void, onError?: (message: string) => void): void {
     const payload = this.buildWorkflowSnapshotPayload();
     const savedPartNumber = String((payload as WorkflowSnapshot).partNumber?.pn || '').trim();
+    const savedWorkOrder = String((payload as WorkflowSnapshot).workOrder?.wo || '').trim();
 
     if (!savedPartNumber) {
       onError?.('Part number is required before saving workflow data.');
       return;
     }
 
-    this.http.post<WorkflowSnapshot>(`${this.workflowApiUrl}/snapshot`, payload).subscribe({
+    this.http.post<WorkflowSnapshot | null>(`${this.workflowApiUrl}/snapshot`, payload).subscribe({
       next: (snapshot) => {
-        if (snapshot?.routing?.length || this.routeSteps.length === 0) {
-          this.applyWorkflowSnapshot(snapshot);
-        }
-        localStorage.setItem('k9_workflow_work_orders_updated_at', String(Date.now()));
-        onSuccess?.();
-        this.verifyWorkflowWorkOrderConnection(savedPartNumber);
+        this.verifyWorkflowWorkOrderConnection(
+          savedPartNumber,
+          savedWorkOrder,
+          () => {
+            if (snapshot?.partNumber?.pn && (snapshot.routing?.length || this.routeSteps.length === 0)) {
+              this.applyWorkflowSnapshot(snapshot);
+            }
+            localStorage.setItem('k9_workflow_work_orders_updated_at', String(Date.now()));
+            onSuccess?.();
+          },
+          onError
+        );
       },
       error: (error) => {
         onError?.(this.getWorkflowErrorMessage(error));
@@ -3146,26 +3157,37 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     });
   }
 
-  private verifyWorkflowWorkOrderConnection(partNumber: string): void {
+  private verifyWorkflowWorkOrderConnection(
+    partNumber: string,
+    workOrder: string,
+    onVerified: () => void,
+    onError?: (message: string) => void
+  ): void {
     const params = new HttpParams()
       .set('pn', partNumber)
       .set('page', '1')
       .set('limit', 'all');
 
-    this.http.get<{ data: Array<{ part_number?: string; partNumber?: string; pn?: string }> }>(`${this.workflowApiUrl}/work-orders`, { params }).subscribe({
+    this.http.get<{ data: Array<{ wo?: string; part_number?: string; partNumber?: string; pn?: string }> }>(`${this.workflowApiUrl}/work-orders`, { params }).subscribe({
       next: (response) => {
         const normalizedPartNumber = partNumber.toUpperCase();
+        const normalizedWorkOrder = workOrder.toUpperCase();
         const isVisibleInWorkOrder = (response.data || []).some((row) => {
           const rowPartNumber = String(row.part_number || row.partNumber || row.pn || '').trim().toUpperCase();
-          return rowPartNumber === normalizedPartNumber;
+          const rowWorkOrder = String(row.wo || '').trim().toUpperCase();
+          return rowPartNumber === normalizedPartNumber && (!normalizedWorkOrder || rowWorkOrder === normalizedWorkOrder);
         });
 
         if (!isVisibleInWorkOrder) {
-          console.warn(`Workflow saved, but PN ${partNumber} was not returned by the Work Order table endpoint yet.`);
+          const label = workOrder ? `PN ${partNumber} / WO ${workOrder}` : `PN ${partNumber}`;
+          onError?.(`Workflow save did not reach the Work Order table for ${label}. Please retry after K9Api refreshes.`);
+          return;
         }
+
+        onVerified();
       },
-      error: (error) => {
-        console.warn('Unable to verify Work Order table connection after save.', error);
+      error: () => {
+        onError?.('Workflow saved request completed, but Work Order table verification failed. Please retry after K9Api refreshes.');
       }
     });
   }
@@ -3227,16 +3249,18 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     }, { emitEvent: false });
     this.syncPartAttributeSelection();
 
+    const workOrder = snapshot.workOrder || null;
+
     this.workOrderForm.patchValue({
-      wo: snapshot.workOrder?.wo || '',
-      plant: snapshot.workOrder?.plant || null,
-      site_id: snapshot.workOrder?.site_id ?? null,
-      due_date: String(snapshot.workOrder?.due_date || this.minDueDate).slice(0, 10),
-      qty: snapshot.workOrder?.qty ?? null,
-      status: snapshot.workOrder?.status || 'Released',
+      wo: workOrder?.wo || '',
+      plant: workOrder?.plant || null,
+      site_id: workOrder?.site_id ?? null,
+      due_date: workOrder?.due_date ? String(workOrder.due_date).slice(0, 10) : '',
+      qty: workOrder?.qty ?? null,
+      status: workOrder?.status || '',
       pn: partNumber.pn || '',
-      revision: snapshot.workOrder?.revision || '',
-      lot: snapshot.workOrder?.lot || '',
+      revision: workOrder?.revision || '',
+      lot: workOrder?.lot || '',
     }, { emitEvent: false });
 
     this.routeSteps = (snapshot.routing || []).map((step, index) => ({
@@ -3289,8 +3313,72 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.isRoutingChildrenSaved = this.routeSteps.length > 0;
     this.isBomChildrenSaved = this.bomChildren.length > 0;
     this.isRestoringSavedPreview = false;
-    this.applyWorkflowEditLocks();
+    if (this.isWorkflowEditMode) {
+      this.applyWorkflowEditFieldLocks(snapshot);
+    } else {
+      this.applyWorkflowEditLocks();
+    }
     this.queuePreviewConnectorRefresh();
+  }
+
+  private applyWorkflowEditFieldLocks(snapshot: WorkflowSnapshot): void {
+    const partNumber = snapshot.partNumber;
+    if (!partNumber) {
+      return;
+    }
+
+    const partAttributeKey = partNumber.part_attribute_key || this.inferPartAttributeKey(partNumber);
+    const partAttributeValue = partNumber.part_attribute_value || this.inferPartAttributeValue(partNumber, partAttributeKey);
+    const workOrder = snapshot.workOrder || null;
+
+    this.isExistingPartNumberReadonly = Boolean(this.lockedEditPartNumber || partNumber.pn);
+    this.arePartNumberDetailsReadonly = false;
+    this.isWorkOrderReadonly = false;
+
+    this.setControlReadonlyBySavedValue(this.partNumberForm, 'pn', this.lockedEditPartNumber || partNumber.pn, true);
+    this.setControlReadonlyBySavedValue(this.partNumberForm, 'description', partNumber.description);
+    this.setControlReadonlyBySavedValue(this.partNumberForm, 'part_attribute_key', partAttributeKey);
+    this.setControlReadonlyBySavedValue(this.partNumberForm, 'part_attribute_value', partAttributeValue);
+    this.setControlReadonlyBySavedValue(this.partNumberForm, 'item_type', partNumber.item_type);
+    this.setControlReadonlyBySavedValue(this.partNumberForm, 'sn_type_name', partNumber.sn_type_name);
+    this.setControlReadonlyBySavedValue(this.partNumberForm, 'pn_type_id', partNumber.pn_type_id);
+    this.setControlReadonlyBySavedValue(this.partNumberForm, 'box_qty', partNumber.box_qty);
+
+    this.setControlReadonlyBySavedValue(this.workOrderForm, 'wo', this.lockedEditWorkOrder || workOrder?.wo);
+    this.setControlReadonlyBySavedValue(this.workOrderForm, 'plant', workOrder?.plant);
+    this.setControlReadonlyBySavedValue(this.workOrderForm, 'site_id', workOrder?.site_id);
+    this.setControlReadonlyBySavedValue(this.workOrderForm, 'due_date', workOrder?.due_date);
+    this.setControlReadonlyBySavedValue(this.workOrderForm, 'qty', workOrder?.qty);
+    this.setControlReadonlyBySavedValue(this.workOrderForm, 'status', workOrder?.status);
+    this.setControlReadonlyBySavedValue(this.workOrderForm, 'pn', this.lockedEditPartNumber || partNumber.pn, true);
+    this.setControlReadonlyBySavedValue(this.workOrderForm, 'revision', workOrder?.revision);
+    this.setControlReadonlyBySavedValue(this.workOrderForm, 'lot', workOrder?.lot);
+  }
+
+  private setControlReadonlyBySavedValue(form: FormGroup, controlName: string, savedValue: unknown, forceReadonly = false): void {
+    const control = form.get(controlName);
+    if (!control) {
+      return;
+    }
+
+    if (forceReadonly || this.hasSavedWorkflowValue(savedValue)) {
+      control.disable({ emitEvent: false });
+      return;
+    }
+
+    control.enable({ emitEvent: false });
+  }
+
+  private hasSavedWorkflowValue(value: unknown): boolean {
+    if (value === null || value === undefined) {
+      return false;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim() !== '';
+    }
+
+    return true;
   }
 
   private setPartNumberReadonlyState(isExistingPartNumber: boolean, lockDetails: boolean): void {
