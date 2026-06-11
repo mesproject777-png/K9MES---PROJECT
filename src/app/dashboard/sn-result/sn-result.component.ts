@@ -55,6 +55,7 @@ type StationSamplingConfig = {
   isSamplingEnabled: boolean;
   samplingType: string;
   intervalQty: string;
+  intervalTimeMinutes: string;
   sampleQty: string;
   lotSize: string;
 };
@@ -525,6 +526,10 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
 
     if (config.samplingType === 'PERIODIC') {
       return `Sampling: ${config.sampleQty || '1'} every ${config.intervalQty || '10'} units`;
+    }
+
+    if (config.samplingType === 'PERIODIC_TIME') {
+      return `Sampling: first device due every ${config.intervalTimeMinutes || '5'} minutes`;
     }
 
     if (config.samplingType === 'LOT') {

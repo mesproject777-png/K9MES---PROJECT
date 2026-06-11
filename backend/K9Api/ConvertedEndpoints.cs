@@ -496,7 +496,13 @@ public static class ConvertedEndpoints
     {
         app.MapGet("/api/station/check-sn", async (HttpRequest request) =>
         {
-            static IResult Pass() => Results.Json(new { success = true, result = "PASS" });
+            static IResult Pass(bool samplingRequired = false, string? samplingReason = null) => Results.Json(new
+            {
+                success = true,
+                result = "PASS",
+                samplingRequired,
+                samplingReason
+            });
             static IResult Fail(string reason) => Results.Json(new { success = false, result = "FAIL", reason });
 
             var rsn = request.Query["rsn"].ToString().Trim();
@@ -521,6 +527,7 @@ public static class ConvertedEndpoints
 
             await using var connection = await OpenConnectionAsync();
             await EnsureSerialTrackingSchemaAsync(connection);
+            await EnsureWorkflowSchemaAsync(connection);
 
             var userRows = await QueryRowsAsync(
                 connection,
@@ -599,7 +606,7 @@ public static class ConvertedEndpoints
                 """
                 SELECT sn.id, sn.sn, sn.rsn, sn.workflow_work_order_id, sn.workflow_part_id,
                        sn.status AS serial_status, sn.condition, sn.current_station_code,
-                       sn.current_station_order, w.wo
+                       sn.current_station_order, sn.last_moved_at, w.wo
                 FROM workflow_serial_numbers sn
                 JOIN workflow_work_orders w ON w.id = sn.workflow_work_order_id
                 WHERE UPPER(sn.rsn) = UPPER(@rsn)
@@ -740,13 +747,97 @@ public static class ConvertedEndpoints
                 }
             }
 
-            return Pass();
+            var samplingDecision = await TryMarkTimeBasedSamplingDueAsync(connection, serial, currentStationCode);
+            return Pass(samplingDecision.IsRequired, samplingDecision.Reason);
         })
         .WithTags("Station")
         .WithName("CheckSerialNumberForStation")
         .WithSummary("Validate whether a serial number can continue at its current MES station.")
         .WithDescription("Returns only PASS or FAIL. On FAIL, reason explains the first validation failure. Does not return SN history or route history.")
         .Produces(StatusCodes.Status200OK);
+    }
+
+    private static async Task<(bool IsRequired, string? Reason)> TryMarkTimeBasedSamplingDueAsync(
+        NpgsqlConnection connection,
+        Dictionary<string, object?> serial,
+        string stationCode)
+    {
+        if (string.IsNullOrWhiteSpace(stationCode))
+        {
+            return (false, null);
+        }
+
+        var rows = await QueryRowsAsync(
+            connection,
+            """
+            WITH config AS (
+              SELECT workflow_part_id, station_code, interval_time_minutes
+              FROM workflow_station_sampling
+              WHERE workflow_part_id = @workflowPartId
+                AND UPPER(BTRIM(station_code)) = UPPER(BTRIM(@stationCode))
+                AND is_sampling_enabled = TRUE
+                AND UPPER(BTRIM(sampling_type)) = 'PERIODIC_TIME'
+                AND interval_time_minutes > 0
+              LIMIT 1
+            ),
+            clock_anchor AS (
+              SELECT
+                config.workflow_part_id,
+                config.station_code,
+                config.interval_time_minutes,
+                COALESCE(
+                  (
+                    SELECT MAX(event.created_at)
+                    FROM workflow_station_sampling_events event
+                    WHERE event.workflow_part_id = config.workflow_part_id
+                      AND event.workflow_work_order_id = @workflowWorkOrderId
+                      AND UPPER(BTRIM(event.station_code)) = UPPER(BTRIM(config.station_code))
+                      AND UPPER(BTRIM(event.sampling_type)) = 'PERIODIC_TIME'
+                  ),
+                  (
+                    SELECT MIN(active_sn.last_moved_at)
+                    FROM workflow_serial_numbers active_sn
+                    WHERE active_sn.workflow_part_id = config.workflow_part_id
+                      AND active_sn.workflow_work_order_id = @workflowWorkOrderId
+                      AND UPPER(BTRIM(active_sn.current_station_code)) = UPPER(BTRIM(config.station_code))
+                      AND active_sn.last_moved_at IS NOT NULL
+                  ),
+                  @lastMovedAt::timestamp
+                ) AS anchor_time
+              FROM config
+            ),
+            due AS (
+              SELECT *
+              FROM clock_anchor
+              WHERE anchor_time IS NOT NULL
+                AND NOW() >= anchor_time + (interval_time_minutes || ' minutes')::interval
+            ),
+            inserted AS (
+              INSERT INTO workflow_station_sampling_events
+                (workflow_part_id, workflow_work_order_id, workflow_serial_id, station_code,
+                 sampling_type, interval_time_minutes, created_at)
+              SELECT @workflowPartId, @workflowWorkOrderId, @workflowSerialId, station_code,
+                     'PERIODIC_TIME', interval_time_minutes, NOW()
+              FROM due
+              RETURNING interval_time_minutes
+            )
+            SELECT interval_time_minutes
+            FROM inserted
+            LIMIT 1
+            """,
+            ("workflowPartId", serial["workflow_part_id"]),
+            ("workflowWorkOrderId", serial["workflow_work_order_id"]),
+            ("workflowSerialId", serial["id"]),
+            ("stationCode", stationCode),
+            ("lastMovedAt", ToDbNullable(serial["last_moved_at"])));
+
+        if (rows.Count == 0)
+        {
+            return (false, null);
+        }
+
+        var minutes = Convert.ToInt32(rows[0]["interval_time_minutes"] ?? 0);
+        return (true, $"Time-based periodic sampling due after {minutes} minute{(minutes == 1 ? string.Empty : "s")}.");
     }
 
     private static void MapItems(WebApplication app)
@@ -5327,10 +5418,10 @@ public static class ConvertedEndpoints
                         """
                         INSERT INTO workflow_station_sampling
                           (workflow_part_id, station_code, station_id, station_name, sampling_type,
-                           interval_qty, sample_qty, lot_size, is_sampling_enabled)
+                           interval_qty, interval_time_minutes, sample_qty, lot_size, is_sampling_enabled)
                         VALUES
                           (@workflowPartId, @stationCode, @stationId, @stationName, @samplingType,
-                           @intervalQty, @sampleQty, @lotSize, @isSamplingEnabled)
+                           @intervalQty, @intervalTimeMinutes, @sampleQty, @lotSize, @isSamplingEnabled)
                         """,
                         ("workflowPartId", workflowPartId),
                         ("stationCode", stationCode),
@@ -5338,6 +5429,7 @@ public static class ConvertedEndpoints
                         ("stationName", ToDbNullable(ReadString(configGroup.Value, "stationName")?.Trim())),
                         ("samplingType", ReadString(configGroup.Value, "samplingType")?.Trim() ?? "PERIODIC"),
                         ("intervalQty", ReadInt(configGroup.Value, "intervalQty") ?? 10),
+                        ("intervalTimeMinutes", ReadInt(configGroup.Value, "intervalTimeMinutes") ?? 5),
                         ("sampleQty", ReadInt(configGroup.Value, "sampleQty") ?? 1),
                         ("lotSize", ReadInt(configGroup.Value, "lotSize") ?? 1000),
                         ("isSamplingEnabled", ReadBool(configGroup.Value, "isSamplingEnabled") ?? false));
@@ -5999,7 +6091,7 @@ public static class ConvertedEndpoints
                 connection,
                 """
                 SELECT station_code, station_id, station_name, sampling_type,
-                       interval_qty, sample_qty, lot_size, is_sampling_enabled
+                       interval_qty, interval_time_minutes, sample_qty, lot_size, is_sampling_enabled
                 FROM workflow_station_sampling
                 WHERE workflow_part_id = @workflowPartId
                 ORDER BY station_code ASC
@@ -6077,6 +6169,7 @@ public static class ConvertedEndpoints
                         stationName = Convert.ToString(row["station_name"]) ?? string.Empty,
                         samplingType = Convert.ToString(row["sampling_type"]) ?? "PERIODIC",
                         intervalQty = Convert.ToString(row["interval_qty"]) ?? "10",
+                        intervalTimeMinutes = Convert.ToString(row["interval_time_minutes"]) ?? "5",
                         sampleQty = Convert.ToString(row["sample_qty"]) ?? "1",
                         lotSize = Convert.ToString(row["lot_size"]) ?? "1000",
                         isSamplingEnabled = row["is_sampling_enabled"] is bool enabled && enabled
@@ -8957,6 +9050,7 @@ public static class ConvertedEndpoints
               station_name VARCHAR(220),
               sampling_type VARCHAR(30) NOT NULL DEFAULT 'PERIODIC',
               interval_qty INTEGER NOT NULL DEFAULT 10,
+              interval_time_minutes INTEGER NOT NULL DEFAULT 5,
               sample_qty INTEGER NOT NULL DEFAULT 1,
               lot_size INTEGER NOT NULL DEFAULT 1000,
               is_sampling_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -8967,6 +9061,7 @@ public static class ConvertedEndpoints
             """);
 
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS station_id INTEGER");
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS interval_time_minutes INTEGER NOT NULL DEFAULT 5");
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS is_sampling_enabled BOOLEAN NOT NULL DEFAULT FALSE");
 
         await ExecuteAsync(
@@ -9158,9 +9253,41 @@ public static class ConvertedEndpoints
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_serial ON public.workflow_serial_station_logs (workflow_serial_id, created_at DESC)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_station_logs_station ON public.workflow_serial_station_logs (workflow_part_id, station_code)");
         await ExecuteAsync(connection, "ALTER TABLE public.workflow_serial_station_logs ADD COLUMN IF NOT EXISTS debug_remark TEXT");
+        await EnsureWorkflowSamplingRuntimeSchemaAsync(connection);
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_multiboxes_open ON public.workflow_multiboxes (workflow_part_id, workflow_work_order_id, status)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_pallet_items_pallet ON public.workflow_pallet_items (pallet_id)");
         await ExecuteAsync(connection, "CREATE INDEX IF NOT EXISTS idx_workflow_shipment_items_shipment ON public.workflow_shipment_items (shipment_id)");
+    }
+
+    private static async Task EnsureWorkflowSamplingRuntimeSchemaAsync(NpgsqlConnection connection)
+    {
+        await ExecuteAsync(connection, "ALTER TABLE public.workflow_station_sampling ADD COLUMN IF NOT EXISTS interval_time_minutes INTEGER NOT NULL DEFAULT 5");
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE TABLE IF NOT EXISTS public.workflow_station_sampling_events (
+              id BIGSERIAL PRIMARY KEY,
+              workflow_part_id INTEGER NOT NULL REFERENCES workflow_part_numbers(id) ON DELETE CASCADE,
+              workflow_work_order_id INTEGER NOT NULL REFERENCES workflow_work_orders(id) ON DELETE CASCADE,
+              workflow_serial_id BIGINT NOT NULL REFERENCES workflow_serial_numbers(id) ON DELETE CASCADE,
+              station_code VARCHAR(80) NOT NULL,
+              sampling_type VARCHAR(30) NOT NULL DEFAULT 'PERIODIC_TIME',
+              interval_time_minutes INTEGER NOT NULL DEFAULT 5,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE INDEX IF NOT EXISTS idx_workflow_sampling_events_station
+            ON public.workflow_station_sampling_events (workflow_part_id, workflow_work_order_id, station_code, sampling_type, created_at DESC)
+            """);
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE INDEX IF NOT EXISTS idx_workflow_sampling_events_serial_station
+            ON public.workflow_station_sampling_events (workflow_serial_id, station_code, sampling_type)
+            """);
     }
 
     private static async Task EnsureWorkflowStationLoginsTableAsync(NpgsqlConnection connection)

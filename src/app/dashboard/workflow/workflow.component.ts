@@ -121,7 +121,7 @@ type StationWeighingConfig = {
   tolerance: string;
 };
 
-type SamplingType = 'PERIODIC' | 'RANDOM' | 'LOT' | 'FIRST_PIECE';
+type SamplingType = 'PERIODIC' | 'PERIODIC_TIME' | 'RANDOM' | 'LOT' | 'FIRST_PIECE';
 
 type StationSamplingConfig = {
   stationId: number | null;
@@ -129,6 +129,7 @@ type StationSamplingConfig = {
   isSamplingEnabled: boolean;
   samplingType: SamplingType;
   intervalQty: string;
+  intervalTimeMinutes: string;
   sampleQty: string;
   lotSize: string;
 };
@@ -272,7 +273,8 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     { id: 'repair-station', label: 'Repair Station', icon: 'build' },
   ];
   readonly samplingTypeOptions: Array<{ value: SamplingType; label: string }> = [
-    { value: 'PERIODIC', label: 'Periodic' },
+    { value: 'PERIODIC', label: 'Periodic - Qty Based' },
+    { value: 'PERIODIC_TIME', label: 'Periodic - Time Based' },
     { value: 'RANDOM', label: 'Random' },
     { value: 'LOT', label: 'Lot / Batch' },
     { value: 'FIRST_PIECE', label: 'First Piece' },
@@ -352,6 +354,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
   isSamplingEnabled = false;
   samplingType: SamplingType = 'PERIODIC';
   samplingIntervalQty = '10';
+  samplingIntervalTimeMinutes = '5';
   samplingSampleQty = '1';
   samplingLotSize = '1000';
   isRepairStationEnabled = false;
@@ -1362,6 +1365,10 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
       return `Sampling: ${config.sampleQty || '1'} every ${config.intervalQty || '10'} units`;
     }
 
+    if (config.samplingType === 'PERIODIC_TIME') {
+      return `Sampling: first device due every ${config.intervalTimeMinutes || '5'} minutes`;
+    }
+
     if (config.samplingType === 'LOT') {
       return `Sampling: ${config.sampleQty || '1'} per lot of ${config.lotSize || '1000'}`;
     }
@@ -1819,6 +1826,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         isSamplingEnabled: this.isSamplingEnabled,
         samplingType: this.samplingType,
         intervalQty: String(this.samplingIntervalQty || '').trim(),
+        intervalTimeMinutes: String(this.samplingIntervalTimeMinutes || '').trim(),
         sampleQty: String(this.samplingSampleQty || '').trim(),
         lotSize: String(this.samplingLotSize || '').trim(),
       },
@@ -2604,6 +2612,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.isSamplingEnabled = Boolean(config?.isSamplingEnabled);
     this.samplingType = config?.samplingType || 'PERIODIC';
     this.samplingIntervalQty = config?.intervalQty || '10';
+    this.samplingIntervalTimeMinutes = config?.intervalTimeMinutes || '5';
     this.samplingSampleQty = config?.sampleQty || '1';
     this.samplingLotSize = config?.lotSize || '1000';
   }
@@ -2683,6 +2692,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
   private validateSamplingConfig(): boolean {
     const intervalQty = Number(this.samplingIntervalQty);
+    const intervalTimeMinutes = Number(this.samplingIntervalTimeMinutes);
     const sampleQty = Number(this.samplingSampleQty);
     const lotSize = Number(this.samplingLotSize);
 
@@ -2692,6 +2702,15 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     }
 
     if (this.samplingType === 'FIRST_PIECE') {
+      return true;
+    }
+
+    if (this.samplingType === 'PERIODIC_TIME') {
+      if (!Number.isFinite(intervalTimeMinutes) || intervalTimeMinutes <= 0) {
+        this.setLabelPrintMessage('Interval Time must be greater than zero.', 'error');
+        return false;
+      }
+
       return true;
     }
 
@@ -2988,6 +3007,7 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
     this.isSamplingEnabled = false;
     this.samplingType = 'PERIODIC';
     this.samplingIntervalQty = '10';
+    this.samplingIntervalTimeMinutes = '5';
     this.samplingSampleQty = '1';
     this.samplingLotSize = '1000';
   }
