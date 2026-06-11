@@ -27,9 +27,6 @@ export class SidebarComponent {
     { label: 'Labels', route: '/dashboard/label', icon: 'label', pageKey: 'dashboard/label' },
     { label: 'Reports', route: '/dashboard/reports', icon: 'analytics', pageKey: 'dashboard/reports' },
     { label: 'Operations', route: '/dashboard/operations', icon: 'precision_manufacturing', pageKey: 'dashboard/operations/assembly' },
-    { label: 'Projects', route: '/dashboard/home', icon: 'folder', pageKey: 'dashboard/home' },
-    { label: 'Groups', route: '/dashboard/profile', icon: 'groups', pageKey: 'dashboard/profile' },
-    { label: 'SN Live Tracker', route: '/dashboard/myroute', icon: 'flag', pageKey: 'dashboard/myroute' },
   ];
 
   constructor(private authService: AuthService) {}

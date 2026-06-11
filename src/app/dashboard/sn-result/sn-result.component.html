@@ -1,5 +1,15 @@
 <section class="sn-result-page">
   <div class="sn-result-window">
+    <div class="sn-result-topbar context-return" *ngIf="canReturnToWorkOrderStation">
+      <button type="button" class="back-button" [title]="workOrderReturnLabel" (click)="backToWorkOrderStation()">
+        <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+      </button>
+      <div class="sn-title">
+        <h2>{{ workOrderReturnLabel }}</h2>
+        <span>{{ workOrderNumber }} / {{ serialNumber }}</span>
+      </div>
+    </div>
+
     <div class="workflow-tabs sn-tabs" role="tablist" aria-label="Serial number result sections">
       <button
         type="button"

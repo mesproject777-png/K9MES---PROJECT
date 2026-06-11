@@ -1,0 +1,67 @@
+<div class="action-grid" role="list">
+  <button type="button" class="action-card" role="listitem" (click)="openStandardReports()">
+    <div class="action-card__icon" aria-hidden="true">
+      <span class="material-symbols-outlined">analytics</span>
+    </div>
+
+    <div class="action-card__content">
+      <div class="action-card__title">Standard Reports</div>
+      <div class="action-card__desc">Work order tree and station serial counts.</div>
+    </div>
+  </button>
+
+  <button type="button" class="action-card action-card--scrap" role="listitem" (click)="openScrapSnReports()">
+    <div class="action-card__icon" aria-hidden="true">
+      <span class="material-symbols-outlined">delete_sweep</span>
+    </div>
+
+    <div class="action-card__content">
+      <div class="action-card__title">Scrap SN</div>
+      <div class="action-card__desc">Review serial numbers marked for scrap.</div>
+    </div>
+  </button>
+
+  <button type="button" class="action-card action-card--undo" role="listitem" (click)="openUndoScrapReports()">
+    <div class="action-card__icon" aria-hidden="true">
+      <span class="material-symbols-outlined">undo</span>
+    </div>
+
+    <div class="action-card__content">
+      <div class="action-card__title">Undo Scrap</div>
+      <div class="action-card__desc">Review serial numbers restored from scrap.</div>
+    </div>
+  </button>
+
+  <button type="button" class="action-card" role="listitem" (click)="openActivityQualityDashboard()">
+    <div class="action-card__icon" aria-hidden="true">
+      <span class="material-symbols-outlined">monitoring</span>
+    </div>
+
+    <div class="action-card__content">
+      <div class="action-card__title">Activity &amp; Quality Dashboard</div>
+      <div class="action-card__desc">Shop floor pass, fail, yield, and failure analysis.</div>
+    </div>
+  </button>
+
+  <button type="button" class="action-card" role="listitem" (click)="openTodaysDashboard()">
+    <div class="action-card__icon" aria-hidden="true">
+      <span class="material-symbols-outlined">dashboard</span>
+    </div>
+
+    <div class="action-card__content">
+      <div class="action-card__title">Todays dashboard</div>
+      <div class="action-card__desc">Work order tree and station serial counts.</div>
+    </div>
+  </button>
+
+  <button type="button" class="action-card action-card--debug" role="listitem" (click)="openDebugDashboard()">
+    <div class="action-card__icon" aria-hidden="true">
+      <span class="material-symbols-outlined">build_circle</span>
+    </div>
+
+    <div class="action-card__content">
+      <div class="action-card__title">Debug Dashboard</div>
+      <div class="action-card__desc">Repair station pending, passed, and SN repair details.</div>
+    </div>
+  </button>
+</div>

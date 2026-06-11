@@ -182,6 +182,9 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
 
   activeTab: SnResultTab = 'preview';
   query = '';
+  returnSource = '';
+  returnWorkOrder = '';
+  returnStation = '';
   loading = false;
   previewLoading = false;
   errorMessage = '';
@@ -223,6 +226,9 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
   ) {
     this.routeSub = this.route.queryParamMap.subscribe((params) => {
       const serial = String(params.get('q') || '').trim();
+      this.returnSource = String(params.get('from') || '').trim();
+      this.returnWorkOrder = String(params.get('returnWo') || '').trim();
+      this.returnStation = String(params.get('returnStation') || params.get('returnStationCode') || params.get('returnStationId') || '').trim();
       if (!serial) {
         return;
       }
@@ -272,12 +278,46 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
 
     this.router.navigate(['/dashboard/sn-result'], {
-      queryParams: { q: serial, t: Date.now() },
+      queryParams: this.buildSnResultQueryParams(serial),
     });
   }
 
   goBack(): void {
     this.location.back();
+  }
+
+  get canReturnToWorkOrderStation(): boolean {
+    return this.returnSource === 'work-order-tree' && !!this.returnWorkOrder;
+  }
+
+  get workOrderReturnLabel(): string {
+    return this.returnStation ? `Back to ${this.returnStation} SN list` : 'Back to station SN list';
+  }
+
+  backToWorkOrderStation(): void {
+    if (!this.canReturnToWorkOrderStation) {
+      this.goBack();
+      return;
+    }
+
+    this.router.navigate(['/dashboard/reports'], {
+      queryParams: {
+        wo: this.returnWorkOrder,
+        station: this.returnStation,
+        t: Date.now(),
+      },
+    });
+  }
+
+  private buildSnResultQueryParams(serial: string): Record<string, string | number> {
+    const queryParams: Record<string, string | number> = { q: serial, t: Date.now() };
+    if (this.canReturnToWorkOrderStation) {
+      queryParams['from'] = 'work-order-tree';
+      queryParams['returnWo'] = this.returnWorkOrder;
+      queryParams['returnStation'] = this.returnStation;
+    }
+
+    return queryParams;
   }
 
   trackByTab(index: number, tab: { id: SnResultTab }): string {
@@ -693,7 +733,7 @@ export class SnResultComponent implements AfterViewInit, AfterViewChecked, OnDes
     }
 
     this.router.navigate(['/dashboard/sn-result'], {
-      queryParams: { q: normalized, t: Date.now() },
+      queryParams: this.buildSnResultQueryParams(normalized),
     });
   }
 

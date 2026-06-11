@@ -9,13 +9,8 @@ type WorkflowWorkOrderSummary = {
   snType: string;
   dueDate: string;
   quantity: number | null;
-  status: string;
-  revision: string;
-  lot: string;
   stationCount: number;
   bomCount: number;
-  site: string;
-  updatedAt: string;
 };
 
 type WorkflowWorkOrderApiRow = {
@@ -24,13 +19,8 @@ type WorkflowWorkOrderApiRow = {
   sn_type: string;
   due_date: string | null;
   quantity: number | null;
-  status?: string | null;
-  revision?: string | null;
-  lot?: string | null;
   station_count: number;
   bom_count: number;
-  site: string;
-  updated_at: string | null;
 };
 
 @Component({
@@ -191,13 +181,8 @@ export class WorkOrderComponent implements OnInit, OnDestroy {
       snType: row.sn_type,
       dueDate: row.due_date || '',
       quantity: row.quantity,
-      status: row.status || '',
-      revision: row.revision || '',
-      lot: row.lot || '',
       stationCount: row.station_count,
       bomCount: row.bom_count,
-      site: row.site,
-      updatedAt: row.updated_at || '',
     };
   }
 
@@ -213,7 +198,7 @@ export class WorkOrderComponent implements OnInit, OnDestroy {
   }
 
   private downloadRows(rows: WorkflowWorkOrderSummary[]): void {
-    const header = ['WO', 'Part Number', 'SN Type', 'Due Date', 'Quantity', 'Status', 'Revision', 'Lot', 'Station', 'BOM', 'Site', 'Last Updated'];
+    const header = ['WO', 'Part Number', 'SN Type', 'Due Date', 'Quantity', 'Station', 'BOM'];
     const csvRows = [
       header.join(','),
       ...rows.map((row) => [
@@ -222,13 +207,8 @@ export class WorkOrderComponent implements OnInit, OnDestroy {
         this.escapeCsv(row.snType),
         this.escapeCsv(row.dueDate ? String(row.dueDate).slice(0, 10) : ''),
         this.escapeCsv(row.quantity === null ? '' : String(row.quantity)),
-        this.escapeCsv(row.status),
-        this.escapeCsv(row.revision),
-        this.escapeCsv(row.lot),
         this.escapeCsv(String(row.stationCount)),
         this.escapeCsv(String(row.bomCount)),
-        this.escapeCsv(row.site),
-        this.escapeCsv(row.updatedAt ? String(row.updatedAt).slice(0, 19).replace('T', ' ') : ''),
       ].join(',')),
     ];
 

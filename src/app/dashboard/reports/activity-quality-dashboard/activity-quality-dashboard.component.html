@@ -1,0 +1,316 @@
+      <section class="aq-page" [class.fullscreen]="fullScreenEnabled">
+        <div class="aq-header">
+          <button type="button" class="icon-button" title="Back to reports" (click)="backToMenu()">
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+          </button>
+          <div class="aq-title">
+            <h1>Activity &amp; Quality Dashboard</h1>
+            <p>Real-time shop floor activity and quality analysis</p>
+          </div>
+        </div>
+
+        <p class="message error" *ngIf="activityErrorMessage">{{ activityErrorMessage }}</p>
+
+        <section class="aq-filter-card">
+          <div class="aq-filter-grid">
+            <label>
+              <span>Date Range</span>
+              <select [(ngModel)]="activityFilters.dateSelection" (ngModelChange)="onActivityDateSelectionChange()">
+                <option [ngValue]="''">Select Date</option>
+                <option *ngFor="let option of dateSelections" [ngValue]="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+            <label *ngIf="activityFilters.dateSelection === 'custom'">
+              <span>From Date</span>
+              <input type="date" [(ngModel)]="activityFilters.fromDate" />
+            </label>
+            <label *ngIf="activityFilters.dateSelection === 'custom'">
+              <span>To Date</span>
+              <input type="date" [(ngModel)]="activityFilters.toDate" />
+            </label>
+            <label *ngIf="showStartHour">
+              <span>Start Hour</span>
+              <input type="number" min="0" max="23" [(ngModel)]="activityFilters.startHour" />
+            </label>
+
+            <label>
+              <span>Site</span>
+              <select [(ngModel)]="activityFilters.site" (ngModelChange)="onActivityFilterChange('site')" [disabled]="isActivityFilterDisabled('site')">
+                <option value="">Select Site</option>
+                <option [value]="allDropdownValue">All Sites</option>
+                <option *ngFor="let value of activityOptionValues('site')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Station</span>
+              <select [(ngModel)]="activityFilters.station" (ngModelChange)="onActivityFilterChange('station')" [disabled]="isActivityFilterDisabled('station')">
+                <option value="">Select Station</option>
+                <option [value]="allDropdownValue">All Stations</option>
+                <option *ngFor="let value of activityOptionValues('station')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Product Line</span>
+              <select [(ngModel)]="activityFilters.productLine" (ngModelChange)="onActivityFilterChange('productLine')" [disabled]="isActivityFilterDisabled('productLine')">
+                <option value="">Select Product Line</option>
+                <option [value]="allDropdownValue">All Product Lines</option>
+                <option *ngFor="let value of activityOptionValues('productLine')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Part Number</span>
+              <select [(ngModel)]="activityFilters.partNumber" (ngModelChange)="onActivityFilterChange('partNumber')" [disabled]="isActivityFilterDisabled('partNumber')">
+                <option value="">Select Part Number</option>
+                <option [value]="allDropdownValue">All Part Numbers</option>
+                <option *ngFor="let value of activityOptionValues('partNumber')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Work Order</span>
+              <select [(ngModel)]="activityFilters.workOrder" (ngModelChange)="onActivityFilterChange('workOrder')" [disabled]="isActivityFilterDisabled('workOrder')">
+                <option value="">Select Work Order</option>
+                <option [value]="allDropdownValue">All Work Orders</option>
+                <option *ngFor="let value of activityOptionValues('workOrder')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>User</span>
+              <select [(ngModel)]="activityFilters.user" (ngModelChange)="onActivityFilterChange('user')" [disabled]="isActivityFilterDisabled('user')">
+                <option value="">Select User</option>
+                <option [value]="allDropdownValue">All Users</option>
+                <option *ngFor="let value of activityOptionValues('user')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>PC</span>
+              <select [(ngModel)]="activityFilters.pc" (ngModelChange)="onActivityFilterChange('pc')" [disabled]="isActivityFilterDisabled('pc')">
+                <option value="">Select PC</option>
+                <option [value]="allDropdownValue">All PCs</option>
+                <option *ngFor="let value of activityOptionValues('pc')" [value]="value">{{ value }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Pivot</span>
+              <select [(ngModel)]="activityFilters.pivotBy">
+                <option *ngFor="let option of pivotOptions" [value]="option.value">{{ option.group }} - {{ option.label }}</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="aq-checks">
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allSites" (ngModelChange)="onActivityAllFilterChange('site', $event)" /> All Sites</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allStations" (ngModelChange)="onActivityAllFilterChange('station', $event)" /> All Stations</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allProductLines" (ngModelChange)="onActivityAllFilterChange('productLine', $event)" /> All PL</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allPartNumbers" (ngModelChange)="onActivityAllFilterChange('partNumber', $event)" /> All PN</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allWorkOrders" (ngModelChange)="onActivityAllFilterChange('workOrder', $event)" /> All WO</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allPcs" (ngModelChange)="onActivityAllFilterChange('pc', $event)" /> All PC</label>
+            <label><input type="checkbox" [(ngModel)]="activityFilters.allUsers" (ngModelChange)="onActivityAllFilterChange('user', $event)" /> All Users</label>
+          </div>
+
+          <div class="aq-filter-actions">
+            <button type="button" class="aq-primary" (click)="loadActivityQualityDashboard()">Go</button>
+            <button type="button" class="aq-secondary" (click)="resetActivityFilters()">Reset</button>
+            <label class="aq-toggle"><input type="checkbox" [(ngModel)]="rerunEnabled" (change)="onRerunToggle()" /> Rerun</label>
+            <label class="aq-toggle"><input type="checkbox" [(ngModel)]="fullScreenEnabled" /> Full Screen</label>
+            <button type="button" class="aq-stop" *ngIf="rerunTimer !== null" (click)="stopRerun()">Stop Rerun</button>
+          </div>
+        </section>
+
+        <section class="aq-kpis">
+          <article class="aq-kpi">
+            <span class="material-symbols-outlined">fact_check</span>
+            <small>Total Tested</small>
+            <strong>{{ activityData.kpiSummary.totalTested }}</strong>
+            <em>MES results</em>
+          </article>
+          <article class="aq-kpi pass">
+            <span class="material-symbols-outlined">check_circle</span>
+            <small>Passed</small>
+            <strong>{{ activityData.kpiSummary.totalPass }}</strong>
+            <em>{{ activityData.kpiSummary.passRate }}% yield</em>
+          </article>
+          <article class="aq-kpi fail">
+            <span class="material-symbols-outlined">cancel</span>
+            <small>Failed</small>
+            <strong>{{ activityData.kpiSummary.totalFail }}</strong>
+            <em>{{ activityData.kpiSummary.failRate }}% fail</em>
+          </article>
+          <article class="aq-kpi pass">
+            <span class="material-symbols-outlined">trending_up</span>
+            <small>Pass Rate %</small>
+            <strong>{{ activityData.kpiSummary.passRate }}%</strong>
+            <em>Quality yield</em>
+          </article>
+          <article class="aq-kpi warn">
+            <span class="material-symbols-outlined">warning</span>
+            <small>Fail Rate %</small>
+            <strong>{{ activityData.kpiSummary.failRate }}%</strong>
+            <em>Defect share</em>
+          </article>
+          <article class="aq-kpi">
+            <span class="material-symbols-outlined">precision_manufacturing</span>
+            <small>Active Stations</small>
+            <strong>{{ activityData.kpiSummary.activeStations }}</strong>
+            <em>Reporting</em>
+          </article>
+          <article class="aq-kpi">
+            <span class="material-symbols-outlined">assignment</span>
+            <small>Active Work Orders</small>
+            <strong>{{ activityData.kpiSummary.activeWorkOrders }}</strong>
+            <em>In window</em>
+          </article>
+          <article class="aq-kpi">
+            <span class="material-symbols-outlined">groups</span>
+            <small>Active Users</small>
+            <strong>{{ activityData.kpiSummary.activeUsers }}</strong>
+            <em>Operators</em>
+          </article>
+        </section>
+
+        <section class="aq-chart-card">
+          <div class="aq-card-title">
+            <div>
+              <h2>Activity and Quality</h2>
+              <p>X-axis follows selected pivot</p>
+            </div>
+            <div class="aq-legend">
+              <button type="button" [class.off]="!showPassSeries" (click)="toggleSeries('pass')"><i class="pass-dot"></i> Pass</button>
+              <button type="button" [class.off]="!showFailSeries" (click)="toggleSeries('fail')"><i class="fail-dot"></i> Fail</button>
+            </div>
+          </div>
+
+          <div class="aq-loading" *ngIf="activityLoading">
+            <span class="material-symbols-outlined">hourglass_top</span>
+            <strong>Loading dashboard data...</strong>
+          </div>
+
+          <div class="aq-empty" *ngIf="!activityLoading && activityData.chartData.length === 0">
+            <span class="material-symbols-outlined">query_stats</span>
+            <strong>No activity found for the selected filters.</strong>
+          </div>
+
+          <div class="aq-chart" *ngIf="!activityLoading && activityData.chartData.length > 0">
+            <div class="aq-bars">
+              <div class="aq-bar-group" role="button" tabindex="0" *ngFor="let point of activityData.chartData; let i = index; trackBy: trackByChartPoint" (click)="selectChartPoint(point)" (keydown.enter)="selectChartPoint(point)" (keydown.space)="selectChartPoint(point)" [class.selected]="selectedChartPoint?.label === point.label">
+                <span class="aq-fail-rate-label" *ngIf="point.failCount > 0">{{ chartFailRate(point) }}%</span>
+                <span class="aq-bar-stack">
+                  <i class="aq-bar pass-bar" *ngIf="showPassSeries" [style.height.px]="chartBarHeight(point.passCount)"></i>
+                  <i class="aq-bar fail-bar" *ngIf="showFailSeries && point.failCount > 0" [style.height.px]="chartBarHeight(point.failCount)">
+                    <span>{{ point.failCount }}</span>
+                  </i>
+                </span>
+                <strong>{{ point.label }}</strong>
+                <small>{{ point.passRate }}%</small>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="aq-details-modal-backdrop" *ngIf="selectedChartPoint as modalPoint" (click)="closeActivityDetailsPopup()">
+          <section class="aq-details-modal" (click)="$event.stopPropagation()">
+            <div class="aq-details-modal-title">
+              <div>
+                <h2>Activity Details</h2>
+                <p>{{ modalPoint.label }}</p>
+              </div>
+              <div class="aq-details-modal-actions">
+                <span class="aq-detail-count">{{ formatTodaysNumber(filteredDetailRows.length) }} rows</span>
+                <button type="button" title="Download bar data" aria-label="Download bar data" (click)="exportChartPointData(modalPoint)">
+                  <span class="material-symbols-outlined">download</span>
+                </button>
+                <button type="button" title="Close" aria-label="Close" (click)="closeActivityDetailsPopup()">
+                  <span class="material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+            <div class="aq-table-scroll modal-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date/Time</th>
+                    <th>Site</th>
+                    <th>Station</th>
+                    <th>Work Order</th>
+                    <th>Part Number</th>
+                    <th>Serial Number</th>
+                    <th>User</th>
+                    <th>PC</th>
+                    <th>Result</th>
+                    <th>Failure Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let row of pagedActivityDetailRows; trackBy: trackByActivityRow">
+                    <td>{{ row.date_time | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
+                    <td>{{ row.site || '-' }}</td>
+                    <td>{{ row.station || '-' }}</td>
+                    <td>{{ row.work_order || '-' }}</td>
+                    <td>{{ row.part_number || '-' }}</td>
+                    <td>{{ row.serial_number || '-' }}</td>
+                    <td>{{ row.user_name || '-' }}</td>
+                    <td>{{ row.pc || '-' }}</td>
+                    <td><span class="aq-result" [class.pass]="row.result === 'PASS'" [class.fail]="row.result === 'FAIL'">{{ row.result }}</span></td>
+                    <td>{{ row.failure_reason || '-' }}</td>
+                  </tr>
+                  <tr *ngIf="filteredDetailRows.length === 0">
+                    <td colspan="10" class="aq-no-rows">No detailed rows available.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="aq-table-footer">
+              <span>
+                Showing {{ formatTodaysNumber(activityDetailsShowingStart) }} to {{ formatTodaysNumber(activityDetailsShowingEnd) }} of
+                {{ formatTodaysNumber(filteredDetailRows.length) }} entries
+              </span>
+              <div class="aq-pagination" aria-label="Activity details popup pagination">
+                <button type="button" (click)="setActivityDetailsPage(activityDetailsCurrentPage - 1)" [disabled]="activityDetailsCurrentPage === 1">chevron_left</button>
+                <button
+                  type="button"
+                  *ngFor="let page of activityDetailsPageNumbers"
+                  [class.active]="page === activityDetailsCurrentPage"
+                  [disabled]="page === '...'"
+                  (click)="setActivityDetailsPage(page)"
+                >
+                  {{ page }}
+                </button>
+                <button type="button" (click)="setActivityDetailsPage(activityDetailsCurrentPage + 1)" [disabled]="activityDetailsCurrentPage === activityDetailsTotalPages">chevron_right</button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <section class="aq-analysis-grid">
+          <article class="aq-analysis-card">
+            <div class="aq-card-title">
+              <h2>Top Failure Symptoms Pareto</h2>
+            </div>
+            <div class="aq-empty compact" *ngIf="activityData.symptomsPareto.length === 0">
+              <span class="material-symbols-outlined">verified</span>
+              <strong>No failed symptom data.</strong>
+            </div>
+            <div class="aq-pareto-row" *ngFor="let item of activityData.symptomsPareto; trackBy: trackByPareto">
+              <span>{{ item.symptom }}</span>
+              <div><i [style.width.%]="item.percentage"></i></div>
+              <strong>{{ item.count }}</strong>
+              <em>{{ item.percentage }}%</em>
+            </div>
+          </article>
+
+          <article class="aq-analysis-card">
+            <div class="aq-card-title">
+              <h2>Station-wise Fail Rate</h2>
+            </div>
+            <div class="aq-empty compact" *ngIf="(activityData.stationFailRates || []).length === 0">
+              <span class="material-symbols-outlined">precision_manufacturing</span>
+              <strong>No station fail data.</strong>
+            </div>
+            <div class="aq-station-row" *ngFor="let item of activityData.stationFailRates || []; trackBy: trackByStationFail">
+              <span>{{ item.station }}</span>
+              <div><i [style.width.%]="item.failRate"></i></div>
+              <strong>{{ item.failRate }}%</strong>
+            </div>
+          </article>
+        </section>
+
+      </section>

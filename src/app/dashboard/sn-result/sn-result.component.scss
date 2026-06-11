@@ -26,6 +26,10 @@
   background: #f8fbff;
 }
 
+.sn-result-topbar.context-return {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
 .back-button {
   width: 42px;
   height: 42px;
