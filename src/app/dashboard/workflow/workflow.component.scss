@@ -2093,10 +2093,18 @@ button.preview-node:focus-visible {
 
 .weighing-fields {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-  padding: 22px 22px 4px;
+  grid-template-columns: repeat(3, minmax(140px, 180px));
+  justify-content: start;
+  gap: 16px;
+  max-width: 620px;
+  padding: 0;
   background: #ffffff;
+}
+
+.sampling-fields {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 170px));
+  gap: 14px;
+  max-width: 380px;
 }
 
 .weighing-field {
@@ -2171,20 +2179,28 @@ button.preview-node:focus-visible {
   font-size: 19px;
 }
 
+.weighing-tab,
 .label-printing-tab,
+.sampling-tab,
 .repair-station-tab {
   display: grid;
-  gap: 10px;
-  padding: 12px 16px;
+  align-content: start;
+  justify-items: start;
+  gap: 14px;
+  padding: 16px 20px 18px;
   overflow: auto;
 }
 
 .rules-section {
   display: grid;
-  gap: 7px;
+  justify-items: start;
+  gap: 8px;
+  width: 100%;
 }
 
 .label-print-enable-section {
+  width: 100%;
+  max-width: 560px;
   padding: 10px;
   border-radius: 8px;
   background: #f8fbff;
@@ -2195,6 +2211,7 @@ button.preview-node:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
   max-width: 520px;
 }
 
@@ -2262,7 +2279,9 @@ button.preview-node:focus-visible {
 
 .rules-field {
   display: grid;
-  gap: 5px;
+  gap: 6px;
+  width: 100%;
+  max-width: 420px;
 }
 
 .rules-field > span {
@@ -2284,6 +2303,19 @@ button.preview-node:focus-visible {
   font: inherit;
   font-weight: 650;
   outline: none;
+}
+
+.sampling-tab .rules-field {
+  max-width: 320px;
+}
+
+.sampling-tab .template-detail {
+  max-width: 540px;
+  line-height: 1.45;
+}
+
+.sampling-fields .weighing-field input {
+  max-width: 170px;
 }
 
 .repair-station-tab .rules-field {
@@ -2637,3 +2669,4 @@ button.preview-node:focus-visible {
     padding: 0 22px;
   }
 }
+

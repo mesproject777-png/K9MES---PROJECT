@@ -24,7 +24,7 @@ type DateSelection = '' | 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'cu
 type TodaysDashboardTab = 'filters' | 'overview';
 type TodaysDropdownKey = 'dateSelection' | 'site' | 'station' | 'partNumber' | 'workOrder' | 'pc' | 'user';
 const TODAYS_ALL_VALUE = '__all__';
-type DebugDateRange = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
+type DebugDateRange = '' | 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom';
 type DebugViewBy = 'station' | 'day';
 type DebugFilterKey = 'site' | 'repairStation' | 'status' | 'failureRemark' | 'partNumber' | 'workOrder';
 
@@ -155,6 +155,8 @@ interface WorkOrderTreeReport {
     failed: number;
     in_stations: number;
     highest_station_count: number;
+    carton_status?: string;
+    carton_closed_serials?: number;
   };
   stations: WorkOrderTreeStation[];
 }
@@ -488,7 +490,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   debugData: DebugDashboardData = this.emptyDebugData();
   debugFilters = {
     site: '',
-    dateRange: 'today' as DebugDateRange,
+    dateRange: '' as DebugDateRange,
     fromDate: '',
     toDate: '',
     repairStation: '',
@@ -500,12 +502,12 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     viewBy: 'station' as DebugViewBy,
   };
   debugAllFilters: Record<DebugFilterKey, boolean> = {
-    site: true,
-    repairStation: true,
-    status: true,
-    failureRemark: true,
-    partNumber: true,
-    workOrder: true,
+    site: false,
+    repairStation: false,
+    status: false,
+    failureRemark: false,
+    partNumber: false,
+    workOrder: false,
   };
   debugSelectedBucket: DebugChartBucket | null = null;
   debugHoveredBucket: DebugChartBucket | null = null;
@@ -535,12 +537,13 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.applyDateSelection();
     this.routeSubscription = this.route.queryParamMap.subscribe((params) => {
       const wo = String(params.get('wo') || params.get('q') || '').trim();
+      const station = String(params.get('station') || params.get('stationCode') || params.get('stationId') || '').trim();
       if (!wo) {
         return;
       }
 
       this.activeView = 'standard';
-      this.loadWorkOrderReport(wo);
+      this.loadWorkOrderReport(wo, station);
     });
   }
 
@@ -1228,6 +1231,11 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
 
   loadDebugDashboard(): void {
     this.applyDebugDateRange();
+    if (!this.isDebugDashboardReady) {
+      this.errorMessage = 'Please fill all required debug dashboard filters in order.';
+      return;
+    }
+
     const params = this.buildDebugParams();
     this.debugLoading = true;
     this.debugHasRun = true;
@@ -1254,7 +1262,12 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   }
 
   onDebugDateRangeChange(): void {
-    this.applyDebugDateRange();
+    if (this.debugFilters.dateRange === 'custom') {
+      this.debugFilters.fromDate = '';
+      this.debugFilters.toDate = '';
+    } else {
+      this.applyDebugDateRange();
+    }
     this.resetDebugAfter('dateRange');
     if (!this.canDebugViewByDay) {
       this.debugFilters.viewBy = 'station';
@@ -1280,7 +1293,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   resetDebugFilters(): void {
     this.debugFilters = {
       site: '',
-      dateRange: 'today',
+      dateRange: '',
       fromDate: '',
       toDate: '',
       repairStation: '',
@@ -1292,15 +1305,19 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       viewBy: 'station',
     };
     this.debugAllFilters = {
-      site: true,
-      repairStation: true,
-      status: true,
-      failureRemark: true,
-      partNumber: true,
-      workOrder: true,
+      site: false,
+      repairStation: false,
+      status: false,
+      failureRemark: false,
+      partNumber: false,
+      workOrder: false,
     };
-    this.applyDebugDateRange();
-    this.loadDebugDashboard();
+    this.debugHasRun = false;
+    this.debugData = this.emptyDebugData();
+    this.debugSelectedBucket = null;
+    this.debugHoveredBucket = null;
+    this.closeDebugDetails();
+    this.errorMessage = '';
   }
 
   setDebugAllFilter(
@@ -1315,7 +1332,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   }
 
   onDebugFilterChange(field: DebugFilterKey): void {
-    this.debugAllFilters[field] = !this.debugFilters[field];
+    this.debugAllFilters[field] = false;
     this.resetDebugAfter(field);
   }
 
@@ -1343,6 +1360,19 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       default:
         return false;
     }
+  }
+
+
+  get isDebugDashboardReady(): boolean {
+    return Boolean(
+      this.isDebugDateReady &&
+      this.isDebugFilterReady('site') &&
+      this.isDebugFilterReady('repairStation') &&
+      this.isDebugFilterReady('status') &&
+      this.isDebugFilterReady('failureRemark') &&
+      this.isDebugFilterReady('partNumber') &&
+      this.isDebugFilterReady('workOrder')
+    );
   }
 
   selectDebugBucket(bucket: DebugChartBucket): void {
@@ -1405,6 +1435,12 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   }
 
   private applyDebugDateRange(): void {
+    if (!this.debugFilters.dateRange) {
+      this.debugFilters.fromDate = '';
+      this.debugFilters.toDate = '';
+      return;
+    }
+
     const today = this.startOfDay(new Date());
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -1427,8 +1463,6 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
         this.debugFilters.toDate = this.formatInputDate(end);
         break;
       case 'custom':
-        if (!this.debugFilters.fromDate) this.debugFilters.fromDate = this.formatInputDate(today);
-        if (!this.debugFilters.toDate) this.debugFilters.toDate = this.formatInputDate(today);
         break;
       case 'today':
       default:
@@ -1673,7 +1707,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     );
   }
 
-  loadWorkOrderReport(wo: string): void {
+  loadWorkOrderReport(wo: string, stationToOpen = ''): void {
     const workOrder = wo.trim();
     this.errorMessage = '';
 
@@ -1690,8 +1724,16 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       next: (report) => {
         this.report = report;
         this.currentWorkOrder = report.workOrder?.wo || workOrder;
-        this.selectedStation = null;
-        this.activeTab = 'tree';
+        const stationKey = stationToOpen.trim().toUpperCase();
+        const station = stationKey
+          ? (report.stations || []).find((row) =>
+              String(row.id) === stationKey ||
+              String(row.station_code || '').trim().toUpperCase() === stationKey ||
+              String(row.station_name || '').trim().toUpperCase() === stationKey
+            )
+          : null;
+        this.selectedStation = station ? { ...station, serials: station.serials || [] } : null;
+        this.activeTab = station ? 'station' : 'tree';
         this.loading = false;
         this.queueConnectorRefresh();
       },
@@ -1750,7 +1792,13 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     }
 
     this.router.navigate(['/dashboard/sn-result'], {
-      queryParams: { q: query, t: Date.now() }
+      queryParams: {
+        q: query,
+        t: Date.now(),
+        from: 'work-order-tree',
+        returnWo: this.report?.workOrder?.wo || this.currentWorkOrder,
+        returnStation: this.selectedStation?.station_code || this.selectedStation?.id || '',
+      }
     });
   }
 
@@ -1871,10 +1919,26 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     return [
       { id: 'operator', kind: 'operator', title: 'Operator / Technician', icon: 'engineering' },
       ...stationNodes,
-      { id: 'cart', kind: 'logistics', variant: 'cart', title: 'Cart', icon: 'shopping_cart' },
+      { id: 'cart', kind: 'logistics', variant: 'cart', title: 'Carton', icon: 'inventory_2' },
       { id: 'pallet', kind: 'logistics', variant: 'pallet', title: 'Pallet', icon: 'inventory_2' },
       { id: 'truck', kind: 'logistics', variant: 'truck', title: 'Truck', icon: 'local_shipping' },
     ];
+  }
+
+  get isWorkOrderCartonComplete(): boolean {
+    return String(this.report?.summary?.carton_status || '').trim().toLowerCase() === 'completed';
+  }
+
+  getWorkOrderCartonImage(): string {
+    return this.isWorkOrderCartonComplete ? 'assets/sn-chart/carton-closed.svg' : 'assets/sn-chart/carton-open.svg';
+  }
+
+  getWorkOrderLogisticsStatus(variant?: 'cart' | 'pallet' | 'truck'): 'Completed' | 'Pending' {
+    if (variant === 'cart') {
+      return this.isWorkOrderCartonComplete ? 'Completed' : 'Pending';
+    }
+
+    return 'Pending';
   }
 
   get flowRows(): ReportFlowRow[] {
@@ -2151,7 +2215,8 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   }
 
   get selectedTodaysRows(): TodaysSnDetail[] {
-    return this.todaysDetailsModalOpen ? this.todaysDetailsRows : (this.selectedTodaysBucket?.sns || []);
+    const rows = this.todaysDetailsModalOpen ? this.todaysDetailsRows : (this.selectedTodaysBucket?.sns || []);
+    return this.getTodaysVisibleRows(rows);
   }
 
   get todaysAllRows(): TodaysSnDetail[] {
@@ -2166,7 +2231,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
         }
       });
     });
-    return rows;
+    return this.getTodaysVisibleRows(rows);
   }
 
   get pagedTodaysRows(): TodaysSnDetail[] {
@@ -2326,15 +2391,12 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     if (!bucket) {
       return [];
     }
-    const rows = this.todaysMetricRows || bucket.sns;
+
+    const rows = this.getTodaysVisibleRows(this.todaysMetricRows || bucket.sns);
     const total = rows.length;
     const pass = rows.filter((row) => row.status === 'Pass').length;
     const fail = rows.filter((row) => row.status === 'Fail').length;
-    const rework = rows.filter((row) => row.status === 'Rework').length;
-    const nff = rows.filter((row) => row.status === 'NFF').length;
-    const pending = rows.filter((row) => row.status === 'Pending').length;
     const fpy = total > 0 ? (pass * 100 / total) : 0;
-    const wip = pending + rework + nff;
     const avgCycle = this.getAverageCycleSeconds(rows);
     const topFailing = this.getTopStationFromRows(rows.filter((row) => row.status === 'Fail'));
     const highestLoad = this.getTopStationFromRows(rows);
@@ -2371,25 +2433,16 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
       {
         label: 'FPY (%)',
         value: `${fpy.toFixed(2)}%`,
-        subtext: 'vs Yesterday',
+        subtext: 'Pass / Pass + Fail',
         trend: '+ 2.35%',
         trendDirection: 'up',
         icon: 'monitoring',
         tone: 'purple',
       },
       {
-        label: 'WIP Count',
-        value: this.formatTodaysNumber(wip),
-        subtext: 'vs Yesterday',
-        trend: '- 5.6%',
-        trendDirection: 'down',
-        icon: 'hourglass_empty',
-        tone: 'amber',
-      },
-      {
         label: 'Avg Cycle Time',
         value: `${avgCycle.toFixed(1)} sec`,
-        subtext: 'vs Yesterday',
+        subtext: 'Pass and fail SN only',
         trend: '- 3.2 sec',
         trendDirection: 'down',
         icon: 'schedule',
@@ -2521,7 +2574,7 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
   }
 
   getTodaysBucketTotal(bucket: TodaysHourBucket): number {
-    return bucket.pass + bucket.fail + bucket.rework + bucket.nff + bucket.pending;
+    return bucket.pass + bucket.fail;
   }
 
   formatTodaysNumber(value: number): string {
@@ -2532,6 +2585,9 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     return `status-${status.toLowerCase()}`;
   }
 
+  private getTodaysVisibleRows(rows: TodaysSnDetail[]): TodaysSnDetail[] {
+    return rows.filter((row) => row.status === 'Pass' || row.status === 'Fail');
+  }
   getAverageCycleSeconds(rows: TodaysSnDetail[]): number {
     const values = rows
       .map((row) => Number(row.cycleSeconds) || 0)
@@ -3369,3 +3425,4 @@ export class ReportsComponent implements OnInit, AfterViewInit, AfterViewChecked
     this.cdr.detectChanges();
   }
 }
+

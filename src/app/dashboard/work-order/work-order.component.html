@@ -1,16 +1,4 @@
 <div class="wo-page">
-  <div class="filters">
-    <div class="filter-box">
-      <label>WO:</label>
-      <input type="text" [value]="woFilter" (input)="onWoFilterChange($any($event.target).value)" />
-    </div>
-
-    <div class="filter-actions">
-      <button type="button" class="secondary" (click)="loadRows()">Refresh</button>
-      <button type="button" class="secondary" (click)="downloadFullList()">Download Full List</button>
-    </div>
-  </div>
-
   <div class="table-toolbar">
     <div class="left">
       <label>
@@ -20,6 +8,18 @@
           <option [value]="50">50</option>
         </select>
         entries per page
+      </label>
+    </div>
+
+    <div class="center">
+      <label>
+        Search WO
+        <input
+          type="text"
+          placeholder="Type work order..."
+          [value]="woFilter"
+          (input)="onWoFilterChange($any($event.target).value)"
+        />
       </label>
     </div>
 
@@ -36,6 +36,11 @@
     </div>
   </div>
 
+  <div class="filter-actions">
+    <button type="button" class="secondary" (click)="loadRows()">Refresh</button>
+    <button type="button" class="secondary" (click)="downloadFullList()">Download Full List</button>
+  </div>
+
   <p *ngIf="errorMessage" class="message error">{{ errorMessage }}</p>
   <p *ngIf="isLoading" class="message">Loading work orders...</p>
 
@@ -46,10 +51,11 @@
           <th>WO</th>
           <th>Part Number</th>
           <th>SN Type</th>
+          <th>Due Date</th>
           <th>Quantity</th>
-          <th>Station Count</th>
-          <th>Site</th>
-          <th>View SN</th>
+          <th>Station</th>
+          <th>BOM</th>
+          <th>SNList</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -58,6 +64,7 @@
           <td>{{ row.wo || '-' }}</td>
           <td>{{ row.partNumber || '-' }}</td>
           <td>{{ row.snType || '-' }}</td>
+          <td>{{ row.dueDate ? (row.dueDate | date: 'yyyy-MM-dd') : '-' }}</td>
           <td>{{ row.quantity ?? '-' }}</td>
           <td>
             <button
@@ -69,7 +76,7 @@
               {{ row.stationCount }}
             </button>
           </td>
-          <td>{{ row.site || '-' }}</td>
+          <td>{{ row.bomCount }}</td>
           <td class="actions-cell">
             <button type="button" class="view-button" (click)="viewSnList(row)">View</button>
           </td>
@@ -78,7 +85,7 @@
           </td>
         </tr>
         <tr *ngIf="pagedRows.length === 0">
-          <td colspan="8" class="empty-state">No workflow work orders found.</td>
+          <td colspan="9" class="empty-state">No workflow work orders found.</td>
         </tr>
       </tbody>
     </table>
@@ -97,4 +104,3 @@
     </div>
   </div>
 </div>
-

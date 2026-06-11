@@ -738,6 +738,23 @@ public static class ReportsEndpoints
 
             var completedCount = serialRows.Count(row => string.Equals(Convert.ToString(row["status"]), "Completed", StringComparison.OrdinalIgnoreCase));
             var failedCount = serialRows.Count(row => string.Equals(Convert.ToString(row["status"]), "Failed", StringComparison.OrdinalIgnoreCase));
+            var packedClosedRows = new List<Dictionary<string, object?>>();
+            if (serialRows.Count > 0)
+            {
+                packedClosedRows = await QueryRowsAsync(
+                    connection,
+                    """
+                    SELECT COUNT(DISTINCT i.workflow_serial_id)::int AS count
+                    FROM workflow_multibox_items i
+                    JOIN workflow_multiboxes b ON b.id = i.box_id
+                    WHERE b.workflow_work_order_id = @workflowWorkOrderId
+                      AND UPPER(BTRIM(b.status)) = 'CLOSED'
+                    """,
+                    ("workflowWorkOrderId", workflowWorkOrderId));
+            }
+
+            var packedClosedSerialCount = packedClosedRows.Count > 0 ? Convert.ToInt32(packedClosedRows[0]["count"] ?? 0) : 0;
+            var cartonStatus = serialRows.Count > 0 && packedClosedSerialCount >= serialRows.Count ? "Completed" : "Pending";
 
             return Results.Json(new
             {
@@ -765,7 +782,9 @@ public static class ReportsEndpoints
                     completed = completedCount,
                     failed = failedCount,
                     in_stations = serialRows.Count - completedCount,
-                    highest_station_count = highestCount
+                    highest_station_count = highestCount,
+                    carton_status = cartonStatus,
+                    carton_closed_serials = packedClosedSerialCount
                 },
                 stations
             });

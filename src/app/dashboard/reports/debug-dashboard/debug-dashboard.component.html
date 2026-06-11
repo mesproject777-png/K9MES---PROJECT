@@ -20,6 +20,7 @@
             <label>
               <span>Date Range</span>
               <select [(ngModel)]="debugFilters.dateRange" (change)="onDebugDateRangeChange()" [disabled]="isDebugFilterDisabled('dateRange')">
+                <option value="">Select Date</option>
                 <option value="today">Today</option>
                 <option value="yesterday">Yesterday</option>
                 <option value="thisWeek">This Week</option>
@@ -41,7 +42,7 @@
             <label>
               <span>Site</span>
               <select [(ngModel)]="debugFilters.site" (ngModelChange)="onDebugFilterChange('site')" [disabled]="isDebugFilterDisabled('site')">
-                <option value="">All Sites</option>
+                <option value="">Select Site</option>
                 <option *ngFor="let site of debugOptions.sites" [value]="site.name">{{ site.name }}</option>
               </select>
             </label>
@@ -49,7 +50,7 @@
             <label>
               <span>Repair Station</span>
               <select [(ngModel)]="debugFilters.repairStation" (ngModelChange)="onDebugFilterChange('repairStation')" [disabled]="isDebugFilterDisabled('repairStation')">
-                <option value="">All Stations</option>
+                <option value="">Select Station</option>
                 <option *ngFor="let station of debugOptions.repairStations" [value]="station.station_code">
                   {{ station.station_name || station.station_code }}
                 </option>
@@ -59,7 +60,7 @@
             <label>
               <span>Status</span>
               <select [(ngModel)]="debugFilters.status" (ngModelChange)="onDebugFilterChange('status')" [disabled]="isDebugFilterDisabled('status')">
-                <option value="">All</option>
+                <option value="">Select Status</option>
                 <option value="Pending">Pending</option>
                 <option value="Passed">Passed</option>
               </select>
@@ -68,7 +69,7 @@
             <label>
               <span>Failure Remark</span>
               <select [(ngModel)]="debugFilters.failureRemark" (ngModelChange)="onDebugFilterChange('failureRemark')" [disabled]="isDebugFilterDisabled('failureRemark')">
-                <option value="">All Failure Remarks</option>
+                <option value="">Select Failure Remark</option>
                 <option *ngFor="let row of debugOptions.remarks" [value]="row.remark">{{ row.remark }}</option>
               </select>
             </label>
@@ -76,7 +77,7 @@
             <label>
               <span>Part Number (PN)</span>
               <select [(ngModel)]="debugFilters.partNumber" (ngModelChange)="onDebugFilterChange('partNumber')" [disabled]="isDebugFilterDisabled('partNumber')">
-                <option value="">All Part Numbers</option>
+                <option value="">Select Part Number</option>
                 <option *ngFor="let part of debugOptions.partNumbers" [value]="part.pn">{{ part.pn }}</option>
               </select>
             </label>
@@ -84,7 +85,7 @@
             <label>
               <span>Work Order</span>
               <select [(ngModel)]="debugFilters.workOrder" (ngModelChange)="onDebugFilterChange('workOrder')" [disabled]="isDebugFilterDisabled('workOrder')">
-                <option value="">All Work Orders</option>
+                <option value="">Select Work Order</option>
                 <option *ngFor="let work of debugOptions.workOrders" [value]="work.wo">{{ work.wo }}</option>
               </select>
             </label>
@@ -98,7 +99,7 @@
             </label>
 
             <div class="debug-all-row">
-              <label><input type="checkbox" [checked]="debugAllFilters.site" (change)="setDebugAllFilter('site', $any($event.target).checked)">All Sites</label>
+              <label><input type="checkbox" [checked]="debugAllFilters.site" (change)="setDebugAllFilter('site', $any($event.target).checked)" [disabled]="isDebugFilterDisabled('site')">All Sites</label>
               <label><input type="checkbox" [checked]="debugAllFilters.repairStation" (change)="setDebugAllFilter('repairStation', $any($event.target).checked)" [disabled]="isDebugFilterDisabled('repairStation')">All Stations</label>
               <label><input type="checkbox" [checked]="debugAllFilters.status" (change)="setDebugAllFilter('status', $any($event.target).checked)" [disabled]="isDebugFilterDisabled('status')">All Status</label>
               <label><input type="checkbox" [checked]="debugAllFilters.failureRemark" (change)="setDebugAllFilter('failureRemark', $any($event.target).checked)" [disabled]="isDebugFilterDisabled('failureRemark')">All Remarks</label>
@@ -106,7 +107,7 @@
               <label><input type="checkbox" [checked]="debugAllFilters.workOrder" (change)="setDebugAllFilter('workOrder', $any($event.target).checked)" [disabled]="isDebugFilterDisabled('workOrder')">All WO</label>
             </div>
 
-            <button type="button" class="debug-apply" (click)="loadDebugDashboard()" [disabled]="debugLoading">
+            <button type="button" class="debug-apply" (click)="loadDebugDashboard()" [disabled]="debugLoading || !isDebugDashboardReady">
               <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
               Go
             </button>

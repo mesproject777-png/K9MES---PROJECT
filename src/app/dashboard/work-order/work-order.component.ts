@@ -7,18 +7,20 @@ type WorkflowWorkOrderSummary = {
   wo: string;
   partNumber: string;
   snType: string;
+  dueDate: string;
   quantity: number | null;
   stationCount: number;
-  site: string;
+  bomCount: number;
 };
 
 type WorkflowWorkOrderApiRow = {
   wo: string | null;
   part_number: string;
   sn_type: string;
+  due_date: string | null;
   quantity: number | null;
   station_count: number;
-  site: string;
+  bom_count: number;
 };
 
 @Component({
@@ -130,7 +132,6 @@ export class WorkOrderComponent implements OnInit, OnDestroy {
     this.loadRows();
   }
 
-
   editWorkOrder(row: WorkflowWorkOrderSummary): void {
     this.router.navigate(['/dashboard/workflow'], {
       queryParams: {
@@ -156,6 +157,7 @@ export class WorkOrderComponent implements OnInit, OnDestroy {
       },
     });
   }
+
   get pagedRows(): WorkflowWorkOrderSummary[] {
     return this.rows;
   }
@@ -177,9 +179,10 @@ export class WorkOrderComponent implements OnInit, OnDestroy {
       wo: row.wo || '',
       partNumber: row.part_number,
       snType: row.sn_type,
+      dueDate: row.due_date || '',
       quantity: row.quantity,
       stationCount: row.station_count,
-      site: row.site,
+      bomCount: row.bom_count,
     };
   }
 
@@ -195,16 +198,17 @@ export class WorkOrderComponent implements OnInit, OnDestroy {
   }
 
   private downloadRows(rows: WorkflowWorkOrderSummary[]): void {
-    const header = ['WO', 'Part Number', 'SN Type', 'Quantity', 'Station Count', 'Site'];
+    const header = ['WO', 'Part Number', 'SN Type', 'Due Date', 'Quantity', 'Station', 'BOM'];
     const csvRows = [
       header.join(','),
       ...rows.map((row) => [
         this.escapeCsv(row.wo),
         this.escapeCsv(row.partNumber),
         this.escapeCsv(row.snType),
+        this.escapeCsv(row.dueDate ? String(row.dueDate).slice(0, 10) : ''),
         this.escapeCsv(row.quantity === null ? '' : String(row.quantity)),
         this.escapeCsv(String(row.stationCount)),
-        this.escapeCsv(row.site),
+        this.escapeCsv(String(row.bomCount)),
       ].join(',')),
     ];
 
@@ -226,4 +230,3 @@ export class WorkOrderComponent implements OnInit, OnDestroy {
     return safe;
   }
 }
-

@@ -118,10 +118,27 @@
                             [class.cart-node]="node.variant === 'cart'"
                             [class.pallet-node]="node.variant === 'pallet'"
                             [class.truck-node]="node.variant === 'truck'"
+                            [class.completed]="getWorkOrderLogisticsStatus(node.variant) === 'Completed'"
                           >
-                            <span class="logistics-icon material-symbols-outlined" aria-hidden="true">
-                              {{ node.icon }}
-                            </span>
+                            <ng-container [ngSwitch]="node.variant">
+                              <img
+                                *ngSwitchCase="'cart'"
+                                class="logistics-image carton-image"
+                                [src]="getWorkOrderCartonImage()"
+                                alt=""
+                                aria-hidden="true"
+                              >
+                              <img
+                                *ngSwitchCase="'pallet'"
+                                class="logistics-image pallet-image"
+                                src="assets/sn-chart/pallet.svg"
+                                alt=""
+                                aria-hidden="true"
+                              >
+                              <span *ngSwitchDefault class="logistics-icon material-symbols-outlined" aria-hidden="true">
+                                {{ node.icon }}
+                              </span>
+                            </ng-container>
                             <strong>{{ node.title }}</strong>
                           </div>
                         </ng-container>

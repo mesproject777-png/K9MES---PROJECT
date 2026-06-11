@@ -677,6 +677,24 @@
   transform: scaleX(-1);
 }
 
+.report-result .logistics-image {
+  display: block;
+  width: 72px;
+  height: 62px;
+  margin: 0 auto 6px;
+  object-fit: contain;
+}
+
+.report-result .pallet-node .logistics-image {
+  width: 78px;
+  height: 64px;
+}
+
+.report-result .logistics-node.completed {
+  border-color: #69df96;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+}
+
 .report-station-node.empty-count {
   opacity: 1;
 }

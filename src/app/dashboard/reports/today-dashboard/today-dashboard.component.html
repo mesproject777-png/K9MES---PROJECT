@@ -137,9 +137,6 @@
               <div class="chart-legend" aria-label="Chart legend">
                 <span><i class="legend-pass"></i>Pass</span>
                 <span><i class="legend-fail"></i>Fail</span>
-                <span><i class="legend-rework"></i>Rework</span>
-                <span><i class="legend-nff"></i>NFF</span>
-                <span><i class="legend-pending"></i>Pending</span>
               </div>
             </div>
             <div class="todays-chart-wrap">
@@ -157,9 +154,6 @@
                     <span class="simple-hour-bar" [style.height.%]="getTodaysBarHeight(bucket)">
                       <span class="bar-segment pass" [style.height.%]="getStatusShareHeight(bucket, 'pass')"></span>
                       <span class="bar-segment fail" [style.height.%]="getStatusShareHeight(bucket, 'fail')"></span>
-                      <span class="bar-segment rework" [style.height.%]="getStatusShareHeight(bucket, 'rework')"></span>
-                      <span class="bar-segment nff" [style.height.%]="getStatusShareHeight(bucket, 'nff')"></span>
-                      <span class="bar-segment pending" [style.height.%]="getStatusShareHeight(bucket, 'pending')"></span>
                     </span>
                   </span>
                   <span class="bar-label">{{ bucket.label }}</span>

@@ -3124,6 +3124,12 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
 
   private saveWorkflowSnapshot(onSuccess?: () => void, onError?: (message: string) => void): void {
     const payload = this.buildWorkflowSnapshotPayload();
+    const savedPartNumber = String((payload as WorkflowSnapshot).partNumber?.pn || '').trim();
+
+    if (!savedPartNumber) {
+      onError?.('Part number is required before saving workflow data.');
+      return;
+    }
 
     this.http.post<WorkflowSnapshot>(`${this.workflowApiUrl}/snapshot`, payload).subscribe({
       next: (snapshot) => {
@@ -3132,9 +3138,34 @@ export class WorkflowComponent implements OnInit, AfterViewInit, AfterViewChecke
         }
         localStorage.setItem('k9_workflow_work_orders_updated_at', String(Date.now()));
         onSuccess?.();
+        this.verifyWorkflowWorkOrderConnection(savedPartNumber);
       },
       error: (error) => {
         onError?.(this.getWorkflowErrorMessage(error));
+      }
+    });
+  }
+
+  private verifyWorkflowWorkOrderConnection(partNumber: string): void {
+    const params = new HttpParams()
+      .set('pn', partNumber)
+      .set('page', '1')
+      .set('limit', 'all');
+
+    this.http.get<{ data: Array<{ part_number?: string; partNumber?: string; pn?: string }> }>(`${this.workflowApiUrl}/work-orders`, { params }).subscribe({
+      next: (response) => {
+        const normalizedPartNumber = partNumber.toUpperCase();
+        const isVisibleInWorkOrder = (response.data || []).some((row) => {
+          const rowPartNumber = String(row.part_number || row.partNumber || row.pn || '').trim().toUpperCase();
+          return rowPartNumber === normalizedPartNumber;
+        });
+
+        if (!isVisibleInWorkOrder) {
+          console.warn(`Workflow saved, but PN ${partNumber} was not returned by the Work Order table endpoint yet.`);
+        }
+      },
+      error: (error) => {
+        console.warn('Unable to verify Work Order table connection after save.', error);
       }
     });
   }

@@ -766,7 +766,7 @@ public static class WorkflowEndpoints
 
             await transaction.CommitAsync();
             var savedWo = ReadString(workOrderNode, "wo")?.Trim();
-            var snapshot = await GetWorkflowSnapshotAsync(connection, pn, savedWo);
+            var snapshot = await GetWorkflowSnapshotAsync(connection, pn, savedWo, includeLatestWorkOrderWhenWoMissing: false);
             return Results.Json(snapshot ?? new { message = "Workflow saved" });
         }
         catch
@@ -775,7 +775,7 @@ public static class WorkflowEndpoints
             throw;
         }
     }
-    private static async Task<object?> GetWorkflowSnapshotAsync(NpgsqlConnection connection, string pn, string? wo = null)
+    private static async Task<object?> GetWorkflowSnapshotAsync(NpgsqlConnection connection, string pn, string? wo = null, bool includeLatestWorkOrderWhenWoMissing = true)
     {
         await EnsureWorkflowSchemaAsync(connection);
         await EnsureRoutingStepLoginColumnsAsync(connection);
@@ -807,31 +807,34 @@ public static class WorkflowEndpoints
         {
             var part = partRows[0];
             var workflowPartId = Convert.ToInt32(part["id"]);
-            var workOrderRows = await QueryRowsAsync(
-                connection,
-                """
-                SELECT
-                  wo,
-                  plant,
-                  site_id,
-                  site_name,
-                  due_date,
-                  qty,
-                  status,
-                  @pn AS pn,
-                  revision,
-                  lot,
-                  created_at,
-                  updated_at
-                FROM workflow_work_orders
-                WHERE workflow_part_id = @workflowPartId
-                  AND (@wo = '' OR UPPER(wo) = UPPER(@wo))
-                ORDER BY updated_at DESC, id DESC
-                LIMIT 1
-                """,
-                ("workflowPartId", workflowPartId),
-                ("pn", pn),
-                ("wo", string.IsNullOrWhiteSpace(wo) ? string.Empty : wo.Trim()));
+            var shouldLoadWorkOrder = includeLatestWorkOrderWhenWoMissing || !string.IsNullOrWhiteSpace(wo);
+            var workOrderRows = shouldLoadWorkOrder
+                ? await QueryRowsAsync(
+                    connection,
+                    """
+                    SELECT
+                      wo,
+                      plant,
+                      site_id,
+                      site_name,
+                      due_date,
+                      qty,
+                      status,
+                      @pn AS pn,
+                      revision,
+                      lot,
+                      created_at,
+                      updated_at
+                    FROM workflow_work_orders
+                    WHERE workflow_part_id = @workflowPartId
+                      AND (@wo = '' OR UPPER(wo) = UPPER(@wo))
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    ("workflowPartId", workflowPartId),
+                    ("pn", pn),
+                    ("wo", string.IsNullOrWhiteSpace(wo) ? string.Empty : wo.Trim()))
+                : new List<Dictionary<string, object?>>();
 
             var routingRows = await QueryRowsAsync(
                 connection,
@@ -1025,33 +1028,36 @@ public static class WorkflowEndpoints
 
         var item = itemRows[0];
         var itemId = Convert.ToInt32(item["id"]);
-        var existingWorkOrderRows = await QueryRowsAsync(
-            connection,
-            """
-            SELECT
-              w.wo,
-              '' AS plant,
-              w.site_id,
-              s.name AS site_name,
-              w.due_date,
-              w.qty,
-              w.status,
-              @pn AS pn,
-              ir.revision,
-              w.lot,
-              w.created_at,
-              w.updated_at
-            FROM work_orders w
-            JOIN sites s ON s.id = w.site_id
-            JOIN item_revisions ir ON ir.id = w.item_revision_id
-            WHERE w.item_id = @itemId
-              AND (@wo = '' OR UPPER(w.wo) = UPPER(@wo))
-            ORDER BY w.updated_at DESC, w.id DESC
-            LIMIT 1
-            """,
-            ("itemId", itemId),
-            ("pn", pn),
-            ("wo", string.IsNullOrWhiteSpace(wo) ? string.Empty : wo.Trim()));
+        var shouldLoadLegacyWorkOrder = includeLatestWorkOrderWhenWoMissing || !string.IsNullOrWhiteSpace(wo);
+        var existingWorkOrderRows = shouldLoadLegacyWorkOrder
+            ? await QueryRowsAsync(
+                connection,
+                """
+                SELECT
+                  w.wo,
+                  '' AS plant,
+                  w.site_id,
+                  s.name AS site_name,
+                  w.due_date,
+                  w.qty,
+                  w.status,
+                  @pn AS pn,
+                  ir.revision,
+                  w.lot,
+                  w.created_at,
+                  w.updated_at
+                FROM work_orders w
+                JOIN sites s ON s.id = w.site_id
+                JOIN item_revisions ir ON ir.id = w.item_revision_id
+                WHERE w.item_id = @itemId
+                  AND (@wo = '' OR UPPER(w.wo) = UPPER(@wo))
+                ORDER BY w.updated_at DESC, w.id DESC
+                LIMIT 1
+                """,
+                ("itemId", itemId),
+                ("pn", pn),
+                ("wo", string.IsNullOrWhiteSpace(wo) ? string.Empty : wo.Trim()))
+            : new List<Dictionary<string, object?>>();
 
         var existingRoutingRows = await QueryRowsAsync(
             connection,
@@ -2007,6 +2013,3 @@ public static class WorkflowEndpoints
         return value is null ? DBNull.Value : value;
     }
 }
-
-
-
