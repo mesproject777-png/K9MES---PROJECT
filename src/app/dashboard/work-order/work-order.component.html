@@ -51,16 +51,10 @@
           <th>WO</th>
           <th>Part Number</th>
           <th>SN Type</th>
-          <th>Plant</th>
-          <th>Site</th>
           <th>Due Date</th>
           <th>Quantity</th>
-          <th>Status</th>
-          <th>Revision</th>
-          <th>Lot</th>
           <th>Station</th>
           <th>BOM</th>
-          <th>Updated</th>
           <th>SNList</th>
           <th>Actions</th>
         </tr>
@@ -70,13 +64,8 @@
           <td>{{ row.wo || '-' }}</td>
           <td>{{ row.partNumber || '-' }}</td>
           <td>{{ row.snType || '-' }}</td>
-          <td>{{ row.plant || '-' }}</td>
-          <td>{{ row.site || '-' }}</td>
           <td>{{ row.dueDate ? (row.dueDate | date: 'yyyy-MM-dd') : '-' }}</td>
           <td>{{ row.quantity ?? '-' }}</td>
-          <td>{{ row.status || '-' }}</td>
-          <td>{{ row.revision || '-' }}</td>
-          <td>{{ row.lot || '-' }}</td>
           <td>
             <button
               type="button"
@@ -88,7 +77,6 @@
             </button>
           </td>
           <td>{{ row.bomCount }}</td>
-          <td>{{ row.updatedAt ? (row.updatedAt | date: 'yyyy-MM-dd HH:mm') : '-' }}</td>
           <td class="actions-cell">
             <button type="button" class="view-button" (click)="viewSnList(row)">View</button>
           </td>
@@ -97,7 +85,7 @@
           </td>
         </tr>
         <tr *ngIf="pagedRows.length === 0">
-          <td colspan="15" class="empty-state">No workflow work orders found.</td>
+          <td colspan="9" class="empty-state">No workflow work orders found.</td>
         </tr>
       </tbody>
     </table>
